@@ -12,7 +12,7 @@ A fase 0 pede um protótipo web do holograma com dados falsos, antes de existir 
 - O holograma vira o pacote `packages/hologram`: um componente React (`<Hologram snapshot={…} />`) cuja entrada é um **snapshot** validado com Zod. A lógica visual fica em funções puras, testáveis em Linux.
 - O protótipo da fase 0 é o app `apps/hologram-lab` (Vite + React + Zustand), com cenários roteirizados. Na fase 1, a janela do Electron usa o mesmo pacote; o laboratório continua útil para ajustar o visual sem o resto do sistema.
 - TypeScript fixado em 6.0 até o typescript-eslint suportar a 7.
-- pnpm com `minimumReleaseAge` de 3 dias e scripts de instalação bloqueados por padrão (seção 3.14).
+- pnpm com `minimumReleaseAge` de 3 dias e scripts de instalação bloqueados por padrão (seção 3.14). **Substituído pela [decisão 0009](0009-npm-em-vez-de-pnpm.md)**: o projeto passou a usar o npm, com as mesmas proteções.
 
 ## Consequências
 

@@ -11,12 +11,12 @@ Assistente pessoal de IA para Windows. Conversa por voz e texto em português, p
 
 ## Rodar o protótipo do holograma
 
-Requer Node.js 22 ou mais novo (o CI usa o 24) e pnpm 10.
+Requer Node.js 24 LTS (que já traz o npm 11). Com um npm mais antigo, atualize antes: `npm install -g npm@11`.
 
 ```bash
-pnpm install
-pnpm dev:hologram     # abre http://localhost:5173
-pnpm test             # testes
+npm install
+npm run dev:hologram  # abre http://localhost:5173
+npm test              # testes
 ```
 
 O CI também publica o build do protótipo como artefato (`hologram-lab`) em cada PR.

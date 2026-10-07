@@ -62,10 +62,14 @@ TypeScript + Electron · alvo de 8 a 16 GB de RAM sem GPU dedicada · comandos d
 
 ## Comandos
 
-- `pnpm install`: instala (scripts de instalação bloqueados; só versões publicadas há 3 dias ou mais).
-- `pnpm dev:hologram`: abre o laboratório do holograma em `http://localhost:5173`.
-- `pnpm lint` · `pnpm typecheck` · `pnpm test` · `pnpm build`: o mesmo que o CI roda.
-- `pnpm build:win`: ainda não existe (chega com o Electron, na fase 1).
+Gerenciador: **npm 11.16 ou mais novo** (workspaces). Não use pnpm nem yarn.
+
+- `npm install`: instala (só versões publicadas há 3 dias ou mais; scripts de instalação só de pacotes aprovados em `allowScripts`).
+- `npm run dev:hologram`: abre o laboratório do holograma em `http://localhost:5173`.
+- `npm run lint` · `npm run typecheck` · `npm test` · `npm run build`: o mesmo que o CI roda (o CI usa `npm ci`).
+- Dependência nova num pacote: `npm install <pacote> --workspace=@jesus/hologram` (ou `-w apps/hologram-lab`).
+- Pacote que precisa de script de instalação: revise e aprove com `npm approve-scripts <pacote>` (nunca `--dangerously-allow-all-scripts`).
+- `npm run build:win`: ainda não existe (chega com o Electron, na fase 1).
 
 ## Estrutura
 

@@ -86,7 +86,7 @@
 | Logs | pino (aplicação) + tabela de auditoria no PostgreSQL | rápido | — |
 | Testes | Vitest (unidade), Playwright (ponta a ponta no Electron), promptfoo (avaliações e red team de LLM) | — | — |
 | Qualidade | ESLint + typescript-eslint, Prettier (ou Biome) | — | — |
-| Monorepo | pnpm workspaces | pacotes separados por responsabilidade | npm workspaces |
+| Monorepo | npm workspaces (npm 11.16+) | pacotes separados por responsabilidade; vem com o Node, nada a mais para instalar ([decisão 0009](decisoes/0009-npm-em-vez-de-pnpm.md)) | pnpm workspaces |
 | CI | GitHub Actions (testes em Linux; build do `.exe` em `windows-latest`) | gera o `.exe` sem depender do seu PC | — |
 
 ## 4.4 Detalhes por camada
@@ -220,6 +220,7 @@ Verificadas em 07/10/2026. Confira de novo na hora de instalar.
 | Item | Situação |
 |---|---|
 | Node.js | 24 LTS (fase ativa até 20/10/2026); o 26 vira LTS em 28/10/2026 |
+| npm | 11.21 (setembro de 2026); o projeto exige 11.16+, que tem `min-release-age` (desde a 11.10) e a política `allowScripts` (desde a 11.16). O Node 24.21 traz o npm 11.19; o Node 22 ainda traz o npm 10 |
 | TypeScript | 6.0 no projeto. A 7.0 (compilador nativo) já saiu, mas o typescript-eslint ainda aceita só `< 6.1` ([decisão 0008](decisoes/0008-holograma-como-pacote-e-laboratorio.md)) |
 | Front-end da fase 0 | Vite 8, React 19.3, Three.js 0.186, React Three Fiber 9, `@react-three/postprocessing` 3, Zustand 5, Vitest 5 |
 | Electron | linha 44.x estável (setembro de 2026) |

@@ -9,7 +9,7 @@ O dono do projeto queria Python ou TypeScript. A interface e o holograma exigem 
 
 ## Decisão
 
-TypeScript (modo `strict`) em todo o projeto, com Electron como app de desktop (electron-builder, instalador NSIS) e monorepo com pnpm workspaces. Um processo auxiliar em Python para voz fica como plano B, caso as bibliotecas de voz em Node não atendam.
+TypeScript (modo `strict`) em todo o projeto, com Electron como app de desktop (electron-builder, instalador NSIS) e monorepo com pnpm workspaces (gerenciador trocado para o npm na [decisão 0009](0009-npm-em-vez-de-pnpm.md)). Um processo auxiliar em Python para voz fica como plano B, caso as bibliotecas de voz em Node não atendam.
 
 ## Consequências
 

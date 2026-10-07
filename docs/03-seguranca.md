@@ -489,7 +489,7 @@ appendWindowsPath = false
 - **Pacotes:**
   - instalar o que já está no lockfile ou manifesto = médio;
   - pacote novo = pergunta, mostrando nome, versão, autor e data de publicação, com alerta para pacotes muito novos ou com nome parecido com outro (*typosquatting*);
-  - preferir `npm ci` ou `pnpm install --frozen-lockfile`;
+  - preferir `npm ci` (ou o equivalente com lockfile congelado do gerenciador do projeto);
   - scripts de instalação desligados por padrão quando possível.
 - **Sombreamento de módulo (caso Rehberger):** a sandbox não executa nada a partir da pasta de downloads ou de pastas com arquivos recém-baixados; Python roda com `-I` (modo isolado), e o diretório de trabalho de scripts é o do projeto.
 - **Rede:** cada comando declara os domínios de que precisa (ex.: `registry.npmjs.org`), e o Porteiro avalia isso junto com o comando, como no Claude Code. No modo padrão, o controle é só do Porteiro (comando com rede pergunta). No AppContainer (upgrade), a rede fica fechada sem a capacidade `internetClient`; no WSL2, fica fechada e abre por lista de domínios via proxy.
@@ -563,9 +563,9 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 
 ## 3.14 Cadeia de suprimentos
 
-- Fixar versões (lockfile) e revisar atualizações; `npm ci` ou `pnpm install --frozen-lockfile` no build.
-- Scripts de instalação desligados por padrão (`ignore-scripts`), liberados só para pacotes que precisam (ex.: módulos nativos) depois de revisar.
-- Dependabot ou Renovate + `pnpm audit`. Atualizar com um atraso proposital (ex.: esperar alguns dias depois que uma versão nova sai): pacotes sequestrados costumam ser removidos rápido.
+- Fixar versões (`package-lock.json`) e revisar atualizações; `npm ci` no build.
+- Scripts de instalação bloqueados por padrão (`strict-allow-scripts` no `.npmrc`), liberados só para pacotes que precisam (ex.: módulos nativos, Electron) depois de revisar, com `npm approve-scripts` (vira uma entrada no campo `allowScripts` do `package.json`).
+- Dependabot ou Renovate + `npm audit`. Atualizar com um atraso proposital, esperando alguns dias depois que uma versão nova sai: pacotes sequestrados costumam ser removidos rápido. No projeto, `min-release-age=3` no `.npmrc` faz isso valer em toda instalação.
 - Modelos baixados (voz, embeddings, LLM local): só de fontes oficiais, conferindo o hash.
 - Servidores MCP: versão fixada e hash das definições (seção 3.8).
 - Build reproduzível no GitHub Actions; instalador assinado quando for distribuir.

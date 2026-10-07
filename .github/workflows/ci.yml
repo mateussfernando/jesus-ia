@@ -22,20 +22,19 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
-
+      # O Node 24 LTS traz o npm 11.16+ exigido pelo package.json (engines e devEngines).
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+          cache: npm
 
-      # Lockfile congelado; scripts de instalação continuam bloqueados (docs/03-seguranca.md, seção 3.14).
-      - run: pnpm install --frozen-lockfile
+      # Instala exatamente o package-lock.json; scripts de instalação só com aprovação (docs/03-seguranca.md, seção 3.14).
+      - run: npm ci
 
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm build
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
 
       - name: Publicar o protótipo do holograma
         uses: actions/upload-artifact@v4
