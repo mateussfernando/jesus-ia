@@ -4,7 +4,7 @@ Antes de qualquer tarefa, leia `docs/03-seguranca.md` (no mínimo a seção 3.0,
 
 ## Estado atual
 
-Só documentação. Próximos passos e critérios de "pronto" estão em `docs/10-roadmap.md`. Trabalhe **uma fase (ou um pacote) por vez**.
+Fase 0 (holograma) implementada e aguardando a aprovação visual do dono do projeto: `packages/hologram` (componente) e `apps/hologram-lab` (protótipo web com dados falsos). Próximos passos e critérios de "pronto" estão em `docs/10-roadmap.md`. Trabalhe **uma fase (ou um pacote) por vez**.
 
 ## O que é
 
@@ -62,7 +62,15 @@ TypeScript + Electron · alvo de 8 a 16 GB de RAM sem GPU dedicada · comandos d
 
 ## Comandos
 
-(preencher quando o projeto existir: `pnpm install`, `pnpm test`, `pnpm dev`, `pnpm build:win`)
+- `pnpm install`: instala (scripts de instalação bloqueados; só versões publicadas há 3 dias ou mais).
+- `pnpm dev:hologram`: abre o laboratório do holograma em `http://localhost:5173`.
+- `pnpm lint` · `pnpm typecheck` · `pnpm test` · `pnpm build`: o mesmo que o CI roda.
+- `pnpm build:win`: ainda não existe (chega com o Electron, na fase 1).
+
+## Estrutura
+
+- `packages/hologram`: holograma (React Three Fiber). Lógica pura e testável em `model.ts`, `visual.ts`, `geometry.ts` e `describe.ts`; shaders em `shaders.ts`; cena em `react/`.
+- `apps/hologram-lab`: protótipo da fase 0 (Vite + React + Zustand) com cenários roteirizados em `src/scenarios.ts`.
 
 ## Ao terminar uma tarefa
 

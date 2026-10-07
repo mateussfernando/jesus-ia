@@ -20,6 +20,8 @@
 
 **A ordem importa: o Porteiro vem antes de o Jesus ganhar acesso ao terminal e às contas.**
 
+**Andamento (07/10/2026):** fase 0 implementada (`packages/hologram` + `apps/hologram-lab`, seção [8.8](08-holograma.md)). Falta você medir os 60 fps no seu PC e aprovar a identidade visual.
+
 ## 10.2 Usando os créditos do Claude Code na nuvem
 
 - Uma fase (ou um pacote) por sessão, com o pedido bem descrito e o critério de "pronto quando".

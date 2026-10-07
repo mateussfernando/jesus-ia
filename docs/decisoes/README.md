@@ -11,6 +11,7 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0005](0005-hardware-alvo.md) | Alvo de 8 a 16 GB de RAM, sem GPU dedicada | aceita |
 | [0006](0006-comandos-direto-no-windows.md) | Comandos direto no Windows, WSL2 opcional | aceita |
 | [0007](0007-padroes-iniciais.md) | Padrões iniciais (nomes, uso pessoal, contas, retenção, voz) | aceita |
+| [0008](0008-holograma-como-pacote-e-laboratorio.md) | Holograma como pacote próprio, com laboratório web | aceita |
 
 ## Modelo
 

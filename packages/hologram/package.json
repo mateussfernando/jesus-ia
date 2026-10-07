@@ -1,0 +1,33 @@
+{
+  "name": "@jesus/hologram",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Holograma do Jesus: esfera de partículas informativa (Three.js + React Three Fiber).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@react-three/fiber": "^9.5.0",
+    "@react-three/postprocessing": "^3.0.4",
+    "postprocessing": "^6.38.0",
+    "three": "^0.186.0",
+    "zod": "^4.1.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.186.0",
+    "react": "~19.3.0",
+    "react-dom": "~19.3.0",
+    "vitest": "^5.0.0"
+  }
+}

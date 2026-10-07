@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Cadeia de suprimentos (docs/03-seguranca.md, seção 3.14):
+# só instala versões publicadas há pelo menos 3 dias (pacotes sequestrados costumam ser removidos rápido).
+minimumReleaseAge: 4320
+
+# Scripts de instalação ficam bloqueados; libere aqui só depois de revisar o pacote.
+onlyBuiltDependencies: []

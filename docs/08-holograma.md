@@ -54,3 +54,52 @@ Ocioso (respiração lenta) · ouvindo · pensando · falando · executando · a
 ## 8.7 Interface segura
 
 Resumo da seção [3.12](03-seguranca.md): cartões de confirmação num componente confiável, nenhuma imagem remota carregada sozinha, markdown sanitizado.
+
+## 8.8 Protótipo da fase 0
+
+**Status (07/10/2026):** implementado; aguardando a sua aprovação da identidade visual (critério da fase 0, seção [10.1](10-roadmap.md)).
+
+### Onde está
+
+| Caminho | O quê |
+|---|---|
+| `packages/hologram` | o componente `<Hologram snapshot={…} />`, reaproveitado depois pela janela do Electron |
+| `packages/hologram/src/model.ts` | o **snapshot**: tudo o que o holograma mostra, validado com Zod (na fase 1 ele chega por IPC) |
+| `packages/hologram/src/visual.ts` | lógica pura: estado → velocidades, cores e deformações; contexto → raio; gasto → nível; pulsos; suavização |
+| `packages/hologram/src/shaders.ts` | shaders GLSL das partículas, dos anéis e das estrelas |
+| `packages/hologram/src/describe.ts` | o mesmo conteúdo em texto (pt-BR), para o painel e leitores de tela |
+| `apps/hologram-lab` | o laboratório: painel de controles, cenários roteirizados com legenda e medidor de fps |
+
+### Como a gramática da seção 8.2 virou código
+
+| Elemento | Implementação |
+|---|---|
+| Esfera e núcleo | 4.400 partículas em espiral de Fibonacci + 600 no núcleo, mistura aditiva, bloom em meia resolução |
+| Tamanho = contexto | raio proporcional à raiz cúbica do contexto em uso (o **volume** acompanha o contexto), com piso para não sumir |
+| Contorno tracejado | anel tracejado no raio máximo: a esfera encosta nele em 100% |
+| Marcas no anel externo | 100 marcas; acendem no sentido horário a partir do topo |
+| Satélites | órbita levemente inclinada; anel simples = leitura, duplo = leitura e escrita; rótulo com o nome |
+| Fios, losango e pulsos | pulso branco indo (ação) ou voltando (dados); pulso **barrado** para no losango, que acende em vermelho |
+| Chiado de contaminação | parte das partículas fica cinza, treme e pisca fora de fase; mais forte quando a tarefa está "suspeita" |
+| Estados | perfis em `visual.ts` (rotação, respiração, ondas, redemoinho, agitação, colapso), com transição suave entre eles |
+| Anel de gasto | arco externo; fica âmbar em 80% e vermelho em 100% do limite do dia |
+| Compactação | colapso em espiral para o núcleo; as memórias novas acendem como estrelas no fundo |
+| Subagentes | esferas menores que brotam da principal |
+| *Device flow* | código grande no centro, com a esfera esmaecida atrás |
+
+### Desempenho e acessibilidade
+
+- *Pixel ratio* limitado a 2 (1 no modo leve); renderização pausada quando a aba ou janela fica oculta.
+- **Modo leve automático:** cai para 2.400 partículas e bloom em 35% da resolução quando a taxa fica abaixo de 42 fps por 3 segundos seguidos, ou quando o aparelho informa que está na bateria.
+- "Reduzir movimento" do sistema: animações a 25% da velocidade, sem pisca do alerta e sem paralaxe da câmera.
+- Modo mini: fundo transparente (sem bloom, que apagaria a transparência), sem satélites, rótulos, estrelas nem anel de gasto.
+- CSP restritiva no build (`script-src 'self'`, nada remoto).
+
+### Como avaliar (no seu PC)
+
+1. `pnpm install` e `pnpm dev:hologram`; abra `http://localhost:5173` no Chrome ou Edge. Ou baixe o artefato `hologram-lab` do CI e sirva a pasta com qualquer servidor estático.
+2. Rode os cenários do painel: **Marcar dentista** (seção 6.7), **Ataque bloqueado**, **Convite precisa de você**, **Contexto cheio e compactação**, **Subagentes**, **Login no GitHub** e **Orçamento do dia**.
+3. Confira o medidor no canto superior esquerdo: o critério é **60 fps em GPU integrada** no modo completo. Ele também mostra se o modo leve entrou sozinho.
+4. Diga o que mudar: cores, tamanho, velocidade, brilho, densidade, o que sobra ou falta.
+
+**Limite do teste na nuvem:** o servidor da sessão não tem GPU, então lá o Chromium roda o WebGL por software (cerca de 6 fps). Os 60 fps só podem ser medidos no seu PC.

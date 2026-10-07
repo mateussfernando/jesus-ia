@@ -182,9 +182,11 @@ jesus-ia/
 ├─ CLAUDE.md                 # contexto para o Claude Code
 ├─ docs/                     # documentação do projeto
 ├─ apps/
+│  ├─ hologram-lab/          # fase 0: protótipo web do holograma com dados falsos (existe)
 │  └─ desktop/               # Electron: main, preload, janelas
-│     └─ renderer/           # React + holograma (Three.js / React Three Fiber)
+│     └─ renderer/           # React; usa o pacote hologram
 ├─ packages/
+│  ├─ hologram/              # holograma: componente React Three Fiber + lógica visual pura (existe)
 │  ├─ core/                  # loop do agente, contexto, compactação, subagentes
 │  ├─ gate/                  # Porteiro: normalização, regras, classificador, políticas
 │  ├─ executor/              # execução de ferramentas, cofre, sandbox, checkpoints
@@ -218,6 +220,8 @@ Verificadas em 07/10/2026. Confira de novo na hora de instalar.
 | Item | Situação |
 |---|---|
 | Node.js | 24 LTS (fase ativa até 20/10/2026); o 26 vira LTS em 28/10/2026 |
+| TypeScript | 6.0 no projeto. A 7.0 (compilador nativo) já saiu, mas o typescript-eslint ainda aceita só `< 6.1` ([decisão 0008](decisoes/0008-holograma-como-pacote-e-laboratorio.md)) |
+| Front-end da fase 0 | Vite 8, React 19.3, Three.js 0.186, React Three Fiber 9, `@react-three/postprocessing` 3, Zustand 5, Vitest 5 |
 | Electron | linha 44.x estável (setembro de 2026) |
 | Vercel AI SDK | v7 (lançada em junho de 2026, segundo fontes de terceiros); a v6 (dezembro de 2025) introduziu a aprovação de ferramentas |
 | SDK TypeScript do MCP | v1 estável; v2 em beta (pacotes separados `@modelcontextprotocol/client` e `/server`) |

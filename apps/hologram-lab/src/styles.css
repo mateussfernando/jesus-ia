@@ -1,0 +1,329 @@
+/* Paleta do holograma (docs/08-holograma.md, seção 8.4). O app é sempre escuro. */
+:root {
+  --core: #ffffff;
+  --silver: #d3dce6;
+  --silver-dark: #8693a2;
+  --bg: #04060a;
+  --panel: #080b11;
+  --line: rgba(211, 220, 230, 0.12);
+  --line-strong: rgba(211, 220, 230, 0.32);
+  --amber: #f0ad4a;
+  --red: #ff5b52;
+  --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+  --sans: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--silver);
+  font: 14px/1.45 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--silver);
+  outline-offset: 2px;
+}
+
+.lab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  height: 100%;
+}
+
+.stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hologram {
+  position: absolute !important;
+  inset: 0;
+}
+
+/* Modo mini: holograma pequeno no canto, sobre uma "área de trabalho" simulada. */
+.stage-mini {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(134, 147, 162, 0.16), transparent 55%),
+    linear-gradient(160deg, #1a2230, #0c1018 60%);
+}
+
+.stage-mini .hologram {
+  inset: auto 24px 24px auto;
+  width: 220px !important;
+  height: 220px !important;
+}
+
+.hud-badge {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  display: flex;
+  gap: 10px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--silver-dark);
+  pointer-events: none;
+}
+
+.hud-badge .warn {
+  color: var(--amber);
+}
+
+.caption {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 32px));
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(4, 6, 10, 0.72);
+  backdrop-filter: blur(6px);
+  font: 500 13px/1.45 var(--mono);
+  color: var(--silver);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.panel {
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 16px 16px 32px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+h1 {
+  margin: 0;
+  font: 600 15px/1.2 var(--mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--core);
+}
+
+h1 span {
+  display: block;
+  margin-top: 4px;
+  font-weight: 400;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--silver-dark);
+}
+
+.section {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.section h2 {
+  margin: 0 0 10px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--silver-dark);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chips + .chips {
+  margin-top: 8px;
+}
+
+.chip,
+.ghost,
+.scenario,
+.select {
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 120ms, border-color 120ms, color 120ms;
+}
+
+.chip {
+  padding: 5px 11px;
+  font-size: 12.5px;
+}
+
+.chip.small,
+.ghost.small {
+  padding: 3px 9px;
+  font-size: 12px;
+}
+
+.chip:hover,
+.ghost:hover,
+.scenario:hover {
+  border-color: var(--silver);
+}
+
+.chip.on {
+  background: var(--silver);
+  border-color: var(--silver);
+  color: var(--bg);
+}
+
+/* Cor só onde há risco, como no holograma. */
+.chip-awaiting.on {
+  background: var(--amber);
+  border-color: var(--amber);
+}
+.chip-blocked.on {
+  background: var(--red);
+  border-color: var(--red);
+}
+.pulse-blocked {
+  border-color: rgba(255, 91, 82, 0.5);
+}
+
+.ghost {
+  padding: 5px 12px;
+  font-size: 12.5px;
+}
+
+.scenarios {
+  display: grid;
+  gap: 6px;
+}
+
+.scenario {
+  display: grid;
+  gap: 2px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.scenario strong {
+  font-weight: 600;
+  color: var(--core);
+}
+
+.scenario span {
+  font-size: 12.5px;
+  color: var(--silver-dark);
+}
+
+.scenario.active {
+  border-color: var(--silver);
+  background: rgba(211, 220, 230, 0.08);
+}
+
+.scenario.active strong::after {
+  content: ' · rodando (toque para parar)';
+  font-weight: 400;
+  color: var(--silver-dark);
+}
+
+.slider {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  font: 12.5px/1.3 var(--mono);
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--silver);
+}
+
+.accounts {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.account-row strong {
+  flex: 1;
+  color: var(--core);
+}
+
+.select {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.describe {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--silver);
+}
+
+@media (max-width: 860px) {
+  .lab {
+    grid-template-columns: 1fr;
+    grid-template-rows: 62vh auto;
+    height: auto;
+    min-height: 100%;
+  }
+
+  .panel {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    overflow: visible;
+  }
+
+  .caption {
+    bottom: 12px;
+    font-size: 12px;
+  }
+
+  .stage-mini .hologram {
+    width: 160px !important;
+    height: 160px !important;
+    inset: auto 16px 16px auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
