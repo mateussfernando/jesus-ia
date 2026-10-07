@@ -43,6 +43,22 @@ TypeScript + Electron · alvo de 8 a 16 GB de RAM sem GPU dedicada · comandos d
 
 - Trabalhe em branch e abra PR; não faça push direto na `main`.
 - Não adicione linha `Co-Authored-By` nos commits (preferência do dono do projeto).
+- Mensagens de commit no padrão *Conventional Commits*: `tipo(escopo opcional): descrição`. O tipo é em inglês e a descrição em português, no imperativo, curta e sem ponto final. Ex.: `feat(gate): adiciona regras deny/ask/allow`, `fix(db): corrige migração da tabela memories`.
+
+  | Tipo | Quando usar |
+  |---|---|
+  | `feat` | funcionalidade nova |
+  | `fix` | correção de bug |
+  | `docs` | só documentação |
+  | `refactor` | mudança de código sem mudar comportamento |
+  | `test` | testes novos ou ajustados |
+  | `chore` | manutenção (dependências, configuração, arquivos de suporte) |
+  | `build` | build, empacotamento, instalador |
+  | `ci` | GitHub Actions e automações |
+  | `perf` | desempenho |
+  | `style` | formatação, sem mudar lógica |
+
+  Escopos sugeridos: `core`, `gate`, `executor`, `tools`, `db`, `memory`, `voice`, `models`, `integrations`, `ui`, `desktop`, `docs`, `security`. Mudança que quebra compatibilidade leva `!` (ex.: `feat(db)!: …`). Mudança no Porteiro ou na política de segurança usa o escopo `gate` ou `security`.
 
 ## Comandos
 
