@@ -1,0 +1,39 @@
+# Dependências e builds
+node_modules/
+dist/
+out/
+build/
+release/
+coverage/
+*.tsbuildinfo
+
+# Segredos: nunca versionar (docs/03-seguranca.md, seção 3.5)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+
+# Dados locais
+pgdata/
+*.db
+*.sqlite
+*.dump
+*.backup
+
+# Modelos baixados (voz, embeddings): grandes demais para o git
+*.onnx
+*.bin
+*.gguf
+
+# Logs e sistema
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Configurações locais de ferramentas
+.claude/settings.local.json
+CLAUDE.local.md
