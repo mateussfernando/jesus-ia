@@ -2,7 +2,7 @@
 
 > **Leia isto antes de qualquer tarefa** e atualize ao terminar cada etapa (o que foi feito, o que falta, onde parou). Serve para continuar o trabalho em outra sessão sem perder contexto. O resumo fixo do projeto está no [`CLAUDE.md`](../CLAUDE.md); aqui fica o **andamento**.
 
-**Última atualização:** 08/10/2026, ~14h40 UTC, sessão na nuvem (branch `main-7zybuc`).
+**Última atualização:** 08/10/2026, fim da tarde (UTC), sessão na nuvem (branch `main-7zybuc`).
 
 ## Onde estamos
 
@@ -48,8 +48,14 @@ Descartado de vez: API direta do DeepSeek com dados pessoais (dados na China) e 
   - Correção em relação ao rascunho: o piso do teto por passo é 256 tokens, não 512. Com 512, a garantia de dois passos de folga até o limite técnico falha entre L = 5.000 e 5.120.
   - Ainda **não** feito da seção 5: o resumo em si (`validateSummary`, `renderSummaryBlock`, `collectUserRequests`, `buildActionLedger`, `selectTail`, `deterministicCompaction`, hierárquica, `sanitizeModelText`), o corte de resultado (`truncateToolResult`), `speculativeStillValid` e o adaptador de histórico por provedor (seção 6). Dependem dos itens do histórico reais, do mascaramento de segredos (`packages/shared`) e do Porteiro; entram com a fase 1.
 
+- **Contexto, parte 3: implementada, revisão interrompida** (commit `d539048`, parado a pedido do dono pelo limite de uso).
+  - `packages/models`: `usage.ts` (uso normalizado de Anthropic, DeepSeek e OpenAI; `checkReportedUsage`; `estimatedUsage`), `calibration.ts` (fator `k` e margem por modelo), `ledger.ts` (livro de gastos: reserva antes, liquidação depois, reserva de segurança, dia local, `toHologramSpend`) e `usdPerMTokToPUsdPerToken` exportado em `cost.ts`. O adaptador do AI SDK fica para a fase 1, depois de conferir os tipos instalados.
+  - `packages/core/src/context`: `anchor.ts` (`contextUsage`, âncora no uso real) e `preflight.ts` (checagem antes de cada envio, falha fechada).
+  - Testes passando (108 em `models`, 104 em `core`); lint e tipos limpos.
+  - **Pendente:** os novos módulos ainda não estão exportados nos `index.ts` dos pacotes. A revisão em 3 lentes achou problemas; alguns foram confirmados por um cético (ex.: em `ledger.ts`), mas o fluxo foi parado antes da correção. Retomar: `Workflow({ scriptPath: "<sessão>/workflows/scripts/contexto-parte-3-wf_49157495-cee.js", resumeFromRunId: "wf_49157495-cee" })` só funciona na mesma sessão; em sessão nova, refazer a revisão desses arquivos.
+
 **Falta (nesta ordem):**
-1. Contexto, parte 3: âncora no uso real e calibração (seção 7.2–7.4) e livro de gastos (seção 8.2).
+1. Terminar a parte 3: revisar e corrigir `usage.ts`, `calibration.ts`, `ledger.ts`, `anchor.ts` e `preflight.ts`, exportar nos `index.ts` e registrar as decisões no diário.
 2. Fazer a crítica do rascunho de **login** (segurança, qualidade e testabilidade), como foi feito com os outros três.
 3. Implementar, um pacote por vez, com testes: memória → login → subagentes. Ligar cada um ao holograma e trocar os controles manuais correspondentes do laboratório por simulação automática.
 4. Promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.
