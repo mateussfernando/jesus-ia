@@ -22,7 +22,8 @@ Inspirado nos hologramas do filme (esfera de partículas com anéis e fragmentos
 | Ondas na frente da esfera | ele está ouvindo você |
 | Núcleo girando rápido, anéis acelerados | ele está pensando |
 | Anel de gasto | custo do dia comparado ao seu limite |
-| Colapso para o núcleo + estrelas no fundo | compactação de contexto, que vira memória de longo prazo |
+| Colapso para o núcleo | compactação de contexto (automática: o Jesus limpa saídas antigas e compacta sozinho perto do limite) |
+| Estrelas no fundo | memórias de longo prazo (as que o Jesus só deduz entram depois que você revisa) |
 | Esfera se dividindo | subagentes trabalhando em paralelo |
 | Código grande no centro | login por *device flow* (ex.: GitHub) |
 
@@ -98,7 +99,7 @@ Resumo da seção [3.12](03-seguranca.md): cartões de confirmação num compone
 ### Como avaliar (no seu PC)
 
 1. `npm install` e `npm run dev:hologram` (Node 24.18 ou mais novo, que traz o npm 11.16+; veja o README); abra `http://localhost:5173` no Chrome ou Edge. Ou baixe o artefato `hologram-lab` do CI e sirva a pasta com qualquer servidor estático.
-2. Rode os cenários do painel: **Marcar dentista** (seção 6.7), **Ataque bloqueado**, **Convite precisa de você**, **Contexto cheio e compactação**, **Subagentes**, **Login no GitHub** e **Orçamento do dia**.
+2. Rode os cenários do painel: **Marcar dentista** (seção 6.7), **Ataque bloqueado**, **Convite precisa de você**, **Contexto cheio e compactação automática**, **Disjuntor da compactação**, **Subagentes**, **Login no GitHub** e **Orçamento do dia**.
 3. Confira o medidor no canto superior esquerdo: o critério é **60 fps em GPU integrada** no modo completo. Ele também mostra se o modo leve entrou sozinho.
 4. Diga o que mudar: cores, tamanho, velocidade, brilho, densidade, o que sobra ou falta.
 

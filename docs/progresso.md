@@ -2,12 +2,12 @@
 
 > **Leia isto antes de qualquer tarefa** e atualize ao terminar cada etapa (o que foi feito, o que falta, onde parou). Serve para continuar o trabalho em outra sessão sem perder contexto. O resumo fixo do projeto está no [`CLAUDE.md`](../CLAUDE.md); aqui fica o **andamento**.
 
-**Última atualização:** 08/10/2026, ~14h UTC, sessão na nuvem (branch `main-7zybuc`).
+**Última atualização:** 08/10/2026, ~14h40 UTC, sessão na nuvem (branch `main-7zybuc`).
 
 ## Onde estamos
 
 - **Fase 0 (holograma): concluída e aprovada** pelo dono do projeto. Ele mediu 75 fps (o máximo da tela) num PC de 8 GB com placa de vídeo dedicada; em GPU integrada ainda não foi medido.
-- **PR #1** (`main-7zybuc` → `main`): https://github.com/mateussfernando/jesus-ia/pull/1. CI verde, sem conflitos. **Aguarda o merge do dono do projeto.** Contém: monorepo npm, `packages/hologram`, `apps/hologram-lab`, docs e as decisões 0008 a 0011.
+- **PR #1** (`main-7zybuc` → `main`): https://github.com/mateussfernando/jesus-ia/pull/1. CI verde até `ad93238`, sem conflitos; descrição atualizada. **Aguarda o merge do dono do projeto** (ele perguntou se precisa fazer: o Claude pode fazer pelo GitHub, mas só com autorização explícita). Contém: monorepo npm, `packages/hologram`, `apps/hologram-lab`, `packages/models`, `packages/core`, docs e as decisões 0008 a 0011.
 - **Próxima fase do roadmap:** fase 1 (Electron abrindo janela, chat por texto, 1 provedor, ferramentas só de leitura, registro). Ver `docs/10-roadmap.md`.
 
 ## Decisões tomadas nesta etapa
@@ -42,8 +42,14 @@ Descartado de vez: API direta do DeepSeek com dados pessoais (dados na China) e 
   - Laboratório: escolher o modelo muda o limite sozinho (Haiku 80 mil pelo degrau de preço; Sonnet e Opus 64 mil pelo orçamento do dia; desconhecido 15 mil); gastar mais aperta o limite. Os cenários usam frações do limite.
   - Correção em relação ao rascunho: a leitura de cache do Sonnet 5.5 é US$ 0,10 (página oficial), não 0,20.
 
+- **Compactação automática: implementada** (commits `3532e68` e `afc1462`).
+  - `packages/core/src/context`: limiares em pontos-base inteiros (`thresholds.ts`), limpeza de saídas antigas sem LLM com marcador gerado por código (`clearing.ts`), máquina de estados com resumo antecipado, reenchimento e disjuntor (`compaction.ts`), troca de modelo no meio da sessão (`planBudgetChange`) e notas do harness só com números (`notes.ts`). 52 testes novos (68 no pacote), que reproduzem os exemplos e casos do Apêndice B.
+  - Laboratório: a mesma máquina roda sobre um histórico simulado. Limpa em 60%, avisa e começa o resumo antecipado em 75%, compacta sozinho em 85%. Novo cenário "Disjuntor da compactação"; botões "compactar agora" e "continuar". Trocar de modelo limpa ou compacta com o modelo atual antes. Conferido no Chromium.
+  - Correção em relação ao rascunho: o piso do teto por passo é 256 tokens, não 512. Com 512, a garantia de dois passos de folga até o limite técnico falha entre L = 5.000 e 5.120.
+  - Ainda **não** feito da seção 5: o resumo em si (`validateSummary`, `renderSummaryBlock`, `collectUserRequests`, `buildActionLedger`, `selectTail`, `deterministicCompaction`, hierárquica, `sanitizeModelText`), o corte de resultado (`truncateToolResult`), `speculativeStillValid` e o adaptador de histórico por provedor (seção 6). Dependem dos itens do histórico reais, do mascaramento de segredos (`packages/shared`) e do Porteiro; entram com a fase 1.
+
 **Falta (nesta ordem):**
-1. Contexto, parte 2: compactação automática (`packages/core/src/context/compaction.ts`: limiares em pontos-base, limpeza de saídas antigas, máquina de estados com disjuntor; seção 5 da especificação), âncora no uso real e calibração (seção 7.2–7.4), livro de gastos (seção 8.2).
+1. Contexto, parte 3: âncora no uso real e calibração (seção 7.2–7.4) e livro de gastos (seção 8.2).
 2. Fazer a crítica do rascunho de **login** (segurança, qualidade e testabilidade), como foi feito com os outros três.
 3. Implementar, um pacote por vez, com testes: memória → login → subagentes. Ligar cada um ao holograma e trocar os controles manuais correspondentes do laboratório por simulação automática.
 4. Promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.
