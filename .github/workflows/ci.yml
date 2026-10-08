@@ -22,13 +22,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # O Node 24 LTS traz o npm 11.16+ exigido pelo package.json (engines e devEngines).
+      # O Node 24.18+ traz o npm 11.16+ exigido pelo package.json (engines e devEngines).
+      # Hoje o toolcache do runner tem o Node 24.21.0, com o npm 11.19.
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm
 
-      # Instala exatamente o package-lock.json; scripts de instalação só com aprovação (docs/03-seguranca.md, seção 3.14).
+      # Instala exatamente o package-lock.json, sem rodar scripts de dependências (docs/03-seguranca.md, seção 3.14).
       - run: npm ci
 
       - run: npm run lint
@@ -37,7 +38,7 @@ jobs:
       - run: npm run build
 
       - name: Publicar o protótipo do holograma
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hologram-lab
           path: apps/hologram-lab/dist

@@ -563,9 +563,11 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 
 ## 3.14 Cadeia de suprimentos
 
-- Fixar versões (`package-lock.json`) e revisar atualizações; `npm ci` no build.
-- Scripts de instalação bloqueados por padrão (`strict-allow-scripts` no `.npmrc`), liberados só para pacotes que precisam (ex.: módulos nativos, Electron) depois de revisar, com `npm approve-scripts` (vira uma entrada no campo `allowScripts` do `package.json`).
-- Dependabot ou Renovate + `npm audit`. Atualizar com um atraso proposital, esperando alguns dias depois que uma versão nova sai: pacotes sequestrados costumam ser removidos rápido. No projeto, `min-release-age=3` no `.npmrc` faz isso valer em toda instalação.
+- Fixar versões (`package-lock.json`) e revisar atualizações; `npm ci` no build. **Todo PR que muda o lockfile tem o diff revisado** (pacotes novos, versões, `hasInstallScript`).
+- Scripts de instalação de dependências **nunca rodam por padrão** (`ignore-scripts=true` no `.npmrc`). Isso cobre também o que a política `allowScripts` do npm 11 sozinha não pega: scripts de dependências embutidas (`bundleDependencies`) e compilação nativa implícita (`binding.gyp`), testados em 08/10/2026. Pacote que precisa de script (módulo nativo, binário baixado) é revisado e liberado um a um, por versão: `npm approve-scripts <pacote>` grava a aprovação no `package.json`, e `npm rebuild <pacote> --ignore-scripts=false` roda só ele, barrado pelo `strict-allow-scripts` se não estiver aprovado. Passo a passo em `CLAUDE.md`.
+- Dependabot ou Renovate + `npm audit`. Atualizar com um atraso proposital, esperando alguns dias depois que uma versão nova sai: pacotes sequestrados costumam ser removidos rápido. No projeto, `min-release-age=3` no `.npmrc` vale sempre que o npm **escolhe** versões (`npm install <pacote>`, `npm update`, lockfile novo); o que já está no lockfile é instalado como está, por isso a revisão do diff.
+- Pacotes internos (`@jesus/*`) vêm só do workspace: o escopo aponta para um registry inexistente no `.npmrc`, contra confusão de dependências (o escopo `@jesus` no npm público não é nosso).
+- O npm não acusa import de pacote não declarado (dependência "fantasma"), como o pnpm acusava: a revisão confere que cada pacote declara o que importa.
 - Modelos baixados (voz, embeddings, LLM local): só de fontes oficiais, conferindo o hash.
 - Servidores MCP: versão fixada e hash das definições (seção 3.8).
 - Build reproduzível no GitHub Actions; instalador assinado quando for distribuir.

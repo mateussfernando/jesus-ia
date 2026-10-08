@@ -11,7 +11,7 @@ Assistente pessoal de IA para Windows. Conversa por voz e texto em português, p
 
 ## Rodar o protótipo do holograma
 
-Requer Node.js 24 LTS (que já traz o npm 11). Com um npm mais antigo, atualize antes: `npm install -g npm@11`.
+Requer **Node.js 24.18 ou mais novo** (traz o npm 11.16+, exigido pelo projeto). O jeito mais simples é instalar o Node 24 LTS atual pelo site oficial, [nodejs.org](https://nodejs.org/). Confira com `npm -v`: se aparecer o erro `EBADDEVENGINES` ou uma versão menor que 11.16, atualize o Node ou rode `npm install -g npm@11.21.0`.
 
 ```bash
 npm install

@@ -5,7 +5,7 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | Nº | Decisão | Status |
 |---|---|---|
 | [0001](0001-harness-proprio-inspirado-no-claude-code.md) | Harness próprio, inspirado no Claude Code | aceita |
-| [0002](0002-typescript-e-electron.md) | TypeScript + Electron | aceita (o pnpm foi trocado pelo npm na 0009) |
+| [0002](0002-typescript-e-electron.md) | TypeScript + Electron | aceita (gerenciador de pacotes substituído pela 0009) |
 | [0003](0003-porteiro-fora-da-ia.md) | Porteiro de segurança fora da IA | aceita |
 | [0004](0004-postgresql-local.md) | PostgreSQL local embutido + pgvector | aceita |
 | [0005](0005-hardware-alvo.md) | Alvo de 8 a 16 GB de RAM, sem GPU dedicada | aceita |
@@ -19,7 +19,7 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 ```markdown
 # NNNN — Título curto
 
-- Status: proposta | aceita | substituída por NNNN
+- Status: proposta | aceita | substituída por NNNN | aceita (parte substituída por NNNN)
 - Data: DD/MM/AAAA
 
 ## Contexto

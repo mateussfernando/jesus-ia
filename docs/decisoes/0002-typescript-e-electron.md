@@ -1,6 +1,6 @@
 # 0002 — TypeScript + Electron
 
-- Status: aceita
+- Status: aceita (o gerenciador de pacotes foi substituído pela [0009](0009-npm-em-vez-de-pnpm.md))
 - Data: 07/10/2026
 
 ## Contexto

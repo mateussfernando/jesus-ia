@@ -38,6 +38,7 @@ TypeScript + Electron · alvo de 8 a 16 GB de RAM sem GPU dedicada · comandos d
 
 - Sessões na nuvem rodam em **Linux**: não dá para testar microfone, janelas do Windows, DPAPI, a contenção de processos do Windows nem o `.exe`. Mantenha a lógica em pacotes testáveis em Linux; testes específicos do Windows e o build do `.exe` rodam no GitHub Actions (`windows-latest`).
 - Nunca commitar segredos (`.env*`, chaves, tokens, bancos). O `.gitignore` já cobre os casos comuns.
+- A imagem da nuvem vem com Node 22 e npm 10, que o projeto recusa (`EBADDEVENGINES`). Antes de instalar ou testar: `npm install -g npm@11.21.0` (versão exata e já madura; a instalação global não passa pelo `min-release-age` do projeto).
 
 ## Git
 
@@ -62,13 +63,14 @@ TypeScript + Electron · alvo de 8 a 16 GB de RAM sem GPU dedicada · comandos d
 
 ## Comandos
 
-Gerenciador: **npm 11.16 ou mais novo** (workspaces). Não use pnpm nem yarn.
+Gerenciador: **npm 11.16 ou mais novo** (workspaces). Não use pnpm nem yarn. Regras em `.npmrc` e na decisão 0009.
 
-- `npm install`: instala (só versões publicadas há 3 dias ou mais; scripts de instalação só de pacotes aprovados em `allowScripts`).
+- `npm install`: instala. Versões novas só entram com 3 dias ou mais de publicadas, e nenhum script de instalação de dependência roda.
 - `npm run dev:hologram`: abre o laboratório do holograma em `http://localhost:5173`.
 - `npm run lint` · `npm run typecheck` · `npm test` · `npm run build`: o mesmo que o CI roda (o CI usa `npm ci`).
-- Dependência nova num pacote: `npm install <pacote> --workspace=@jesus/hologram` (ou `-w apps/hologram-lab`).
-- Pacote que precisa de script de instalação: revise e aprove com `npm approve-scripts <pacote>` (nunca `--dangerously-allow-all-scripts`).
+- Dependência nova num pacote: `npm install <pacote> -w packages/hologram` (ou `-w apps/hologram-lab`). Revise o diff do `package-lock.json` no PR.
+- Dependência entre pacotes do projeto: declare como `"@jesus/<pacote>": "*"` (o npm não tem o protocolo `workspace:`).
+- Pacote que precisa de script de instalação (módulo nativo, binário baixado): (1) revise o pacote; (2) `npm install <pacote>@<versão> -w <workspace>` (o script não roda); (3) `npm approve-scripts <pacote>` na raiz, que grava `pacote@versão` em `allowScripts`; (4) `npm rebuild <pacote> --ignore-scripts=false`, **sempre com o nome do pacote**. Cada versão nova precisa de aprovação nova. Nunca use `--dangerously-allow-all-scripts`.
 - `npm run build:win`: ainda não existe (chega com o Electron, na fase 1).
 
 ## Estrutura

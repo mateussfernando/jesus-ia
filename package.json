@@ -7,13 +7,13 @@
     "apps/*"
   ],
   "engines": {
-    "node": ">=22.9",
+    "node": "^22.13.0 || >=24",
     "npm": ">=11.16.0"
   },
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": ">=22.9",
+      "version": "^22.13.0 || >=24",
       "onFail": "error"
     },
     "packageManager": {
@@ -22,7 +22,9 @@
       "onFail": "error"
     }
   },
-  "allowScripts": {},
+  "allowScripts": {
+    "fsevents": false
+  },
   "scripts": {
     "dev:hologram": "npm run dev --workspace=@jesus/hologram-lab",
     "build": "npm run build --workspaces --if-present",
