@@ -1,10 +1,12 @@
 # Jesus — assistente pessoal de IA (desktop Windows)
 
-Antes de qualquer tarefa, leia `docs/03-seguranca.md` (no mínimo a seção 3.0, as invariantes) e o documento da área que vai mexer. Índice: `docs/README.md`.
+**Sempre, antes de qualquer tarefa:** leia `docs/progresso.md` (o diário de bordo: onde paramos, o que está em andamento e o que falta). Ao terminar cada etapa, atualize esse arquivo e faça commit, para que outra sessão consiga continuar. O gancho de início de sessão (`.claude/hooks/session-start.sh`) já mostra o diário automaticamente.
+
+Depois, leia `docs/03-seguranca.md` (no mínimo a seção 3.0, as invariantes) e o documento da área que vai mexer. Índice: `docs/README.md`.
 
 ## Estado atual
 
-Fase 0 (holograma) concluída e aprovada: `packages/hologram` (componente) e `apps/hologram-lab` (protótipo web com dados falsos). Próximos passos e critérios de "pronto" estão em `docs/10-roadmap.md`. Trabalhe **uma fase (ou um pacote) por vez**.
+Fase 0 (holograma) concluída e aprovada: `packages/hologram` (componente) e `apps/hologram-lab` (protótipo web com dados falsos). Em andamento: algoritmos automáticos (contexto por modelo, subagentes, memória e login), com rascunhos em `docs/rascunhos/`. Detalhes e próximos passos em `docs/progresso.md`; fases e critérios de "pronto" em `docs/10-roadmap.md`. Trabalhe **uma fase (ou um pacote) por vez**.
 
 ## O que é
 
@@ -38,7 +40,7 @@ TypeScript + Electron · alvo de 8 a 16 GB de RAM sem GPU dedicada · comandos d
 
 - Sessões na nuvem rodam em **Linux**: não dá para testar microfone, janelas do Windows, DPAPI, a contenção de processos do Windows nem o `.exe`. Mantenha a lógica em pacotes testáveis em Linux; testes específicos do Windows e o build do `.exe` rodam no GitHub Actions (`windows-latest`).
 - Nunca commitar segredos (`.env*`, chaves, tokens, bancos). O `.gitignore` já cobre os casos comuns.
-- A imagem da nuvem vem com Node 22 e npm 10, que o projeto recusa (`EBADDEVENGINES`). Antes de instalar ou testar: `npm install -g npm@11.21.0` (versão exata e já madura; a instalação global não passa pelo `min-release-age` do projeto).
+- A imagem da nuvem vem com Node 22 e npm 10, que o projeto recusa (`EBADDEVENGINES`). O gancho de início de sessão instala o `npm@11.21.0` (versão exata e já madura; a instalação global não passa pelo `min-release-age` do projeto) e as dependências. Se ele avisar que falhou, rode à mão: `npm install -g npm@11.21.0 && npm install`.
 
 ## Git
 
@@ -77,6 +79,8 @@ Gerenciador: **npm 11.16 ou mais novo** (workspaces). Não use pnpm nem yarn. Re
 
 - `packages/hologram`: holograma (React Three Fiber). Lógica pura e testável em `model.ts`, `visual.ts`, `geometry.ts` e `describe.ts`; shaders em `shaders.ts`; cena em `react/`.
 - `apps/hologram-lab`: protótipo da fase 0 (Vite + React + Zustand) com cenários roteirizados em `src/scenarios.ts`.
+- `docs/progresso.md`: diário de bordo (andamento entre sessões). `docs/rascunhos/`: especificações em rascunho, ainda não promovidas a documentação oficial.
+- `.claude/`: `settings.json` registra o gancho de início de sessão (`hooks/session-start.sh`).
 
 ## Ao terminar uma tarefa
 
