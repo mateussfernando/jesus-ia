@@ -1,5 +1,7 @@
 import { priceAt, priceTierStarts } from '@jesus/models';
 import type { ModelCard, ResolvedPrice } from '@jesus/models';
+import { deriveThresholds } from './thresholds';
+import type { Thresholds } from './thresholds';
 
 /**
  * Orçamento automático de contexto por modelo (docs/rascunhos/algoritmo-contexto.md, seção 4).
@@ -83,6 +85,8 @@ export interface ContextBudget {
   technicalLimit: number;
   /** Início da faixa de preço que limitou o teto (0 se nenhuma). */
   priceTierStart: number;
+  /** Quando limpar, avisar e compactar (seção 5.1). */
+  thresholds: Thresholds;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -258,6 +262,7 @@ export function computeContextBudget(input: ContextBudgetInput): ContextBudget {
     if (candidate.cap < chosen.cap) chosen = candidate; // estrito: em empate, fica o que veio antes
   }
   const operationalCap = Math.min(chosen.cap, inputMax);
+  const limit = Math.max(0, operationalCap - fixed);
 
   return {
     modelKey: card.key,
@@ -271,9 +276,10 @@ export function computeContextBudget(input: ContextBudgetInput): ContextBudget {
     capReason: chosen.reason,
     pressureBand: cost.band,
     fixedTokens: fixed,
-    limit: Math.max(0, operationalCap - fixed),
+    limit,
     technicalLimit: Math.max(0, inputMax - fixed),
     priceTierStart: chosen.reason === 'price_tier' ? cost.tierStart : 0,
+    thresholds: deriveThresholds({ limit, inputMax, fixedTokens: fixed }),
   };
 }
 

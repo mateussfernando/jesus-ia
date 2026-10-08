@@ -1,2 +1,7 @@
 export * from './context/budget';
+export * from './context/clearing';
+export * from './context/compaction';
 export * from './context/describe';
+export * from './context/items';
+export * from './context/notes';
+export * from './context/thresholds';
