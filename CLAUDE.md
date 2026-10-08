@@ -85,6 +85,12 @@ Gerenciador: **npm 11.16 ou mais novo** (workspaces). Não use pnpm nem yarn. Re
 - `docs/progresso.md`: diário de bordo (andamento entre sessões). `docs/rascunhos/`: especificações em rascunho, ainda não promovidas a documentação oficial.
 - `.claude/`: `settings.json` registra o gancho de início de sessão (`hooks/session-start.sh`).
 
+## Uso (pedido do dono do projeto)
+
+- Trabalhe sem "ultracode" e sem fluxos de muitos agentes por padrão: eles gastam muito do limite de uso.
+- **Recomende o ultracode ao dono** (sem ligar por conta própria) quando a tarefa pedir revisão independente: Porteiro e regras de segurança, contenção de comandos, cofre e segredos, migrações de banco, coleção de ataques, ou um bug difícil que resistiu a duas tentativas.
+- Prefira uma sessão nova por etapa; o diário de bordo garante a continuidade.
+
 ## Ao terminar uma tarefa
 
 Rode os testes, atualize o documento afetado e descreva os riscos no PR.
