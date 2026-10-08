@@ -20,7 +20,7 @@
 
 **A ordem importa: o Porteiro vem antes de o Jesus ganhar acesso ao terminal e às contas.**
 
-**Andamento (07/10/2026):** fase 0 implementada (`packages/hologram` + `apps/hologram-lab`, seção [8.8](08-holograma.md)). Falta você medir os 60 fps no seu PC e aprovar a identidade visual.
+**Andamento (08/10/2026):** fase 0 **concluída** (`packages/hologram` + `apps/hologram-lab`, seção [8.8](08-holograma.md)). O dono do projeto aprovou a identidade visual e mediu 75 fps (o máximo da tela) num PC de 8 GB com placa de vídeo dedicada; em GPU integrada ainda não foi medido.
 
 ## 10.2 Usando os créditos do Claude Code na nuvem
 

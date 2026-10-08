@@ -57,7 +57,7 @@ Resumo da seção [3.12](03-seguranca.md): cartões de confirmação num compone
 
 ## 8.8 Protótipo da fase 0
 
-**Status (07/10/2026):** implementado; aguardando a sua aprovação da identidade visual (critério da fase 0, seção [10.1](10-roadmap.md)).
+**Status (08/10/2026):** aprovado pelo dono do projeto: 75 fps (o máximo da tela) num PC de 8 GB com placa de vídeo dedicada. Em GPU integrada ainda não foi medido; o modo leve automático continua valendo para esse caso.
 
 ### Onde está
 

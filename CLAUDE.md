@@ -4,7 +4,7 @@ Antes de qualquer tarefa, leia `docs/03-seguranca.md` (no mínimo a seção 3.0,
 
 ## Estado atual
 
-Fase 0 (holograma) implementada e aguardando a aprovação visual do dono do projeto: `packages/hologram` (componente) e `apps/hologram-lab` (protótipo web com dados falsos). Próximos passos e critérios de "pronto" estão em `docs/10-roadmap.md`. Trabalhe **uma fase (ou um pacote) por vez**.
+Fase 0 (holograma) concluída e aprovada: `packages/hologram` (componente) e `apps/hologram-lab` (protótipo web com dados falsos). Próximos passos e critérios de "pronto" estão em `docs/10-roadmap.md`. Trabalhe **uma fase (ou um pacote) por vez**.
 
 ## O que é
 

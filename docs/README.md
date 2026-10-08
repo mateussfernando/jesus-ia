@@ -2,7 +2,7 @@
 
 Assistente pessoal de IA para Windows, inspirado no JARVIS e na arquitetura do Claude Code.
 
-> **Status (07/10/2026):** fase 0 (protótipo do holograma) implementada; aguardando a aprovação visual. Detalhes na seção [8.8](08-holograma.md).
+> **Status (08/10/2026):** fase 0 (protótipo do holograma) concluída e aprovada. Detalhes na seção [8.8](08-holograma.md).
 
 ## Por onde começar
 
