@@ -45,7 +45,7 @@
 - Conversas guardadas por **90 dias** (seção [5.7](05-dados-postgresql.md)).
 - Voz local: **Parakeet** (STT) e **Piper** (TTS).
 
-**Decidido em 08/10/2026:** primeiro cérebro = **DeepSeek V4.1-Flash hospedado na DeepInfra** (EUA), não a API direta do DeepSeek, por causa da privacidade ([decisão 0010](decisoes/0010-primeiro-modelo-deepseek-via-deepinfra.md)).
+**Decidido em 08/10/2026:** primeiro cérebro = **Claude Haiku 5.5** ([decisão 0011](decisoes/0011-primeiro-modelo-claude-haiku.md)), o mais barato com privacidade entre as opções comparadas. A primeira escolha, o DeepSeek na DeepInfra ([0010](decisoes/0010-primeiro-modelo-deepseek-via-deepinfra.md)), saiu mais cara que o esperado.
 
 **Em aberto:**
 

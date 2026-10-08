@@ -1,6 +1,6 @@
 # 0010 — Primeiro modelo: DeepSeek V4.1-Flash hospedado na DeepInfra
 
-- Status: aceita
+- Status: substituída por [0011](0011-primeiro-modelo-claude-haiku.md)
 - Data: 08/10/2026
 
 ## Contexto
