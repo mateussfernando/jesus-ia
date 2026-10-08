@@ -26,6 +26,8 @@ Assistente pessoal de IA para Windows, inspirado no JARVIS e na arquitetura do C
 | — | [prompts.md](prompts.md) | rascunhos do prompt do Jesus (Apêndice A) e do Porteiro (Apêndice B) |
 | — | [referencias.md](referencias.md) | fontes (Apêndice D) |
 | — | [decisoes/](decisoes/) | registro de decisões (ADR) |
+| — | [progresso.md](progresso.md) | **diário de bordo**: onde paramos, o que está em andamento e o que falta (leia antes de qualquer tarefa) |
+| — | [rascunhos/](rascunhos/) | especificações em rascunho, ainda não promovidas a documentação oficial |
 
 ## Convenções
 
