@@ -45,7 +45,9 @@
 - Conversas guardadas por **90 dias** (seção [5.7](05-dados-postgresql.md)).
 - Voz local: **Parakeet** (STT) e **Piper** (TTS).
 
+**Decidido em 08/10/2026:** primeiro cérebro = **DeepSeek V4.1-Flash hospedado na DeepInfra** (EUA), não a API direta do DeepSeek, por causa da privacidade ([decisão 0010](decisoes/0010-primeiro-modelo-deepseek-via-deepinfra.md)).
+
 **Em aberto:**
 
-1. Quais **provedores de IA** primeiro? De quais você já tem chave? (necessário para conversar com o Jesus no fim da fase 1)
+1. **Modelo do Porteiro** (classificador de risco): não será o DeepSeek. Decidir na fase 2.
 2. **Distribuir** para outras pessoas um dia? Muda a verificação do Google, a assinatura do instalador e as licenças (o Piper é GPL-3.0). Pode esperar.

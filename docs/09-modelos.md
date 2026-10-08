@@ -8,6 +8,8 @@
 - **Provedores:** Anthropic, OpenAI, Google, Mistral, Groq, DeepSeek, xAI, OpenRouter (uma chave para centenas de modelos) e modelos locais (Ollama, LM Studio) via API compatível com a da OpenAI.
 - Tudo passa pelo AI SDK, que padroniza mensagens, ferramentas e streaming.
 - Prefira conexão **direta** com cada provedor, ou o OpenRouter se quiser uma chave só, mantendo o princípio de local primeiro.
+- **Escolha atual (08/10/2026):** cérebro = DeepSeek V4.1-Flash na **DeepInfra** (`@ai-sdk/deepinfra`, modelo `deepseek-ai/DeepSeek-V4.1-Flash`). A API direta do DeepSeek guarda os dados na China e pode usá-los para treinar, por isso não é usada com dados pessoais ([decisão 0010](decisoes/0010-primeiro-modelo-deepseek-via-deepinfra.md)).
+- A **janela de contexto depende do par provedor + modelo**, não só do modelo (o mesmo DeepSeek tem 1 milhão de tokens na DeepInfra e cerca de 164 mil em outros provedores). O registro de capacidades (9.3) guarda a janela por provedor, e é ela que define o limite automático do holograma.
 
 ## 9.2 Papéis
 

@@ -13,6 +13,7 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0007](0007-padroes-iniciais.md) | Padrões iniciais (nomes, uso pessoal, contas, retenção, voz) | aceita |
 | [0008](0008-holograma-como-pacote-e-laboratorio.md) | Holograma como pacote próprio, com laboratório web | aceita (a parte do pnpm foi substituída pela 0009) |
 | [0009](0009-npm-em-vez-de-pnpm.md) | npm workspaces em vez de pnpm | aceita |
+| [0010](0010-primeiro-modelo-deepseek-via-deepinfra.md) | Primeiro modelo: DeepSeek V4.1-Flash na DeepInfra | aceita |
 
 ## Modelo
 
