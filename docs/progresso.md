@@ -61,6 +61,10 @@ Descartado de vez: API direta do DeepSeek com dados pessoais (dados na China) e 
 
 ## Ambiente e armadilhas
 
+- **Commits sempre na conta do dono** (`Mateus Fernando <mateusfss368@gmail.com>`), pedido dele. A imagem da nuvem vem com o git configurado como "Claude"; o gancho de início de sessão corrige isso.
+  - Os 14 primeiros commits do PR #1 saíram como "Claude".
+  - Uma versão com o autor certo (mesmo conteúdo e mesmas mensagens) está pronta, mas só sobe com push forçado, que o sistema de segurança da sessão bloqueou. **Aguarda a decisão do dono**: autorizar o push forçado ou fazer o merge como está.
+
 - Sessões na nuvem vêm com npm 10, que o projeto recusa: rodar `npm install -g npm@11.21.0` antes de `npm ci`.
 - O proxy da nuvem bloqueia os sites do DeepSeek, DeepInfra e Fireworks (pesquisa só por buscador). O site de docs da Anthropic abre.
 - O servidor da nuvem tem 4 CPUs: workflows com muitos agentes rodam só 2 por vez.

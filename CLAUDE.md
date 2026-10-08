@@ -45,6 +45,7 @@ TypeScript + Electron · alvo de 8 a 16 GB de RAM sem GPU dedicada · comandos d
 ## Git
 
 - Trabalhe em branch e abra PR; não faça push direto na `main`.
+- Todo commit sai na conta do dono do projeto: autor e committer `Mateus Fernando <mateusfss368@gmail.com>`, nunca "Claude". Na nuvem, o gancho de início de sessão já configura o git assim; confira com `git config user.name` antes do primeiro commit.
 - Não adicione linha `Co-Authored-By` nos commits (preferência do dono do projeto).
 - Mensagens de commit no padrão *Conventional Commits*: `tipo(escopo opcional): descrição`. O tipo é em inglês e a descrição em português, no imperativo, curta e sem ponto final. Ex.: `feat(gate): adiciona regras deny/ask/allow`, `fix(db): corrige migração da tabela memories`.
 
