@@ -185,14 +185,24 @@ export const scenarios: readonly Scenario[] = [
   },
   {
     id: 'compaction',
-    title: 'Contexto cheio e compactação',
-    description: 'A esfera cresce até o contorno tracejado, colapsa para o núcleo e vira memória (estrelas).',
+    title: 'Contexto cheio e compactação automática',
+    description: 'A conversa cresce e o Jesus age sozinho: limpa saídas antigas, avisa e compacta.',
     steps: [
-      { at: 0, actions: [{ type: 'state', state: 'thinking' }, { type: 'contextRatio', ratio: 0.6 }], caption: 'Conversa longa: a esfera cresce com o contexto em uso.' },
-      { at: 2200, actions: [{ type: 'contextRatio', ratio: 0.83 }] },
-      { at: 4000, actions: [{ type: 'contextRatio', ratio: 0.96 }], caption: 'Perto do limite do modelo (contorno tracejado).' },
-      { at: 6000, actions: [{ type: 'state', state: 'compacting' }], caption: 'Compactando: colapso para o núcleo.' },
-      { at: 9000, actions: [{ type: 'contextRatio', ratio: 0.14 }, { type: 'memories', add: 6 }, { type: 'state', state: 'idle' }], caption: 'O que era importante virou memória de longo prazo: estrelas novas no fundo.' },
+      { at: 0, actions: [{ type: 'state', state: 'thinking' }, { type: 'contextRatio', ratio: 0.45 }], caption: 'Conversa longa: a esfera cresce com o contexto em uso.' },
+      { at: 2500, actions: [{ type: 'state', state: 'executing' }, { type: 'contextRatio', ratio: 0.66 }] },
+      { at: 5500, actions: [{ type: 'contextRatio', ratio: 0.79 }] },
+      { at: 8500, actions: [{ type: 'state', state: 'thinking' }, { type: 'contextRatio', ratio: 0.9 }] },
+      { at: 12500, actions: [{ type: 'state', state: 'idle' }] },
+    ],
+  },
+  {
+    id: 'breaker',
+    title: 'Disjuntor da compactação',
+    description: 'Uma ferramenta enche o contexto logo depois de cada compactação; na segunda vez, o Jesus para e pergunta.',
+    steps: [
+      { at: 0, actions: [{ type: 'state', state: 'executing' }, { type: 'contextRatio', ratio: 0.9 }], caption: 'Uma ferramenta devolve texto demais: o contexto chega a 90%.' },
+      { at: 3500, actions: [{ type: 'contextRatio', ratio: 0.92 }] },
+      { at: 7000, actions: [{ type: 'contextRatio', ratio: 0.93 }] },
     ],
   },
   {
@@ -222,7 +232,7 @@ export const scenarios: readonly Scenario[] = [
     title: 'Orçamento do dia',
     description: 'O anel de gasto fica âmbar em 80% e vermelho em 100%.',
     steps: [
-      { at: 0, actions: [{ type: 'spend', todayUsd: 2.5 }, { type: 'state', state: 'executing' }], caption: 'Anel de gasto: custo do dia comparado ao seu limite.' },
+      { at: 0, actions: [{ type: 'spend', todayUsd: 2.5 }, { type: 'contextRatio', ratio: 0.3 }, { type: 'state', state: 'executing' }], caption: 'Anel de gasto: custo do dia comparado ao seu limite.' },
       { at: 2500, actions: [{ type: 'spend', todayUsd: 4.1 }], caption: 'Acima de 80%: alerta âmbar.' },
       { at: 5000, actions: [{ type: 'spend', todayUsd: 5 }, { type: 'state', state: 'blocked' }], caption: '100%: as tarefas param (vermelho).' },
       { at: 8000, actions: [{ type: 'spend', todayUsd: 1.2 }, { type: 'state', state: 'idle' }], caption: 'Limite reajustado.' },

@@ -334,3 +334,12 @@ input[type='range'] {
   line-height: 1.45;
   color: var(--silver-dark);
 }
+
+.note-warn {
+  color: var(--amber);
+}
+
+.chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

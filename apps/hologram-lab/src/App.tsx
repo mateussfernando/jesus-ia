@@ -10,6 +10,7 @@ import {
   taintLabels,
 } from '@jesus/hologram';
 import type { PulseKind, QualityLevel, QualityPreference, Taint } from '@jesus/hologram';
+import { describeCompactionState } from '@jesus/core';
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { describeLabBudget, labModels } from './autoContext';
@@ -38,6 +39,9 @@ export function App() {
   const snapshot = useLabStore((s) => s.snapshot);
   const modelKey = useLabStore((s) => s.modelKey);
   const setModel = useLabStore((s) => s.setModel);
+  const compaction = useLabStore((s) => s.engine.state);
+  const requestCompaction = useLabStore((s) => s.requestCompaction);
+  const continueAfterTrip = useLabStore((s) => s.continueAfterTrip);
   const caption = useLabStore((s) => s.caption);
   const running = useLabStore((s) => s.runningScenario);
   const dispatch = useLabStore((s) => s.dispatch);
@@ -155,6 +159,24 @@ export function App() {
             ))}
           </div>
           <p className="note">{describeLabBudget(modelKey, snapshot)}</p>
+          <p className={`note ${compaction.phase === 'tripped' ? 'note-warn' : ''}`} aria-live="polite">
+            {describeCompactionState(compaction)}
+          </p>
+          <div className="chips">
+            <button
+              type="button"
+              className="chip small"
+              disabled={compaction.phase === 'compacting' || compaction.phase === 'tripped'}
+              onClick={requestCompaction}
+            >
+              compactar agora
+            </button>
+            {compaction.phase === 'tripped' && (
+              <button type="button" className="chip small chip-awaiting on" onClick={continueAfterTrip}>
+                continuar
+              </button>
+            )}
+          </div>
         </Section>
 
         <Section title="Gasto do dia">

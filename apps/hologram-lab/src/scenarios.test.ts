@@ -27,7 +27,8 @@ describe('cenários da fase 0', () => {
   });
 
   it('todo cenário termina sem alerta e com a tarefa limpa', () => {
-    for (const scenario of scenarios) {
+    // O do disjuntor termina esperando você de propósito (quem trava é a compactação automática; ver autoCompaction.test.ts).
+    for (const scenario of scenarios.filter((s) => s.id !== 'breaker')) {
       let snapshot = initialSnapshot;
       for (const step of scenario.steps) for (const action of step.actions) snapshot = applyAction(snapshot, action, step.at);
       expect(['idle', 'speaking']).toContain(snapshot.state);
