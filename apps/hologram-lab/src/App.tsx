@@ -12,10 +12,10 @@ import {
 import type { PulseKind, QualityLevel, QualityPreference, Taint } from '@jesus/hologram';
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { describeLabBudget, labModels } from './autoContext';
 import { satelliteCatalog, scenarios } from './scenarios';
 import { useLabStore } from './store';
 
-const contextLimits = [128_000, 200_000, 1_000_000] as const;
 const taints: readonly Taint[] = ['clean', 'tainted', 'suspicious'];
 const taintShort: Record<Taint, string> = { clean: 'Limpa', tainted: 'Contaminada', suspicious: 'Suspeita' };
 const pulseButtons: readonly { kind: PulseKind; label: string; title: string }[] = [
@@ -36,6 +36,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 export function App() {
   const snapshot = useLabStore((s) => s.snapshot);
+  const modelKey = useLabStore((s) => s.modelKey);
+  const setModel = useLabStore((s) => s.setModel);
   const caption = useLabStore((s) => s.caption);
   const running = useLabStore((s) => s.runningScenario);
   const dispatch = useLabStore((s) => s.dispatch);
@@ -124,7 +126,7 @@ export function App() {
           </div>
         </Section>
 
-        <Section title="Contexto">
+        <Section title="Contexto (limite automático pelo modelo)">
           <label className="slider">
             <span>
               {formatPercent(contextPercent / 100)} · {formatTokens(snapshot.context.usedTokens)} de {formatTokens(snapshot.context.limitTokens)}
@@ -139,19 +141,20 @@ export function App() {
               }
             />
           </label>
-          <div className="chips">
-            {contextLimits.map((limit) => (
+          <div className="chips" role="group" aria-label="Modelo de IA (o limite é automático)">
+            {labModels.map((model) => (
               <button
                 type="button"
-                key={limit}
-                className={`chip ${snapshot.context.limitTokens === limit ? 'on' : ''}`}
-                aria-pressed={snapshot.context.limitTokens === limit}
-                onClick={() => dispatch({ type: 'contextLimit', limitTokens: limit })}
+                key={model.key}
+                className={`chip ${modelKey === model.key ? 'on' : ''}`}
+                aria-pressed={modelKey === model.key}
+                onClick={() => setModel(model.key)}
               >
-                limite {formatTokens(limit)}
+                {model.label}
               </button>
             ))}
           </div>
+          <p className="note">{describeLabBudget(modelKey, snapshot)}</p>
         </Section>
 
         <Section title="Gasto do dia">

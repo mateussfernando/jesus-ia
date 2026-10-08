@@ -1,13 +1,18 @@
 import type { HologramSnapshot } from '@jesus/hologram';
 import { create } from 'zustand';
+import { DEFAULT_MODEL, withAutoLimit } from './autoContext';
+import type { LabModelKey } from './autoContext';
 import { applyAction, initialSnapshot, prunePulses, scenarios } from './scenarios';
 import type { LabAction, Scenario } from './scenarios';
 
 interface LabStore {
   snapshot: HologramSnapshot;
+  /** Modelo simulado: define o limite de contexto automaticamente. */
+  modelKey: LabModelKey;
   caption: string | null;
   runningScenario: string | null;
   dispatch: (action: LabAction) => void;
+  setModel: (key: LabModelKey) => void;
   reset: () => void;
   runScenario: (id: string) => void;
   stopScenario: () => void;
@@ -22,15 +27,20 @@ function clearTimers(): void {
 }
 
 export const useLabStore = create<LabStore>((set, get) => ({
-  snapshot: initialSnapshot,
+  snapshot: withAutoLimit(initialSnapshot, DEFAULT_MODEL),
+  modelKey: DEFAULT_MODEL,
   caption: null,
   runningScenario: null,
 
-  dispatch: (action) => set((s) => ({ snapshot: applyAction(s.snapshot, action, performance.now()) })),
+  // Depois de cada mudança, o limite é recalculado (ex.: gastar mais aperta o limite).
+  dispatch: (action) =>
+    set((s) => ({ snapshot: withAutoLimit(applyAction(s.snapshot, action, performance.now()), s.modelKey) })),
+
+  setModel: (key) => set((s) => ({ modelKey: key, snapshot: withAutoLimit(s.snapshot, key) })),
 
   reset: () => {
     clearTimers();
-    set({ snapshot: initialSnapshot, caption: null, runningScenario: null });
+    set((s) => ({ snapshot: withAutoLimit(initialSnapshot, s.modelKey), caption: null, runningScenario: null }));
   },
 
   runScenario: (id) => {
@@ -43,7 +53,10 @@ export const useLabStore = create<LabStore>((set, get) => ({
         setTimeout(() => {
           const now = performance.now();
           set((s) => ({
-            snapshot: step.actions.reduce((snap, action) => applyAction(snap, action, now), s.snapshot),
+            snapshot: withAutoLimit(
+              step.actions.reduce((snap, action) => applyAction(snap, action, now), s.snapshot),
+              s.modelKey,
+            ),
             caption: step.caption ?? s.caption,
           }));
         }, step.at),

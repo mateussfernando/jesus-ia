@@ -327,3 +327,10 @@ input[type='range'] {
     transition: none !important;
   }
 }
+
+.note {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--silver-dark);
+}

@@ -10,6 +10,8 @@ export type LabAction =
   | { type: 'pulse'; satelliteId: string; kind: PulseKind }
   | { type: 'taint'; taint: Taint }
   | { type: 'context'; usedTokens: number }
+  /** Uso como fração do limite atual (o limite muda com o modelo, então os cenários usam frações). */
+  | { type: 'contextRatio'; ratio: number }
   | { type: 'contextLimit'; limitTokens: number }
   | { type: 'spend'; todayUsd: number }
   | { type: 'subagents'; count: number }
@@ -84,6 +86,10 @@ export function applyAction(snapshot: HologramSnapshot, action: LabAction, now: 
         ...snapshot,
         context: { ...snapshot.context, usedTokens: clampInt(action.usedTokens, 0, snapshot.context.limitTokens) },
       };
+    case 'contextRatio': {
+      const ratio = Number.isFinite(action.ratio) ? Math.min(1, Math.max(0, action.ratio)) : 0;
+      return { ...snapshot, context: { ...snapshot.context, usedTokens: Math.round(ratio * snapshot.context.limitTokens) } };
+    }
     case 'contextLimit': {
       const limitTokens = Math.max(1, Math.round(action.limitTokens));
       return {
@@ -138,12 +144,12 @@ export const scenarios: readonly Scenario[] = [
     description: 'O exemplo da seção 6.7: ouvir, consultar a agenda, criar o evento e responder.',
     steps: [
       { at: 0, actions: [ensureGoogle, { type: 'taint', taint: 'clean' }, { type: 'state', state: 'listening' }], caption: 'Você: “Ei, Jesus, marca dentista sexta às 15h.”' },
-      { at: 2600, actions: [{ type: 'state', state: 'thinking' }, { type: 'context', usedTokens: 46_000 }], caption: 'Pensando: o núcleo acelera.' },
+      { at: 2600, actions: [{ type: 'state', state: 'thinking' }, { type: 'contextRatio', ratio: 0.25 }], caption: 'Pensando: o núcleo acelera.' },
       { at: 4200, actions: [{ type: 'state', state: 'executing' }, { type: 'pulse', satelliteId: 'google', kind: 'action' }], caption: 'agenda.listar(sex 09/10): leitura, faixa automática. Pulso indo = ação.' },
       { at: 5400, actions: [{ type: 'pulse', satelliteId: 'google', kind: 'data' }], caption: 'Pulso voltando = dados: horário livre.' },
       { at: 6800, actions: [{ type: 'pulse', satelliteId: 'google', kind: 'action' }, { type: 'spend', todayUsd: 1.24 }], caption: 'agenda.criar("Dentista", 09/10 15:00): evento só seu, risco baixo.' },
       { at: 8200, actions: [{ type: 'pulse', satelliteId: 'google', kind: 'data' }] },
-      { at: 9000, actions: [{ type: 'state', state: 'speaking' }, { type: 'context', usedTokens: 48_500 }], caption: 'Jesus: “Marquei dentista sexta, dia 9, às 15h.”' },
+      { at: 9000, actions: [{ type: 'state', state: 'speaking' }, { type: 'contextRatio', ratio: 0.28 }], caption: 'Jesus: “Marquei dentista sexta, dia 9, às 15h.”' },
       { at: 12500, actions: [{ type: 'state', state: 'idle' }] },
     ],
   },
@@ -155,7 +161,7 @@ export const scenarios: readonly Scenario[] = [
       { at: 0, actions: [ensureGoogle, { type: 'taint', taint: 'clean' }, { type: 'state', state: 'listening' }], caption: 'Você: “Resume meus e-mails de hoje.”' },
       { at: 2200, actions: [{ type: 'state', state: 'thinking' }], caption: 'Pensando.' },
       { at: 3300, actions: [{ type: 'state', state: 'executing' }, { type: 'pulse', satelliteId: 'google', kind: 'action' }], caption: 'gmail.listar(hoje): leitura permitida.' },
-      { at: 4500, actions: [{ type: 'pulse', satelliteId: 'google', kind: 'data' }, { type: 'context', usedTokens: 71_000 }] },
+      { at: 4500, actions: [{ type: 'pulse', satelliteId: 'google', kind: 'data' }, { type: 'contextRatio', ratio: 0.45 }] },
       { at: 5700, actions: [{ type: 'taint', taint: 'tainted' }], caption: 'Leu e-mails (conteúdo externo): tarefa contaminada. Chiado cinza nas partículas.' },
       { at: 8000, actions: [{ type: 'pulse', satelliteId: 'google', kind: 'blocked' }], caption: 'agenda.atualizar(convidado: atacante@x.com): destinatário veio de um e-mail…' },
       { at: 8460, actions: [{ type: 'state', state: 'blocked' }], caption: 'BLOQUEADO no Porteiro (losango). Nada foi executado.' },
@@ -182,11 +188,11 @@ export const scenarios: readonly Scenario[] = [
     title: 'Contexto cheio e compactação',
     description: 'A esfera cresce até o contorno tracejado, colapsa para o núcleo e vira memória (estrelas).',
     steps: [
-      { at: 0, actions: [{ type: 'state', state: 'thinking' }, { type: 'context', usedTokens: 120_000 }], caption: 'Conversa longa: a esfera cresce com o contexto em uso.' },
-      { at: 2200, actions: [{ type: 'context', usedTokens: 165_000 }] },
-      { at: 4000, actions: [{ type: 'context', usedTokens: 192_000 }], caption: 'Perto do limite do modelo (contorno tracejado).' },
+      { at: 0, actions: [{ type: 'state', state: 'thinking' }, { type: 'contextRatio', ratio: 0.6 }], caption: 'Conversa longa: a esfera cresce com o contexto em uso.' },
+      { at: 2200, actions: [{ type: 'contextRatio', ratio: 0.83 }] },
+      { at: 4000, actions: [{ type: 'contextRatio', ratio: 0.96 }], caption: 'Perto do limite do modelo (contorno tracejado).' },
       { at: 6000, actions: [{ type: 'state', state: 'compacting' }], caption: 'Compactando: colapso para o núcleo.' },
-      { at: 9000, actions: [{ type: 'context', usedTokens: 28_000 }, { type: 'memories', add: 6 }, { type: 'state', state: 'idle' }], caption: 'O que era importante virou memória de longo prazo: estrelas novas no fundo.' },
+      { at: 9000, actions: [{ type: 'contextRatio', ratio: 0.14 }, { type: 'memories', add: 6 }, { type: 'state', state: 'idle' }], caption: 'O que era importante virou memória de longo prazo: estrelas novas no fundo.' },
     ],
   },
   {
@@ -196,7 +202,7 @@ export const scenarios: readonly Scenario[] = [
     steps: [
       { at: 0, actions: [{ type: 'state', state: 'thinking' }], caption: 'Você: “Compara três notebooks para mim.”' },
       { at: 2000, actions: [{ type: 'subagents', count: 3 }, { type: 'state', state: 'executing' }], caption: 'Três subagentes, cada um com contexto e ferramentas próprios.' },
-      { at: 7500, actions: [{ type: 'subagents', count: 0 }, { type: 'state', state: 'thinking' }, { type: 'context', usedTokens: 60_000 }], caption: 'Voltaram só os resumos.' },
+      { at: 7500, actions: [{ type: 'subagents', count: 0 }, { type: 'state', state: 'thinking' }, { type: 'contextRatio', ratio: 0.4 }], caption: 'Voltaram só os resumos.' },
       { at: 9200, actions: [{ type: 'state', state: 'speaking' }], caption: 'Jesus: “O segundo tem o melhor custo-benefício.”' },
       { at: 12500, actions: [{ type: 'state', state: 'idle' }] },
     ],

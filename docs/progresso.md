@@ -2,7 +2,7 @@
 
 > **Leia isto antes de qualquer tarefa** e atualize ao terminar cada etapa (o que foi feito, o que falta, onde parou). Serve para continuar o trabalho em outra sessão sem perder contexto. O resumo fixo do projeto está no [`CLAUDE.md`](../CLAUDE.md); aqui fica o **andamento**.
 
-**Última atualização:** 08/10/2026, ~03h UTC, sessão na nuvem (branch `main-7zybuc`). A sessão parou a pedido do dono porque o uso do plano estava acabando.
+**Última atualização:** 08/10/2026, ~14h UTC, sessão na nuvem (branch `main-7zybuc`).
 
 ## Onde estamos
 
@@ -36,11 +36,17 @@ Descartado de vez: API direta do DeepSeek com dados pessoais (dados na China) e 
   - [Memória automática](rascunhos/algoritmo-memoria.md) (revisado) → `packages/memory` (+ `maskSecrets`/`detectSensitive` em `packages/shared`)
   - [Login e conexão automáticos](rascunhos/algoritmo-login.md) (**só o rascunho**: a crítica caiu pelo limite de uso) → `packages/integrations/src/connect`
 
+- **Limite de contexto automático: implementado** (commits `a87ac38` e seguinte).
+  - `packages/models`: catálogo curado (Claude Haiku/Sonnet/Opus 5.5, preços oficiais de 08/10/2026), cartão conservador para modelo desconhecido, preço por faixa, custo exato em picodólares e estimativa de tokens. 18 testes.
+  - `packages/core/src/context`: orçamento de contexto (tetos técnico, de qualidade, de custo e do usuário; degrau de preço; ponto ótimo de compactação pela fórmula do lote econômico) e o texto explicativo em pt-BR. 16 testes, que reproduzem os exemplos da especificação (Haiku 5.5 → 80 mil; Opus 5.5 → 73.705).
+  - Laboratório: escolher o modelo muda o limite sozinho (Haiku 80 mil pelo degrau de preço; Sonnet e Opus 64 mil pelo orçamento do dia; desconhecido 15 mil); gastar mais aperta o limite. Os cenários usam frações do limite.
+  - Correção em relação ao rascunho: a leitura de cache do Sonnet 5.5 é US$ 0,10 (página oficial), não 0,20.
+
 **Falta (nesta ordem):**
-1. Fazer a crítica do rascunho de **login** (segurança, qualidade e testabilidade), como foi feito com os outros três. Depois, promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.
-2. Ajustar o rascunho de contexto ao modelo escolhido: o Claude Haiku 5.5 tem janela de 1 milhão, mas o preço sobe 5× acima de 100 mil tokens por pedido; o limite automático mira abaixo desse degrau. O rascunho foi escrito pensando no DeepSeek.
-3. Implementar a lógica pura com testes (Vitest), um pacote por vez: `packages/models` → contexto → memória → login → subagentes.
-4. Ligar ao holograma: o snapshot passa a ser montado pelos algoritmos; no laboratório, trocar os controles manuais de limite, subagentes, memória e login por simulação automática (ex.: escolher o modelo e o limite muda sozinho).
+1. Contexto, parte 2: compactação automática (`packages/core/src/context/compaction.ts`: limiares em pontos-base, limpeza de saídas antigas, máquina de estados com disjuntor; seção 5 da especificação), âncora no uso real e calibração (seção 7.2–7.4), livro de gastos (seção 8.2).
+2. Fazer a crítica do rascunho de **login** (segurança, qualidade e testabilidade), como foi feito com os outros três.
+3. Implementar, um pacote por vez, com testes: memória → login → subagentes. Ligar cada um ao holograma e trocar os controles manuais correspondentes do laboratório por simulação automática.
+4. Promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.
 
 ## Pendências do dono do projeto
 

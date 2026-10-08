@@ -12,7 +12,9 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@jesus/core": "*",
     "@jesus/hologram": "*",
+    "@jesus/models": "*",
     "react": "~19.3.0",
     "react-dom": "~19.3.0",
     "zustand": "^5.0.8"

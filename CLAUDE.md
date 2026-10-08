@@ -78,7 +78,9 @@ Gerenciador: **npm 11.16 ou mais novo** (workspaces). Não use pnpm nem yarn. Re
 ## Estrutura
 
 - `packages/hologram`: holograma (React Three Fiber). Lógica pura e testável em `model.ts`, `visual.ts`, `geometry.ts` e `describe.ts`; shaders em `shaders.ts`; cena em `react/`.
-- `apps/hologram-lab`: protótipo da fase 0 (Vite + React + Zustand) com cenários roteirizados em `src/scenarios.ts`.
+- `packages/models`: registro de modelos (catálogo curado com preços conferidos, faixas de preço, custo em picodólares, estimativa de tokens).
+- `packages/core`: por enquanto, o orçamento automático de contexto por modelo (`src/context/`).
+- `apps/hologram-lab`: protótipo da fase 0 (Vite + React + Zustand) com cenários roteirizados em `src/scenarios.ts`; o limite de contexto vem do modelo escolhido (`src/autoContext.ts`).
 - `docs/progresso.md`: diário de bordo (andamento entre sessões). `docs/rascunhos/`: especificações em rascunho, ainda não promovidas a documentação oficial.
 - `.claude/`: `settings.json` registra o gancho de início de sessão (`hooks/session-start.sh`).
 

@@ -30,6 +30,8 @@ Cada papel pode usar um provedor diferente.
 
 Para cada modelo, o Jesus guarda: provedor, nome, janela de contexto, se usa ferramentas, se entende imagem, preço por milhão de tokens (entrada e saída), se tem cache de prompt e a latência média medida. O tamanho do contexto alimenta o contorno do holograma; o preço alimenta o anel de gasto.
 
+**Implementado (08/10/2026):** o registro (`packages/models`) e o limite automático de contexto (`packages/core/src/context/budget.ts`). O limite efetivo é o menor entre o teto técnico (janela − reserva de saída, com margem), o de qualidade (modo), o de custo (pressão do orçamento do dia, degrau de preço e ponto ótimo de compactação) e o do usuário. Especificação em [rascunhos/algoritmo-contexto.md](rascunhos/algoritmo-contexto.md).
+
 ## 9.4 Custos
 
 - Orçamento por dia e por tarefa; alerta em 80%; parada em 100%.
