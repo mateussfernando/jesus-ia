@@ -15,6 +15,7 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0009](0009-npm-em-vez-de-pnpm.md) | npm workspaces em vez de pnpm | aceita |
 | [0010](0010-primeiro-modelo-deepseek-via-deepinfra.md) | Primeiro modelo: DeepSeek V4.1-Flash na DeepInfra | substituída por 0011 |
 | [0011](0011-primeiro-modelo-claude-haiku.md) | Primeiro modelo: Claude Haiku 5.5 | aceita |
+| [0012](0012-conversa-por-voz-antes-da-execucao.md) | Conversa por voz antes da execução (nova fase 1.5) | aceita |
 
 ## Modelo
 

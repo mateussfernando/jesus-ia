@@ -8,7 +8,7 @@
 
 - **Fase 0 (holograma): concluída e aprovada** pelo dono do projeto. Ele mediu 75 fps (o máximo da tela) num PC de 8 GB com placa de vídeo dedicada; em GPU integrada ainda não foi medido.
 - **PR #1** (`main-7zybuc` → `main`): https://github.com/mateussfernando/jesus-ia/pull/1. CI verde até `ad93238`, sem conflitos; descrição atualizada. **Aguarda o merge do dono do projeto** (ele perguntou se precisa fazer: o Claude pode fazer pelo GitHub, mas só com autorização explícita). Contém: monorepo npm, `packages/hologram`, `apps/hologram-lab`, `packages/models`, `packages/core`, docs e as decisões 0008 a 0011.
-- **Próxima fase do roadmap:** fase 1 (Electron abrindo janela, chat por texto, 1 provedor, ferramentas só de leitura, registro). Ver `docs/10-roadmap.md`.
+- **Próxima fase do roadmap:** fase 1 (Electron abrindo janela, chat por texto, 1 provedor, ferramentas só de leitura, registro) e, logo depois, a nova **fase 1.5: conversa por voz, só perguntas e respostas** (decisão 0012, pedido do dono). Ver `docs/10-roadmap.md`.
 
 ## Decisões tomadas nesta etapa
 

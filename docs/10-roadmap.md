@@ -8,11 +8,12 @@
 |---|---|---|
 | **0. Holograma** | protótipo web do holograma com dados falsos (estados, satélites, contexto, cores) | roda a 60 fps e você aprova a identidade visual |
 | **1. Esqueleto** | monorepo, Electron abrindo janela, chat por texto, 1 provedor, ferramentas só de leitura (arquivos), registro | conversa e lê arquivos de uma pasta liberada; testes rodando no CI |
+| **1.5. Conversa por voz** | segurar uma tecla para falar, transcrição local, resposta falada e holograma ouvindo e falando; **só perguntas e respostas**, sem executar nada (decisão [0012](decisoes/0012-conversa-por-voz-antes-da-execucao.md)) | você pergunta por voz e ouve a resposta no seu PC |
 | **2. Porteiro** | normalização, regras `deny/ask/allow`, caminhos protegidos e críticos, cartões de confirmação assinados, auditoria encadeada | 100% dos testes de regras passando; nenhuma ação executa sem passar pelo Porteiro |
 | **3. Mãos com contenção** | terminal no Windows com as compensações da seção [3.6](03-seguranca.md) (ambiente limpo, token restrito, Job Object), edição com checkpoint, git local; WSL2 opcional depois | roda os testes de um projeto real; cancelar mata a árvore de processos; o desfazer funciona |
 | **4. Banco e memória** | PostgreSQL embutido, migrações, sessões, memória com busca híbrida | lembra fatos entre sessões; "esquecer" funciona |
 | **5. Classificador e contaminação** | Camada 3 (dois estágios), sonda de injeção, leitor em quarentena, Regra dos Dois | na coleção de ataques: 0 ações proibidas executadas e metas da seção [3.17](03-seguranca.md) atingidas |
-| **6. Voz** | segurar-para-falar, STT local, TTS, holograma sincronizado; depois "Ei, Jesus" | conversa por voz começando a responder em cerca de 2 s |
+| **6. Voz completa** | "Ei, Jesus", interrupção natural, voz para confirmar ações de risco médio e ajuste de latência (o básico vem na fase 1.5) | conversa por voz começando a responder em cerca de 2 s |
 | **7. Contas** | Google (leitura → escrita com confirmação), GitHub App (*device flow*) | o cenário da agenda (seção [6.7](06-integracoes.md)) funciona inteiro, incluindo o ataque bloqueado |
 | **8. Multi-modelo** | registro de modelos, papéis, custos, Ollama | trocar o cérebro sem mudar mais nada; anel de gasto funcionando |
 | **9. Extensões** | MCP (com hash e aprovação), habilidades, subagentes, rotinas | 1 servidor MCP oficial funcionando; 1 rotina diária |
