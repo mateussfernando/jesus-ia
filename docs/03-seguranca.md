@@ -363,6 +363,13 @@ Uma negação em qualquer nível vence uma liberação em qualquer outro (igual 
 - Sem resposta → cancela.
 - "Sempre permitir" só existe para risco baixo e médio e fica escopado (projeto, ferramenta, padrão); **nunca** para alto.
 
+**Tela "Permissões" (pedido do dono do projeto):** toda permissão que você deu fica numa lista que você vê e remove quando quiser.
+
+- Cada linha mostra o que foi liberado (ex.: "abrir o VS Code"), o escopo (pasta, projeto ou sempre), quando e como você liberou (clique ou voz) e quantas vezes já foi usada.
+- **Remover vale na hora**, inclusive para uma tarefa em andamento: a próxima ação igual volta a pedir confirmação. Dá para remover uma a uma ou todas de uma vez ("voltar ao padrão").
+- Fica guardada em `regras_usuario` ([05](05-dados-postgresql.md), seção 5.5), com versões: dá para ver o histórico do que foi dado e tirado. A auditoria registra cada mudança.
+- **Só você mexe nela**, pela interface. O Jesus não dá nem amplia permissão para si mesmo (invariante 7). Ele pode só **abrir a tela** quando você pedir ("Jesus, mostra minhas permissões").
+
 **Fadiga de aprovação:** a própria Meta lembra que o modelo quebra quando o usuário aprova sem ler. Por isso: não pedir confirmação para o que é seguro, agrupar aprovações de baixo risco e deixar o cartão de alto risco visualmente diferente (âmbar ou vermelho, as únicas cores que o holograma usa).
 
 ### 3.4.8 Níveis de risco por domínio
