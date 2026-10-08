@@ -27,9 +27,18 @@ export interface CostBreakdown {
   adjusted: boolean;
 }
 
-/** US$ por milhão de tokens → picodólares por token (US$ 1/M = 10⁶ pUSD por token). */
-function pUsdPerToken(usdPerMTok: number): number {
-  return Math.round(usdPerMTok * 1_000_000);
+/**
+ * US$ por milhão de tokens → picodólares por token (US$ 1/M = 10⁶ pUSD por token; seção 8.1).
+ * Ex.: o cache do Flash, 0,0028 US$/M, dá 2.800 pUSD por token.
+ * Falha fechada: lança `RangeError` se o preço for negativo ou se o resultado não for um inteiro seguro
+ * (os catálogos já filtram antes; esta é a última barreira antes de qualquer soma).
+ */
+export function usdPerMTokToPUsdPerToken(usdPerMTok: number): number {
+  const pUsd = Math.round(usdPerMTok * 1_000_000);
+  if (usdPerMTok < 0 || pUsd < 0 || !Number.isSafeInteger(pUsd)) {
+    throw new RangeError(`preço inválido: ${String(usdPerMTok)} US$ por milhão de tokens`);
+  }
+  return pUsd;
 }
 
 function nonNegativeInt(value: number): number {
@@ -61,10 +70,11 @@ export function computeCost(usage: NormalizedUsage, card: ModelCard): CostBreakd
 
   const price = priceAt(card.price, card.capabilities.cache, input);
   const uncached = input - cacheRead - write5m - write1h;
-  const uncachedInputPUsd = uncached * pUsdPerToken(price.inputPerMTok);
-  const cacheReadPUsd = cacheRead * pUsdPerToken(price.cacheReadPerMTok);
-  const cacheWritePUsd = write5m * pUsdPerToken(price.cacheWrite5mPerMTok) + write1h * pUsdPerToken(price.cacheWrite1hPerMTok);
-  const outputPUsd = output * pUsdPerToken(price.outputPerMTok);
+  const uncachedInputPUsd = uncached * usdPerMTokToPUsdPerToken(price.inputPerMTok);
+  const cacheReadPUsd = cacheRead * usdPerMTokToPUsdPerToken(price.cacheReadPerMTok);
+  const cacheWritePUsd =
+    write5m * usdPerMTokToPUsdPerToken(price.cacheWrite5mPerMTok) + write1h * usdPerMTokToPUsdPerToken(price.cacheWrite1hPerMTok);
+  const outputPUsd = output * usdPerMTokToPUsdPerToken(price.outputPerMTok);
 
   return {
     totalPUsd: uncachedInputPUsd + cacheReadPUsd + cacheWritePUsd + outputPUsd,
