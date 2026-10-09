@@ -197,6 +197,10 @@ describe('maxOutputForBudget', () => {
     expect(maxOutputForBudget({ ...base, outputPUsdPerToken: Number.NaN })).toBe(0);
     expect(maxOutputForBudget({ ...base, minUseful: Number.NaN })).toBe(0);
     expect(maxOutputForBudget({ ...base, outputReserve: Number.NaN })).toBe(0);
+    // Custo de entrada negativo não pode virar saldo: antes, saldo 1e9 com entrada −5e9 liberava 21.428 tokens (~6e9 pUSD).
+    expect(maxOutputForBudget({ ...base, remainingPUsd: 1e9, inputCostPUsd: -5e9 })).toBe(0);
+    expect(maxOutputForBudget({ ...base, inputCostPUsd: Number.NEGATIVE_INFINITY })).toBe(0);
+    expect(maxOutputForBudget({ ...base, inputCostPUsd: Number.NaN })).toBe(0);
   });
 
   it('com o resultado, saída × preço + entrada nunca passa do saldo', () => {
@@ -533,6 +537,14 @@ describe('recoverOrphanedReservations', () => {
       { requestId: 'nan', status: 'orphaned', chargedPUsd: 11 },
       { requestId: 'neg', status: 'orphaned', chargedPUsd: 0 },
     ]);
+  });
+
+  it('reserva com instante no futuro (o relógio voltou) também vira orphaned e é cobrada', () => {
+    const records: UsageRecordMeta[] = [
+      { requestId: 'future', status: 'reserved', reservedAtMs: now + HOUR, reservedPUsd: 5 },
+      { requestId: 'recent', status: 'reserved', reservedAtMs: now - 60_000, reservedPUsd: 9 },
+    ];
+    expect(recoverOrphanedReservations(records, now, 15 * 60_000)).toEqual([{ requestId: 'future', status: 'orphaned', chargedPUsd: 5 }]);
   });
 });
 

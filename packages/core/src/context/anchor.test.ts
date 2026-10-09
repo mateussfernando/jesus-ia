@@ -92,6 +92,13 @@ describe('âncora no uso real (seção 7.2)', () => {
     expect(usage.totalInputTokens).toBe(50_006);
   });
 
+  it('a tolerância faz diferença: 0,7 × 45 = 31,499999999999996, mas round(31,5) da especificação é 32', () => {
+    expect(Math.round(0.7 * 45)).toBe(31); // o arredondamento puro erraria
+    const usage = contextUsage({ anchor, current, itemsAfterAnchor: [item(45)], allItems: all, fixedEstimate: 10_000, k: 0.7 });
+    expect(usage.usedTokens).toBe(50_000 - 10_417 + 32);
+    expect(usage.totalInputTokens).toBe(50_032);
+  });
+
   it('âncora com números degenerados não vale: volta a estimar', () => {
     const broken: ContextAnchor[] = [
       { ...anchor, actualInputTokens: Number.NaN },
@@ -126,11 +133,36 @@ describe('âncora no uso real (seção 7.2)', () => {
     expect(isAnchorValid(anchor, { ...current, toolsetHash: '' })).toBe(false);
   });
 
-  it('contagens inválidas contam 0 e k inválido vale 1', () => {
-    const weird = [item(Number.NaN), item(-300), item(Number.POSITIVE_INFINITY), item(2_000)];
+  it('contagens NaN ou negativas contam 0 e k inválido vale 1', () => {
+    const weird = [item(Number.NaN), item(-300), item(2_000)];
     for (const k of [Number.NaN, 0, -1, Number.POSITIVE_INFINITY]) {
       const usage = contextUsage({ anchor: null, current, itemsAfterAnchor: [], allItems: weird, fixedEstimate: Number.NaN, k });
       expect(usage).toEqual({ usedTokens: 2_000, totalInputTokens: 2_000, source: 'estimated' });
+    }
+  });
+
+  it('contagem infinita ou enorme satura (nunca encolhe o uso) e o resultado nunca é NaN nem infinito', () => {
+    const huge = contextUsage({ anchor: null, current, itemsAfterAnchor: [], allItems: [item(Number.POSITIVE_INFINITY), item(10)], fixedEstimate: 10, k: 1 });
+    expect(huge.usedTokens).toBe(Number.MAX_SAFE_INTEGER);
+    expect(huge.totalInputTokens).toBe(Number.MAX_SAFE_INTEGER);
+    // Âncora com estimativas de 1e308: antes passava na validação e dava NaN; agora não vale e o uso é estimado.
+    const absurd = { ...anchor, fixedEstimate: 1e308, historyEstimate: 1e308 };
+    expect(isAnchorValid(absurd, current)).toBe(false);
+    for (const usage of [
+      contextUsage({ anchor: absurd, current, itemsAfterAnchor: after, allItems: all, fixedEstimate: 10_000, k: 1.1 }),
+      contextUsage({ anchor: null, current, itemsAfterAnchor: [], allItems: all, fixedEstimate: 1e308, k: 2 }),
+      contextUsage({ anchor: null, current, itemsAfterAnchor: [], allItems: [item(1e308), item(1e308)], fixedEstimate: 0, k: 1 }),
+    ]) {
+      expect(Number.isSafeInteger(usage.usedTokens)).toBe(true);
+      expect(Number.isSafeInteger(usage.totalInputTokens)).toBe(true);
+      expect(usage.usedTokens).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('com âncora, parte fixa atual inválida vale a da âncora: o total nunca cai abaixo do que o provedor mediu', () => {
+    for (const fixedEstimate of [Number.NaN, -5]) {
+      const usage = contextUsage({ anchor, current, itemsAfterAnchor: after, allItems: all, fixedEstimate, k: 1.1 });
+      expect(usage).toEqual({ usedTokens: 41_233, totalInputTokens: 51_650, source: 'anchored' });
     }
   });
 

@@ -127,9 +127,23 @@ describe('checagem antes do envio (seção 4.6)', () => {
       },
     );
 
-    it('k zero → needs_context_action (senão qualquer entrada caberia)', () => {
-      expect(preflight(input({ k: 0 }))).toEqual({ kind: 'needs_context_action' });
-      expect(preflight(input({ anchorActualInput: null, k: 0 }))).toEqual({ kind: 'needs_context_action' });
+    it('k zero ou fora de [0,5; 2] → needs_context_action (senão qualquer entrada caberia)', () => {
+      for (const k of [0, 1e-9, 0.49, 2.01, 1e9]) {
+        expect(preflight(input({ k }))).toEqual({ kind: 'needs_context_action' });
+        expect(preflight(input({ anchorActualInput: null, k }))).toEqual({ kind: 'needs_context_action' });
+      }
+      // Antes, k = 1e-9 fazia 2 milhões de tokens estimados "caberem" numa janela de 128 mil.
+      const huge = { anchorActualInput: null, totalEstimate: 2_000_000, k: 1e-9, card: { contextWindow: 128_000, windowIncludesOutput: true } };
+      expect(preflight(input(huge))).toEqual({ kind: 'needs_context_action' });
+      expect(preflight(input({ k: 0.5 })).kind).toBe('send');
+      expect(preflight(input({ k: 2 })).kind).toBe('send');
+    });
+
+    it('âncora 0 (ou abaixo de 1) não vale como medida: needs_context_action, nunca send', () => {
+      for (const anchorActualInput of [0, 0.4]) {
+        const result = preflight(input({ anchorActualInput, deltaEstimate: 1_000, totalEstimate: 2_000_000, card: { contextWindow: 128_000, windowIncludesOutput: true } }));
+        expect(result).toEqual({ kind: 'needs_context_action' });
+      }
     });
 
     it('janela inválida → needs_context_action', () => {

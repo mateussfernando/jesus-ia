@@ -45,9 +45,13 @@ const MAX_REPORTED_TOKENS = 100_000_000;
 /** Contagem informada: inteiro seguro dentro da faixa; negativo passa aqui e vira 0 com anomalia depois. */
 const tokenCount = z.number().int().min(-MAX_REPORTED_TOKENS).max(MAX_REPORTED_TOKENS);
 const optionalCount = tokenCount.nullish();
+/** Qualquer objeto (não lista), com campos desconhecidos preservados para leitura leniente. */
+const anyObject = z.looseObject({});
 
-// Um esquema por formato. `z.object` descarta campos desconhecidos; campo presente com tipo errado invalida o
-// relatório inteiro (falha fechada: o chamador estima, e a estimativa nunca é grátis).
+// Um esquema por formato. `z.object` descarta campos desconhecidos. Campo essencial (entrada e saída, e, na
+// Anthropic, as partes que somam o total) com tipo errado invalida o relatório inteiro (falha fechada: o chamador
+// estima). Detalhes opcionais que só dividem um total já conhecido (cache lido, raciocínio) são lidos de forma
+// leniente: inválido vira 0 com anomalia `missing_fields`, o que cobra igual ou mais, nunca menos.
 
 const anthropicSchema = z.object({
   /** Só a entrada SEM cache. */
@@ -56,31 +60,32 @@ const anthropicSchema = z.object({
   output_tokens: tokenCount,
   cache_read_input_tokens: optionalCount,
   cache_creation_input_tokens: optionalCount,
-  cache_creation: z
-    .object({ ephemeral_5m_input_tokens: optionalCount, ephemeral_1h_input_tokens: optionalCount })
-    .nullish(),
+  /** Detalhamento da escrita por TTL (leniente). */
+  cache_creation: z.unknown().optional(),
 });
 
 const deepseekSchema = z.object({
-  /** Total do prompt (acerto + falta de cache). `prompt_cache_miss_tokens` é ignorado. */
+  /** Total do prompt (acerto + falta de cache). */
   prompt_tokens: tokenCount,
   completion_tokens: tokenCount,
-  prompt_cache_hit_tokens: optionalCount,
-  completion_tokens_details: z.object({ reasoning_tokens: optionalCount }).nullish(),
+  prompt_cache_hit_tokens: z.unknown().optional(),
+  /** Redundante com o total; se não bater, vale o maior (`missing_fields`). */
+  prompt_cache_miss_tokens: z.unknown().optional(),
+  completion_tokens_details: z.unknown().optional(),
 });
 
 const openAiChatSchema = z.object({
   prompt_tokens: tokenCount,
   completion_tokens: tokenCount,
-  prompt_tokens_details: z.object({ cached_tokens: optionalCount }).nullish(),
-  completion_tokens_details: z.object({ reasoning_tokens: optionalCount }).nullish(),
+  prompt_tokens_details: z.unknown().optional(),
+  completion_tokens_details: z.unknown().optional(),
 });
 
 const openAiResponsesSchema = z.object({
   input_tokens: tokenCount,
   output_tokens: tokenCount,
-  input_tokens_details: z.object({ cached_tokens: optionalCount }).nullish(),
-  output_tokens_details: z.object({ reasoning_tokens: optionalCount }).nullish(),
+  input_tokens_details: z.unknown().optional(),
+  output_tokens_details: z.unknown().optional(),
 });
 
 /** Contagens já sem negativos, antes do corte do cache e da checagem do raciocínio. */
@@ -102,11 +107,33 @@ function nonNegative(value: number | null | undefined, anomalies: Set<UsageAnoma
   return Math.max(0, value); // também troca -0 por 0
 }
 
+/** Contagem opcional lida de forma leniente: ausente ou nula → 0; inválida → 0 com `missing_fields`. */
+function lenientCount(value: unknown, anomalies: Set<UsageAnomaly>): number {
+  if (value === null || value === undefined) return 0;
+  const parsed = tokenCount.safeParse(value);
+  if (!parsed.success) {
+    anomalies.add('missing_fields');
+    return 0;
+  }
+  return nonNegative(parsed.data, anomalies);
+}
+
+/** Objeto de detalhamento lido de forma leniente: ausente ou nulo → vazio; o que não for objeto → vazio com `missing_fields`. */
+function lenientDetails(value: unknown, anomalies: Set<UsageAnomaly>): Record<string, unknown> {
+  if (value === null || value === undefined) return {};
+  const parsed = anyObject.safeParse(value);
+  if (!parsed.success) {
+    anomalies.add('missing_fields');
+    return {};
+  }
+  return parsed.data;
+}
+
 /**
  * Anthropic: total = `input_tokens` + leitura + escrita de cache. Sem o detalhamento `cache_creation`, toda a
  * escrita conta como 5 min (o TTL padrão). Detalhamento que não bate com `cache_creation_input_tokens` (anomalia
  * `missing_fields`), pela leitura que nunca cobra menos: a escrita vale o maior dos dois números, e a parte sem
- * TTL informado conta como 1 h (a escrita mais cara).
+ * TTL informado conta como 1 h (a escrita mais cara). Detalhamento inválido: toda a escrita conta como 1 h.
  */
 const fromAnthropic: Adapter = (raw, anomalies) => {
   const parsed = anthropicSchema.safeParse(raw);
@@ -115,15 +142,28 @@ const fromAnthropic: Adapter = (raw, anomalies) => {
   const uncached = nonNegative(u.input_tokens, anomalies);
   const cacheRead = nonNegative(u.cache_read_input_tokens, anomalies);
   const creation = nonNegative(u.cache_creation_input_tokens, anomalies);
-  const breakdown = u.cache_creation;
+  const before = anomalies.size;
+  const breakdown = lenientDetails(u.cache_creation, anomalies);
   let write5m = creation;
   let write1h = 0;
-  if (breakdown != null && (breakdown.ephemeral_5m_input_tokens != null || breakdown.ephemeral_1h_input_tokens != null)) {
-    const reported5m = nonNegative(breakdown.ephemeral_5m_input_tokens, anomalies);
-    const reported1h = nonNegative(breakdown.ephemeral_1h_input_tokens, anomalies);
-    if (reported5m + reported1h !== creation) anomalies.add('missing_fields');
-    write5m = reported5m;
-    write1h = Math.max(creation, reported5m + reported1h) - reported5m;
+  if (anomalies.size > before) {
+    // Detalhamento que nem é objeto: TTL desconhecido, cobra como 1 h.
+    write5m = 0;
+    write1h = creation;
+  } else if (breakdown.ephemeral_5m_input_tokens != null || breakdown.ephemeral_1h_input_tokens != null) {
+    const parsed5m = optionalCount.safeParse(breakdown.ephemeral_5m_input_tokens);
+    const parsed1h = optionalCount.safeParse(breakdown.ephemeral_1h_input_tokens);
+    if (!parsed5m.success || !parsed1h.success) {
+      anomalies.add('missing_fields');
+      write5m = 0;
+      write1h = creation;
+    } else {
+      const reported5m = nonNegative(parsed5m.data, anomalies);
+      const reported1h = nonNegative(parsed1h.data, anomalies);
+      if (reported5m + reported1h !== creation) anomalies.add('missing_fields');
+      write5m = reported5m;
+      write1h = Math.max(creation, reported5m + reported1h) - reported5m;
+    }
   }
   return {
     input: uncached + cacheRead + write5m + write1h,
@@ -140,13 +180,23 @@ const fromDeepseek: Adapter = (raw, anomalies) => {
   const parsed = deepseekSchema.safeParse(raw);
   if (!parsed.success) return null;
   const u = parsed.data;
+  const hit = lenientCount(u.prompt_cache_hit_tokens, anomalies);
+  let input = nonNegative(u.prompt_tokens, anomalies);
+  if (u.prompt_cache_miss_tokens !== undefined && u.prompt_cache_miss_tokens !== null) {
+    const miss = lenientCount(u.prompt_cache_miss_tokens, anomalies);
+    // Acerto + falta deveria ser o total; se não for, cobra-se o maior.
+    if (hit + miss !== input) {
+      anomalies.add('missing_fields');
+      input = Math.max(input, hit + miss);
+    }
+  }
   return {
-    input: nonNegative(u.prompt_tokens, anomalies),
-    cacheRead: nonNegative(u.prompt_cache_hit_tokens, anomalies),
+    input,
+    cacheRead: hit,
     write5m: 0,
     write1h: 0,
     output: nonNegative(u.completion_tokens, anomalies),
-    reasoning: nonNegative(u.completion_tokens_details?.reasoning_tokens, anomalies),
+    reasoning: lenientCount(lenientDetails(u.completion_tokens_details, anomalies).reasoning_tokens, anomalies),
   };
 };
 
@@ -156,11 +206,11 @@ const fromOpenAiChat: Adapter = (raw, anomalies) => {
   const u = parsed.data;
   return {
     input: nonNegative(u.prompt_tokens, anomalies),
-    cacheRead: nonNegative(u.prompt_tokens_details?.cached_tokens, anomalies),
+    cacheRead: lenientCount(lenientDetails(u.prompt_tokens_details, anomalies).cached_tokens, anomalies),
     write5m: 0,
     write1h: 0,
     output: nonNegative(u.completion_tokens, anomalies),
-    reasoning: nonNegative(u.completion_tokens_details?.reasoning_tokens, anomalies),
+    reasoning: lenientCount(lenientDetails(u.completion_tokens_details, anomalies).reasoning_tokens, anomalies),
   };
 };
 
@@ -170,20 +220,29 @@ const fromOpenAiResponses: Adapter = (raw, anomalies) => {
   const u = parsed.data;
   return {
     input: nonNegative(u.input_tokens, anomalies),
-    cacheRead: nonNegative(u.input_tokens_details?.cached_tokens, anomalies),
+    cacheRead: lenientCount(lenientDetails(u.input_tokens_details, anomalies).cached_tokens, anomalies),
     write5m: 0,
     write1h: 0,
     output: nonNegative(u.output_tokens, anomalies),
-    reasoning: nonNegative(u.output_tokens_details?.reasoning_tokens, anomalies),
+    reasoning: lenientCount(lenientDetails(u.output_tokens_details, anomalies).reasoning_tokens, anomalies),
   };
 };
 
-const ADAPTERS: Record<UsageFormat, Adapter> = {
-  anthropic: fromAnthropic,
-  deepseek: fromDeepseek,
-  openai_chat: fromOpenAiChat,
-  openai_responses: fromOpenAiResponses,
-};
+/** `switch`, e não um objeto: um formato como 'toString' ou 'constructor' não pode achar nada no protótipo. */
+function adapterFor(format: string): Adapter | null {
+  switch (format) {
+    case 'anthropic':
+      return fromAnthropic;
+    case 'deepseek':
+      return fromDeepseek;
+    case 'openai_chat':
+      return fromOpenAiChat;
+    case 'openai_responses':
+      return fromOpenAiResponses;
+    default:
+      return null;
+  }
+}
 
 interface CacheSplit {
   cacheReadTokens: number;
@@ -226,14 +285,19 @@ function toReport(c: UsageCounts, anomalies: Set<UsageAnomaly>): UsageReport {
 /**
  * Normaliza o `usage` cru de uma resposta. `inputTokens` é sempre o TOTAL do prompt (com cache lido e gravado);
  * `outputTokens` inclui o raciocínio. Campos desconhecidos são ignorados. Sem os campos essenciais (entrada e
- * saída), com tipo errado ou fora da faixa de sanidade, devolve `null`: o chamador usa `estimatedUsage`.
- * Nunca lança exceção.
+ * saída), com tipo errado ou fora da faixa de sanidade (inclusive o total somado), devolve `null`: o chamador usa
+ * `estimatedUsage`. Nunca lança exceção.
  */
 export function normalizeUsage(format: UsageFormat, raw: unknown): UsageReport | null {
   try {
+    const adapter = adapterFor(format);
+    if (adapter === null) return null;
     const anomalies = new Set<UsageAnomaly>();
-    const counts = ADAPTERS[format](raw, anomalies);
-    return counts === null ? null : toReport(counts, anomalies);
+    const counts = adapter(raw, anomalies);
+    if (counts === null) return null;
+    // A soma das partes (Anthropic) ou o maior de dois totais (DeepSeek) pode passar da faixa de cada campo.
+    if (counts.input > MAX_REPORTED_TOKENS || Math.max(counts.output, counts.reasoning) > MAX_REPORTED_TOKENS) return null;
+    return toReport(counts, anomalies);
   } catch {
     // Objeto hostil (getter que lança, proxy) ou formato inválido vindo de JavaScript sem tipos.
     return null;
@@ -290,16 +354,19 @@ export function estimatedUsage(i: {
  * estimativa faria o orçamento subestimar o gasto. Se a entrada informada for menor que 0,5 × estimativa × k, a
  * entrada cobrada vira ⌊0,5 × estimativa × k⌋ (`source: 'floored'`, anomalia `reported_below_estimate`) e o cache
  * é cortado para caber nela. A amostra só calibra (`calibrate`) se o uso veio do provedor, sem nenhuma anomalia, e
- * com estimativa e k válidos (finitos e > 0); estimativa ou k inválidos também desligam o piso.
+ * com estimativa e k válidos (finitos e > 0). Estimativa inválida desliga o piso; k inválido vale 1 (como em
+ * `estimatedUsage`), mantendo o piso.
  */
 export function checkReportedUsage(i: { usage: UsageReport; inputEstimate: number; k: number }): {
   billable: UsageReport;
   calibrate: boolean;
 } {
   const { usage } = i;
-  const estimateValid = isPositiveFinite(i.inputEstimate) && isPositiveFinite(i.k);
+  const estimateValid = isPositiveFinite(i.inputEstimate);
+  const kValid = isPositiveFinite(i.k);
+  const k = kValid ? i.k : 1;
   /** 0,5 × estimativa × k, ainda sem arredondar. */
-  const threshold = estimateValid ? (i.inputEstimate * i.k) / 2 : 0;
+  const threshold = estimateValid ? (i.inputEstimate * k) / 2 : 0;
   // Entrada não finita conta como 0: cai no piso.
   const reported = isPositiveFinite(usage.inputTokens) ? usage.inputTokens : 0;
 
@@ -325,6 +392,6 @@ export function checkReportedUsage(i: { usage: UsageReport; inputEstimate: numbe
 
   return {
     billable: usage,
-    calibrate: estimateValid && usage.source === 'provider' && usage.anomalies.length === 0,
+    calibrate: estimateValid && kValid && usage.source === 'provider' && usage.anomalies.length === 0,
   };
 }

@@ -211,7 +211,7 @@ export function estimatePreflightCost(i: {
 /**
  * Saída máxima que o saldo paga (seção 8.2): `min(R, floor((saldo − custo de entrada) / preço de saída))`.
  * Devolve 0 (a chamada não sai) se o saldo não cobrir a entrada ou se o resultado ficar abaixo de `minUseful`.
- * Saída de graça (preço 0) → `outputReserve`. Qualquer número inválido (NaN, preço negativo) → 0.
+ * Saída de graça (preço 0) → `outputReserve`. Qualquer número inválido (NaN, preço ou custo de entrada negativo) → 0.
  * Assim o limite de 100% nunca é ultrapassado por uma resposta longa.
  */
 export function maxOutputForBudget(i: {
@@ -223,7 +223,8 @@ export function maxOutputForBudget(i: {
 }): number {
   const reserve = Number.isFinite(i.outputReserve) && i.outputReserve > 0 ? Math.floor(i.outputReserve) : 0;
   const available = i.remainingPUsd - i.inputCostPUsd;
-  if (!(available >= 0) || !(i.outputPUsdPerToken >= 0)) return 0;
+  // Custo de entrada negativo somaria ao saldo: falha fechada.
+  if (!(i.inputCostPUsd >= 0) || !(available >= 0) || !(i.outputPUsdPerToken >= 0)) return 0;
   const affordable = i.outputPUsdPerToken === 0 ? reserve : Math.floor(available / i.outputPUsdPerToken);
   const maxOutput = Math.min(reserve, affordable);
   return maxOutput >= i.minUseful ? maxOutput : 0;
@@ -298,8 +299,9 @@ export function settleSpend(ledger: SpendLedger, s: SpendSettlement): SpendLedge
 /**
  * Na abertura (seção 8.2): reservas sem liquidação mais antigas que `timeoutMs` viram 'orphaned' e são cobradas pelo
  * valor reservado. Um requestId que já tem linha 'settled' ou 'orphaned' é ignorado (nunca cobra duas vezes), e
- * requestIds repetidos entram uma vez só. Instante inválido (NaN) conta como antigo e valor reservado inválido segue
- * a regra "nunca de graça" (fracionário arredonda para cima): falha fechada.
+ * requestIds repetidos entram uma vez só. Instante inválido (NaN) conta como antigo, e reserva com instante no futuro
+ * (o relógio voltou entre uma execução e outra) também: o processo que a fez já morreu e ela nunca liquidaria. Valor
+ * reservado inválido segue a regra "nunca de graça" (fracionário arredonda para cima): falha fechada.
  */
 export function recoverOrphanedReservations(
   records: readonly UsageRecordMeta[],
@@ -312,7 +314,7 @@ export function recoverOrphanedReservations(
   for (const rec of records) {
     if (rec.status !== 'reserved' || closed.has(rec.requestId) || seen.has(rec.requestId)) continue;
     const ageMs = nowMs - rec.reservedAtMs;
-    if (ageMs <= timeoutMs) continue;
+    if (ageMs >= 0 && ageMs <= timeoutMs) continue;
     seen.add(rec.requestId);
     orphaned.push({ requestId: rec.requestId, status: 'orphaned', chargedPUsd: neverFreePUsd(rec.reservedPUsd, 0) });
   }

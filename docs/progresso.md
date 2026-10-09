@@ -2,7 +2,7 @@
 
 > **Leia isto antes de qualquer tarefa** e atualize ao terminar cada etapa (o que foi feito, o que falta, onde parou). Serve para continuar o trabalho em outra sessão sem perder contexto. O resumo fixo do projeto está no [`CLAUDE.md`](../CLAUDE.md); aqui fica o **andamento**.
 
-**Última atualização:** 08/10/2026, fim da tarde (UTC), sessão na nuvem (branch `main-7zybuc`).
+**Última atualização:** 09/10/2026, sessão na nuvem (branch `main-7zybuc`).
 
 ## Onde estamos
 
@@ -48,17 +48,31 @@ Descartado de vez: API direta do DeepSeek com dados pessoais (dados na China) e 
   - Correção em relação ao rascunho: o piso do teto por passo é 256 tokens, não 512. Com 512, a garantia de dois passos de folga até o limite técnico falha entre L = 5.000 e 5.120.
   - Ainda **não** feito da seção 5: o resumo em si (`validateSummary`, `renderSummaryBlock`, `collectUserRequests`, `buildActionLedger`, `selectTail`, `deterministicCompaction`, hierárquica, `sanitizeModelText`), o corte de resultado (`truncateToolResult`), `speculativeStillValid` e o adaptador de histórico por provedor (seção 6). Dependem dos itens do histórico reais, do mascaramento de segredos (`packages/shared`) e do Porteiro; entram com a fase 1.
 
-- **Contexto, parte 3: implementada, revisão interrompida** (commit `d539048`, parado a pedido do dono pelo limite de uso).
-  - `packages/models`: `usage.ts` (uso normalizado de Anthropic, DeepSeek e OpenAI; `checkReportedUsage`; `estimatedUsage`), `calibration.ts` (fator `k` e margem por modelo), `ledger.ts` (livro de gastos: reserva antes, liquidação depois, reserva de segurança, dia local, `toHologramSpend`) e `usdPerMTokToPUsdPerToken` exportado em `cost.ts`. O adaptador do AI SDK fica para a fase 1, depois de conferir os tipos instalados.
-  - `packages/core/src/context`: `anchor.ts` (`contextUsage`, âncora no uso real) e `preflight.ts` (checagem antes de cada envio, falha fechada).
-  - Testes passando (108 em `models`, 104 em `core`); lint e tipos limpos.
-  - **Pendente:** os novos módulos ainda não estão exportados nos `index.ts` dos pacotes. A revisão em 3 lentes achou problemas; alguns foram confirmados por um cético (ex.: em `ledger.ts`), mas o fluxo foi parado antes da correção. Retomar: `Workflow({ scriptPath: "<sessão>/workflows/scripts/contexto-parte-3-wf_49157495-cee.js", resumeFromRunId: "wf_49157495-cee" })` só funciona na mesma sessão; em sessão nova, refazer a revisão desses arquivos.
+- **Contexto, parte 3: concluída** (commits `d539048` e seguinte).
+  - `packages/models`: `usage.ts` (uso normalizado de Anthropic, DeepSeek e OpenAI; `checkReportedUsage`; `estimatedUsage`), `calibration.ts` (fator `k` em [0,5; 2] e margem por modelo), `ledger.ts` (livro de gastos: reserva antes, liquidação depois, reserva de segurança, dia local, `toHologramSpend`) e `usdPerMTokToPUsdPerToken` em `cost.ts`. Agora exportados no `index.ts`.
+  - `packages/core/src/context`: `anchor.ts` (`contextUsage`, âncora no uso real) e `preflight.ts` (checagem antes de cada envio, falha fechada). Exportados.
+  - Revisão em 3 lentes (especificação, robustez, segurança). Corrigido o que ela achou:
+    - formato com nome do protótipo (`toString`) passava sem validação;
+    - detalhe opcional inválido jogava fora o uso inteiro (agora vale 0 com anomalia);
+    - total da DeepSeek com acerto + falta de cache que não bate cobra o maior;
+    - `k` inválido desligava o piso contra uso informado baixo demais;
+    - custo de entrada negativo virava saldo em `maxOutputForBudget`;
+    - reserva com relógio no futuro nunca virava órfã;
+    - âncora 0 ou `k` fora de [0,5; 2] faziam o preflight mandar contexto grande demais;
+    - contagens absurdas davam NaN no uso (agora saturam).
+  - Decisões (desvios conscientes da especificação): `reserveSpend` também recusa `duplicate_request` e `invalid_estimate`; `rollDay` zera o gasto das rotinas (a fatia é diária); `normalizeUsage` recebe o formato da API (o adaptador do AI SDK entra na fase 1, depois de conferir os tipos instalados); custo inválido nunca sai de graça (cobra a reserva).
+  - 297 testes no projeto (108 em `core`, 113 em `models`, 42 no holograma, 34 no laboratório); lint, tipos e build limpos.
 
 **Falta (nesta ordem):**
-1. Terminar a parte 3: revisar e corrigir `usage.ts`, `calibration.ts`, `ledger.ts`, `anchor.ts` e `preflight.ts`, exportar nos `index.ts` e registrar as decisões no diário.
-2. Fazer a crítica do rascunho de **login** (segurança, qualidade e testabilidade), como foi feito com os outros três.
-3. Implementar, um pacote por vez, com testes: memória → login → subagentes. Ligar cada um ao holograma e trocar os controles manuais correspondentes do laboratório por simulação automática.
-4. Promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.
+1. Fazer a crítica do rascunho de **login** (segurança, qualidade e testabilidade), como foi feito com os outros três.
+2. Implementar, um pacote por vez, com testes: memória → login → subagentes. Ligar cada um ao holograma e trocar os controles manuais correspondentes do laboratório por simulação automática.
+3. Promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.
+
+**Pedidos do dono que valem para as próximas fases:**
+- Aba **"Cenários"** no app, com o laboratório do holograma, da fase 1 até a final (seção 8.8; na fase 10 ele decide se sai).
+- Fase **1.5**: conversa por voz, só perguntas e respostas, antes do Porteiro (decisão 0012).
+- Tela **"Permissões"**: tudo que ele liberou, com remoção a qualquer hora (seção 3.4.7).
+- Recomendar o ultracode só quando valer (regra no `CLAUDE.md`); preferir sessão nova por etapa.
 
 ## Pendências do dono do projeto
 

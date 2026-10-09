@@ -1,3 +1,4 @@
+import { MAX_CALIBRATION_RATIO, MIN_CALIBRATION_RATIO } from '@jesus/models';
 import type { ModelCard } from '@jesus/models';
 
 /**
@@ -10,7 +11,7 @@ import type { ModelCard } from '@jesus/models';
 export const MIN_USEFUL_OUTPUT = 1_024;
 
 export interface PreflightInput {
-  /** Entrada real da âncora, se ela vale (`isAnchorValid`, seção 7.2); `null` sem âncora válida. */
+  /** Entrada real da âncora (≥ 1 token), se ela vale (`isAnchorValid`, seção 7.2); `null` sem âncora válida. */
   anchorActualInput: number | null;
   /**
    * Estimativa crua (sem k) do que entrou depois da âncora: Σ itens novos + (F − F da âncora). O chamador limita a
@@ -19,7 +20,7 @@ export interface PreflightInput {
   deltaEstimate: number;
   /** Estimativa crua (sem k) da entrada inteira: parte fixa + histórico. Usada sem âncora válida. */
   totalEstimate: number;
-  /** Fator de calibração (seção 7.4). */
+  /** Fator de calibração (seção 7.4); fora de [0,5; 2] é inválido (dado corrompido). */
   k: number;
   /** Margem do estimador (seção 7.4). Vale só para a parte estimada, nunca para o que o provedor já mediu. */
   m: number;
@@ -60,17 +61,26 @@ function isPositive(value: number): boolean {
 }
 
 /**
+ * k só existe em [0,5; 2] (a calibração descarta razões fora dessa faixa). Fora dela é dado corrompido: um k minúsculo
+ * encolheria a estimativa e deixaria passar uma entrada muitas vezes maior que a janela.
+ */
+function isCalibrationFactor(k: number): boolean {
+  return Number.isFinite(k) && k >= MIN_CALIBRATION_RATIO && k <= MAX_CALIBRATION_RATIO;
+}
+
+/**
  * Entrada estimada, com a margem só na parte estimada:
  *   âncora válida → real + ceil((1 + m) × k × delta);  sem âncora → ceil((1 + m) × k × total).
- * Qualquer número inválido (NaN, infinito, negativo; k ≤ 0) → `null`.
+ * Qualquer número inválido (NaN, infinito, negativo; k fora de [0,5; 2]; âncora abaixo de 1 token, que
+ * `isAnchorValid` também recusa) → `null`.
  */
 function estimateInput(i: PreflightInput): number | null {
-  if (!isPositive(i.k) || !isNonNegative(i.m) || !isNonNegative(i.deltaEstimate) || !isNonNegative(i.totalEstimate)) {
+  if (!isCalibrationFactor(i.k) || !isNonNegative(i.m) || !isNonNegative(i.deltaEstimate) || !isNonNegative(i.totalEstimate)) {
     return null;
   }
   const factor = (1 + i.m) * i.k;
   if (i.anchorActualInput === null) return ceilProduct(factor * i.totalEstimate);
-  if (!isNonNegative(i.anchorActualInput)) return null;
+  if (!(Number.isFinite(i.anchorActualInput) && i.anchorActualInput >= 1)) return null;
   return Math.ceil(i.anchorActualInput) + ceilProduct(factor * i.deltaEstimate);
 }
 

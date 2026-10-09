@@ -79,9 +79,9 @@ Gerenciador: **npm 11.16 ou mais novo** (workspaces). Não use pnpm nem yarn. Re
 ## Estrutura
 
 - `packages/hologram`: holograma (React Three Fiber). Lógica pura e testável em `model.ts`, `visual.ts`, `geometry.ts` e `describe.ts`; shaders em `shaders.ts`; cena em `react/`.
-- `packages/models`: registro de modelos (catálogo curado com preços conferidos, faixas de preço, custo em picodólares, estimativa de tokens).
-- `packages/core`: por enquanto, o contexto automático (`src/context/`): orçamento por modelo, limiares, limpeza de saídas antigas e a máquina de estados da compactação com disjuntor.
-- `apps/hologram-lab`: protótipo da fase 0 (Vite + React + Zustand) com cenários roteirizados em `src/scenarios.ts`; o limite de contexto vem do modelo escolhido (`src/autoContext.ts`) e a compactação automática roda sobre um histórico simulado (`src/autoCompaction.ts`).
+- `packages/models`: registro de modelos (catálogo curado com preços conferidos, faixas de preço, custo em picodólares, estimativa de tokens), uso normalizado por provedor, calibração do estimador e livro de gastos (reserva antes, liquidação depois).
+- `packages/core`: por enquanto, o contexto automático (`src/context/`): orçamento por modelo, limiares, limpeza de saídas antigas, máquina de estados da compactação com disjuntor, âncora no uso real e checagem antes de cada envio.
+- `apps/hologram-lab`: protótipo da fase 0 (Vite + React + Zustand) com cenários roteirizados em `src/scenarios.ts`; o limite de contexto vem do modelo escolhido (`src/autoContext.ts`) e a compactação automática roda sobre um histórico simulado (`src/autoCompaction.ts`). **Pedido do dono:** da fase 1 até a final, esse painel vira a aba "Cenários" do app (seção 8.8).
 - `docs/progresso.md`: diário de bordo (andamento entre sessões). `docs/rascunhos/`: especificações em rascunho, ainda não promovidas a documentação oficial.
 - `.claude/`: `settings.json` registra o gancho de início de sessão (`hooks/session-start.sh`).
 

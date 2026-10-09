@@ -342,10 +342,52 @@ describe('normalizeUsage (seção 7.5, apêndice B)', () => {
     expect(normalizeUsage('deepseek', { prompt_tokens: 1e9, completion_tokens: 300 })).toBeNull();
     expect(normalizeUsage('deepseek', { prompt_tokens: -1e9, completion_tokens: 300 })).toBeNull();
     expect(normalizeUsage('deepseek', { prompt_tokens: 100_000_000, completion_tokens: 300 })?.inputTokens).toBe(100_000_000);
-    // Campo opcional presente com tipo errado também invalida (falha fechada: o chamador estima).
+    // Parte que soma o total da Anthropic com tipo errado invalida (o total ficaria desconhecido).
+    expect(normalizeUsage('anthropic', { input_tokens: 10, output_tokens: 1, cache_read_input_tokens: 'x' })).toBeNull();
+  });
+
+  it('detalhe opcional inválido não joga fora os totais: vale 0 com missing_fields (cobra igual ou mais)', () => {
     const wrongDetail = { prompt_tokens: 10, completion_tokens: 1, prompt_tokens_details: { cached_tokens: '5' } };
-    expect(normalizeUsage('openai_chat', wrongDetail)).toBeNull();
-    expect(normalizeUsage('anthropic', { input_tokens: 10, output_tokens: 1, cache_creation: 7 })).toBeNull();
+    expect(normalizeUsage('openai_chat', wrongDetail)).toMatchObject({ inputTokens: 10, cacheReadTokens: 0, outputTokens: 1, anomalies: ['missing_fields'] });
+    // Raciocínio inválido: a saída informada continua valendo (antes, null fazia cair na estimativa do texto recebido).
+    const badReasoning = { prompt_tokens: 1_000, completion_tokens: 40_000, completion_tokens_details: { reasoning_tokens: 39_000.5 } };
+    expect(normalizeUsage('openai_chat', badReasoning)).toMatchObject({ outputTokens: 40_000, reasoningTokens: 0, anomalies: ['missing_fields'] });
+    expect(normalizeUsage('openai_responses', { input_tokens: 5, output_tokens: 2, input_tokens_details: [] })).toMatchObject({
+      inputTokens: 5,
+      cacheReadTokens: 0,
+      anomalies: ['missing_fields'],
+    });
+    expect(normalizeUsage('deepseek', { prompt_tokens: 9, completion_tokens: 1, completion_tokens_details: 'n/a' })?.anomalies).toEqual(['missing_fields']);
+    // Detalhamento da Anthropic que nem é objeto: TTL desconhecido, toda a escrita cobrada como 1 h.
+    expect(normalizeUsage('anthropic', { input_tokens: 10, output_tokens: 1, cache_creation_input_tokens: 4, cache_creation: 7 })).toMatchObject({
+      inputTokens: 14,
+      cacheWrite5mTokens: 0,
+      cacheWrite1hTokens: 4,
+      anomalies: ['missing_fields'],
+    });
+  });
+
+  it('DeepSeek: acerto + falta de cache que não bate com o total cobra o maior (missing_fields)', () => {
+    expect(normalizeUsage('deepseek', { prompt_tokens: 1_200, prompt_cache_hit_tokens: 1_000, prompt_cache_miss_tokens: 200, completion_tokens: 3 })).toMatchObject({
+      inputTokens: 1_200,
+      anomalies: [],
+    });
+    expect(
+      normalizeUsage('deepseek', { prompt_tokens: 1_200, prompt_cache_hit_tokens: 1_000, prompt_cache_miss_tokens: 50_000, completion_tokens: 3 }),
+    ).toMatchObject({ inputTokens: 51_000, cacheReadTokens: 1_000, anomalies: ['missing_fields'] });
+  });
+
+  it('total somado acima da faixa de sanidade → null (cada campo cabia, a soma não)', () => {
+    const big = 100_000_000;
+    const raw = { input_tokens: big, cache_read_input_tokens: big, cache_creation_input_tokens: big, output_tokens: 1 };
+    expect(normalizeUsage('anthropic', raw)).toBeNull();
+    expect(normalizeUsage('deepseek', { prompt_tokens: big, prompt_cache_hit_tokens: big, prompt_cache_miss_tokens: big, completion_tokens: 1 })).toBeNull();
+  });
+
+  it('formato com nome de método do protótipo (toString, constructor…) → null, nunca um relatório sem validação', () => {
+    for (const format of ['toString', 'constructor', 'valueOf', 'hasOwnProperty', '__proto__']) {
+      expect(normalizeUsage(format as UsageFormat, { input: 5, output: 1, prompt_tokens: 10, completion_tokens: 5 })).toBeNull();
+    }
   });
 
   it('nunca lança exceção (getter que lança, formato inválido vindo de JavaScript)', () => {
@@ -524,18 +566,22 @@ describe('checkReportedUsage (seção 7.6, apêndice B)', () => {
     });
   });
 
-  it('entrada informada não finita cai no piso; estimativa ou k inválidos desligam o piso e não calibram', () => {
+  it('entrada informada não finita cai no piso; estimativa inválida desliga o piso; k inválido vale 1 e mantém o piso', () => {
     const nan = checkReportedUsage({ usage: providerReport({ inputTokens: Number.NaN }), inputEstimate: 1_000, k: 1 });
     expect(nan.billable.inputTokens).toBe(500);
-    for (const [inputEstimate, k] of [
-      [0, 1],
-      [Number.NaN, 1],
-      [1_000, 0],
-      [1_000, Number.POSITIVE_INFINITY],
-    ] as const) {
+    for (const inputEstimate of [0, Number.NaN]) {
       const usage = providerReport({ inputTokens: 10 });
-      expect(checkReportedUsage({ usage, inputEstimate, k })).toEqual({ billable: usage, calibrate: false });
+      expect(checkReportedUsage({ usage, inputEstimate, k: 1 })).toEqual({ billable: usage, calibrate: false });
     }
+    // k corrompido não pode desligar a proteção contra uso informado baixo demais (antes, cobrava só 10).
+    for (const k of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const result = checkReportedUsage({ usage: providerReport({ inputTokens: 10 }), inputEstimate: 1_000, k });
+      expect(result.billable.inputTokens).toBe(500);
+      expect(result.billable.source).toBe('floored');
+      expect(result.calibrate).toBe(false);
+    }
+    // k inválido com uso normal: não aplica piso, mas também não calibra.
+    expect(checkReportedUsage({ usage: providerReport({ inputTokens: 900 }), inputEstimate: 1_000, k: Number.NaN }).calibrate).toBe(false);
   });
 
   it('propriedade: nunca cobra menos que o informado nem que o piso; cache ≤ entrada', () => {

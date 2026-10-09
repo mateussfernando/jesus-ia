@@ -23,8 +23,9 @@ const CALIBRATION_ALPHA = 0.2;
 /** Abaixo disso, a estimativa crua vale (k = 1) e a margem é a padrão. */
 const MIN_CALIBRATION_SAMPLES = 3;
 /** Faixa aceita para real / estimado; fora dela a amostra é anomalia e não entra. */
-const MIN_CALIBRATION_RATIO = 0.5;
-const MAX_CALIBRATION_RATIO = 2;
+/** Faixa das razões real/estimado aceitas (seção 7.4); k calibrado fica sempre nela. */
+export const MIN_CALIBRATION_RATIO = 0.5;
+export const MAX_CALIBRATION_RATIO = 2;
 
 /** Margem antes de calibrar: 0,10; tokenizador desconhecido ou runtime local (Ollama, LM Studio): 0,15. */
 const DEFAULT_MARGIN_RATIO = 0.1;

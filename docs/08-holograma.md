@@ -104,3 +104,7 @@ Resumo da seção [3.12](03-seguranca.md): cartões de confirmação num compone
 4. Diga o que mudar: cores, tamanho, velocidade, brilho, densidade, o que sobra ou falta.
 
 **Limite do teste na nuvem:** o servidor da sessão não tem GPU, então lá o Chromium roda o WebGL por software (cerca de 6 fps). Os 60 fps só podem ser medidos no seu PC.
+
+### Aba "Cenários" no app (pedido do dono do projeto)
+
+O laboratório não some quando o Electron chegar: da fase 1 até a fase final, o app tem uma **aba "Cenários"** com o mesmo painel (cenários roteirizados, controles e medidor de fps), para você ver os efeitos do holograma a qualquer momento. Ela usa só dados falsos: nada ali conversa com o modelo, lê arquivos ou executa ações. Na fase 10 (polimento), você decide se a aba sai ou fica escondida num modo de desenvolvedor.

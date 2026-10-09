@@ -65,36 +65,53 @@ function roundProduct(x: number): number {
   return Math.floor(x + 0.5 + FLOAT_TOLERANCE * Math.max(1, Math.abs(x)));
 }
 
-function isNonNegative(value: number): boolean {
-  return Number.isFinite(value) && value >= 0;
+/** Teto de qualquer contagem: acima disso as contas deixam de ser inteiros exatos. */
+const SATURATED = Number.MAX_SAFE_INTEGER;
+
+/** Número finito entre 0 e 2⁵³ − 1. */
+function isSafeCount(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= SATURATED;
 }
 
-/** Contagem de tokens de um item: NaN, infinita ou negativa conta 0 (como no estimador, seção 14). */
+/**
+ * Contagem de tokens de um item: NaN ou negativa conta 0 (como no estimador, seção 14); infinita ou enorme satura em
+ * 2⁵³ − 1, para nunca encolher o uso (o lado seguro é compactar, não enviar).
+ */
 function tokenCount(value: number): number {
-  return Number.isFinite(value) && value > 0 ? value : 0;
+  if (Number.isNaN(value) || value <= 0) return 0;
+  return Math.min(value, SATURATED);
 }
 
 function sumTokens(items: readonly ContextItemMeta[]): number {
   let total = 0;
-  for (const item of items) total += tokenCount(item.tokens);
+  for (const item of items) total = Math.min(SATURATED, total + tokenCount(item.tokens));
   return total;
+}
+
+/** Resultado final: inteiro em [0; 2⁵³ − 1]. NaN (só com entradas absurdas) satura, pelo mesmo motivo de `tokenCount`. */
+function finalTokens(x: number): number {
+  if (Number.isNaN(x)) return SATURATED;
+  return Math.min(SATURATED, Math.max(0, x));
 }
 
 /**
  * A âncora vale ⇔ mesmo `modelKey`, mesma `historyVersion` e mesmo `toolsetHash` (seção 7.2), e números sãos:
- * entrada real finita e positiva, estimativas finitas, não negativas e com soma positiva (senão a proporção da
- * parte fixa não existe). Âncora inválida não é erro: o uso volta a ser estimado.
+ * entrada real de pelo menos 1 token, estimativas não negativas com soma positiva (senão a proporção da parte fixa não existe),
+ * todas finitas e até 2⁵³ − 1. Âncora inválida não é erro: o uso volta a ser estimado.
+ *
+ * Devolve `boolean`, e não um predicado de tipo: uma âncora que não vale continua sendo uma âncora (só não serve
+ * agora), e o predicado faria o TypeScript tratá-la como `null` no ramo falso.
  */
-export function isAnchorValid(anchor: ContextAnchor | null, current: AnchorKey): anchor is ContextAnchor {
+export function isAnchorValid(anchor: ContextAnchor | null, current: AnchorKey): boolean {
   return (
     anchor !== null &&
     anchor.modelKey === current.modelKey &&
     anchor.historyVersion === current.historyVersion &&
     anchor.toolsetHash === current.toolsetHash &&
-    Number.isFinite(anchor.actualInputTokens) &&
-    anchor.actualInputTokens > 0 &&
-    isNonNegative(anchor.fixedEstimate) &&
-    isNonNegative(anchor.historyEstimate) &&
+    isSafeCount(anchor.actualInputTokens) &&
+    anchor.actualInputTokens >= 1 &&
+    isSafeCount(anchor.fixedEstimate) &&
+    isSafeCount(anchor.historyEstimate) &&
     anchor.fixedEstimate + anchor.historyEstimate > 0
   );
 }
@@ -110,25 +127,28 @@ export function isAnchorValid(anchor: ContextAnchor | null, current: AnchorKey):
  *   total = round(k × (Σ est(todos) + F));  usado = total − round(k × F)
  *
  * Itens limpos ou despejados contam com os tokens atuais (o chamador já os trocou pelos marcadores).
- * `usedTokens` e `totalInputTokens` nunca são negativos. Contagens inválidas (NaN, negativas, infinitas) contam 0;
- * `k` inválido (NaN, infinito, ≤ 0) vale 1, o mesmo de um modelo ainda sem calibração.
+ * `usedTokens` e `totalInputTokens` são inteiros em [0; 2⁵³ − 1], nunca NaN. Contagens NaN ou negativas contam 0;
+ * infinitas saturam (nunca encolhem o uso). Com âncora, uma parte fixa atual inválida (NaN, negativa) vale a da
+ * âncora: assumir que ela sumiu derrubaria o total abaixo do que o provedor mediu. `k` inválido (NaN, infinito, ≤ 0)
+ * vale 1, o mesmo de um modelo ainda sem calibração.
  */
 export function contextUsage(i: ContextUsageInput): ContextUsage {
   const k = Number.isFinite(i.k) && i.k > 0 ? i.k : 1;
-  const fixed = tokenCount(i.fixedEstimate);
   const { anchor } = i;
 
-  if (isAnchorValid(anchor, i.current)) {
+  if (anchor !== null && isAnchorValid(anchor, i.current)) {
     const actual = Math.round(anchor.actualInputTokens);
     // Proporção de inteiros: Math.round já é exato aqui (só os produtos com k precisam de tolerância).
     const fixedReal = Math.round((actual * anchor.fixedEstimate) / (anchor.fixedEstimate + anchor.historyEstimate));
     const after = sumTokens(i.itemsAfterAnchor);
-    const total = actual + roundProduct(k * (after + (fixed - anchor.fixedEstimate)));
+    const fixedNow = Number.isNaN(i.fixedEstimate) || i.fixedEstimate < 0 ? anchor.fixedEstimate : tokenCount(i.fixedEstimate);
+    const total = actual + roundProduct(k * (after + (fixedNow - anchor.fixedEstimate)));
     const used = actual - fixedReal + roundProduct(k * after);
-    return { usedTokens: Math.max(0, used), totalInputTokens: Math.max(0, total), source: 'anchored' };
+    return { usedTokens: finalTokens(used), totalInputTokens: finalTokens(total), source: 'anchored' };
   }
 
+  const fixed = tokenCount(i.fixedEstimate);
   const total = roundProduct(k * (sumTokens(i.allItems) + fixed));
   const used = total - roundProduct(k * fixed);
-  return { usedTokens: Math.max(0, used), totalInputTokens: Math.max(0, total), source: 'estimated' };
+  return { usedTokens: finalTokens(used), totalInputTokens: finalTokens(total), source: 'estimated' };
 }
