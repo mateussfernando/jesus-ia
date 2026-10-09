@@ -7,7 +7,7 @@
 ## Onde estamos
 
 - **Fase 0 (holograma): concluída e aprovada** pelo dono do projeto. Ele mediu 75 fps (o máximo da tela) num PC de 8 GB com placa de vídeo dedicada; em GPU integrada ainda não foi medido.
-- **PR #1** (`main-7zybuc` → `main`): https://github.com/mateussfernando/jesus-ia/pull/1. CI verde até `ad93238`, sem conflitos; descrição atualizada. **Aguarda o merge do dono do projeto** (ele perguntou se precisa fazer: o Claude pode fazer pelo GitHub, mas só com autorização explícita). Contém: monorepo npm, `packages/hologram`, `apps/hologram-lab`, `packages/models`, `packages/core`, docs e as decisões 0008 a 0011.
+- **Branch de trabalho: `main-7zybuc`** (PR #1: https://github.com/mateussfernando/jesus-ia/pull/1, CI verde). **Decisão do dono:** todo o trabalho fica nessa branch até o projeto ficar pronto; ele mesmo leva para a `main` no fim. Sessões novas devem partir dela e fazer commit e push nela; não fazer merge.
 - **Próxima fase do roadmap:** fase 1 (Electron abrindo janela, chat por texto, 1 provedor, ferramentas só de leitura, registro) e, logo depois, a nova **fase 1.5: conversa por voz, só perguntas e respostas** (decisão 0012, pedido do dono). Ver `docs/10-roadmap.md`.
 
 ## Decisões tomadas nesta etapa
@@ -76,14 +76,14 @@ Descartado de vez: API direta do DeepSeek com dados pessoais (dados na China) e 
 
 ## Pendências do dono do projeto
 
-- Fazer o merge do PR #1.
+- No fim do projeto, levar a `main-7zybuc` para a `main` (ele mesmo faz).
 - Criar a conta no Console da Anthropic (platform.claude.com), cadastrar cartão internacional, pôr um limite de gasto e criar a chave de API (guardar num gerenciador de senhas; ela só entra no Jesus pelo cofre, na fase 1).
 
 ## Ambiente e armadilhas
 
 - **Commits sempre na conta do dono** (`Mateus Fernando <mateusfss368@gmail.com>`), pedido dele. A imagem da nuvem vem com o git configurado como "Claude"; o gancho de início de sessão corrige isso.
   - Os 14 primeiros commits do PR #1 saíram como "Claude".
-  - Uma versão com o autor certo (mesmo conteúdo e mesmas mensagens) está pronta, mas só sobe com push forçado, que o sistema de segurança da sessão bloqueou. **Aguarda a decisão do dono**: autorizar o push forçado ou fazer o merge como está.
+  - Corrigir o autor deles exige push forçado, que o sistema de segurança da sessão bloqueou. Fica para o dono decidir na hora de levar para a `main` (autorizar o push forçado ou deixar como está).
 
 - Sessões na nuvem vêm com npm 10, que o projeto recusa: rodar `npm install -g npm@11.21.0` antes de `npm ci`.
 - O proxy da nuvem bloqueia os sites do DeepSeek, DeepInfra e Fireworks (pesquisa só por buscador). O site de docs da Anthropic abre.
