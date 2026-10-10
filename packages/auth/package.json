@@ -1,0 +1,20 @@
+{
+  "name": "@jesus/auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Senha local do Jesus: regras da senha, tentativas, bloqueio e serviço de login (decisão 0015). Lógica pura com portas injetadas.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@jesus/crypto": "*"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.0"
+  }
+}

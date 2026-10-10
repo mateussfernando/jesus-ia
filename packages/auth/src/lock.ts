@@ -1,0 +1,122 @@
+/**
+ * Estado de bloqueio do Jesus (decisão 0015), como máquina de estados pura: `lockTransition(estado, evento)`
+ * devolve o próximo estado e os efeitos. Quem executa os efeitos (mostrar a tela de senha, cancelar cartões e
+ * fluxos de conexão, agendar a próxima checagem) é o processo principal do Electron.
+ */
+
+export type LockReason = 'startup' | 'idle' | 'os_locked' | 'suspend' | 'manual';
+
+export type LockState =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'setup_required' }
+  | { readonly kind: 'locked'; readonly reason: LockReason; readonly since: number }
+  | { readonly kind: 'unlocked'; readonly since: number; readonly lastActivityAt: number };
+
+export type LockEvent =
+  | { readonly e: 'CREDENTIAL_LOADED'; readonly now: number; readonly exists: boolean }
+  /** Senha criada na primeira vez: já entra desbloqueado. */
+  | { readonly e: 'PASSWORD_SET'; readonly now: number }
+  /** O serviço conferiu a senha (ou o código de recuperação). */
+  | { readonly e: 'UNLOCKED'; readonly now: number }
+  /** Teclado, mouse ou voz do usuário com a janela em foco. */
+  | { readonly e: 'ACTIVITY'; readonly now: number }
+  | { readonly e: 'TICK'; readonly now: number }
+  | { readonly e: 'OS_LOCKED'; readonly now: number }
+  | { readonly e: 'SUSPEND'; readonly now: number }
+  | { readonly e: 'LOCK_REQUESTED'; readonly now: number };
+
+export type LockEffect =
+  | { readonly fx: 'show_setup' }
+  | { readonly fx: 'show_lock_screen'; readonly reason: LockReason }
+  | { readonly fx: 'show_app' }
+  /** Cartões de confirmação pendentes são cancelados: ninguém responde por você com o app bloqueado. */
+  | { readonly fx: 'cancel_pending_confirmations' }
+  /** Fluxos de conexão de contas são cancelados e o código do device flow sai da tela. */
+  | { readonly fx: 'cancel_connection_flows' }
+  | { readonly fx: 'schedule_tick'; readonly at: number };
+
+export interface LockPolicy {
+  /** Tempo sem uso até bloquear. Ajustável de 1 a 120 min (decisão 0015). */
+  readonly idleMs: number;
+}
+
+export const MIN_IDLE_MS = 60_000;
+export const MAX_IDLE_MS = 120 * 60_000;
+export const defaultLockPolicy: LockPolicy = { idleMs: 15 * 60_000 };
+
+/** Prende o tempo sem uso na faixa permitida; valor inválido vira o padrão. */
+export function clampIdleMs(idleMs: number): number {
+  if (!Number.isFinite(idleMs)) return defaultLockPolicy.idleMs;
+  return Math.min(MAX_IDLE_MS, Math.max(MIN_IDLE_MS, Math.round(idleMs)));
+}
+
+export const initialLockState: LockState = { kind: 'loading' };
+
+type Transition = { readonly state: LockState; readonly effects: readonly LockEffect[] };
+
+function lock(reason: LockReason, now: number): Transition {
+  return {
+    state: { kind: 'locked', reason, since: now },
+    effects: [
+      { fx: 'cancel_pending_confirmations' },
+      { fx: 'cancel_connection_flows' },
+      { fx: 'show_lock_screen', reason },
+    ],
+  };
+}
+
+function unlocked(now: number, policy: LockPolicy): Transition {
+  return {
+    state: { kind: 'unlocked', since: now, lastActivityAt: now },
+    effects: [{ fx: 'show_app' }, { fx: 'schedule_tick', at: now + clampIdleMs(policy.idleMs) }],
+  };
+}
+
+const unchanged = (state: LockState): Transition => ({ state, effects: [] });
+
+export function lockTransition(state: LockState, event: LockEvent, policy: LockPolicy = defaultLockPolicy): Transition {
+  const idleMs = clampIdleMs(policy.idleMs);
+  switch (event.e) {
+    case 'CREDENTIAL_LOADED':
+      if (state.kind !== 'loading') return unchanged(state);
+      return event.exists
+        ? { state: { kind: 'locked', reason: 'startup', since: event.now }, effects: [{ fx: 'show_lock_screen', reason: 'startup' }] }
+        : { state: { kind: 'setup_required' }, effects: [{ fx: 'show_setup' }] };
+
+    case 'PASSWORD_SET':
+      // Só vale na primeira configuração; trocar a senha com o app aberto não muda o estado.
+      return state.kind === 'setup_required' ? unlocked(event.now, policy) : unchanged(state);
+
+    case 'UNLOCKED':
+      return state.kind === 'locked' ? unlocked(event.now, policy) : unchanged(state);
+
+    case 'ACTIVITY':
+      if (state.kind !== 'unlocked') return unchanged(state);
+      // Relógio que volta não "rejuvenesce" a sessão para antes da última atividade.
+      if (event.now <= state.lastActivityAt) return unchanged(state);
+      return { state: { ...state, lastActivityAt: event.now }, effects: [] };
+
+    case 'TICK': {
+      if (state.kind !== 'unlocked') return unchanged(state);
+      const deadline = state.lastActivityAt + idleMs;
+      if (event.now >= deadline) return lock('idle', event.now);
+      return { state, effects: [{ fx: 'schedule_tick', at: deadline }] };
+    }
+
+    case 'OS_LOCKED':
+    case 'SUSPEND':
+    case 'LOCK_REQUESTED': {
+      if (state.kind !== 'unlocked') return unchanged(state);
+      const reason: LockReason = event.e === 'OS_LOCKED' ? 'os_locked' : event.e === 'SUSPEND' ? 'suspend' : 'manual';
+      return lock(reason, event.now);
+    }
+  }
+}
+
+/**
+ * Pedidos novos (voz ou texto) só com o app desbloqueado. "Jesus, pare" e o botão de emergência não passam por
+ * aqui: funcionam sempre, porque parar é seguro (seção 3.11).
+ */
+export function acceptsRequests(state: LockState): boolean {
+  return state.kind === 'unlocked';
+}

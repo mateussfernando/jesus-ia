@@ -16,6 +16,9 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0010](0010-primeiro-modelo-deepseek-via-deepinfra.md) | Primeiro modelo: DeepSeek V4.1-Flash na DeepInfra | substituída por 0011 |
 | [0011](0011-primeiro-modelo-claude-haiku.md) | Primeiro modelo: Claude Haiku 5.5 | aceita |
 | [0012](0012-conversa-por-voz-antes-da-execucao.md) | Conversa por voz antes da execução (nova fase 1.5) | aceita |
+| [0013](0013-interface-em-nextjs-dentro-do-electron.md) | Interface em Next.js dentro do Electron (laboratório vira a aba Cenários) | aceita |
+| [0014](0014-prisma-como-orm.md) | Prisma como ORM do PostgreSQL (substitui o Drizzle da seção 4.3) | aceita |
+| [0015](0015-senha-local-com-bcrypt-e-dados-cifrados.md) | Senha local com bcrypt e dados cifrados com AES-256-GCM | aceita |
 
 ## Modelo
 
