@@ -1,11 +1,43 @@
-> **Rascunho de 08/10/2026 — Login e conexão automáticos.** Gerado por um agente projetista a partir dos documentos do projeto, **ainda sem a revisão crítica** (segurança, qualidade e testabilidade). Não é decisão: serve de base para a implementação, que deve conferir cada ponto contra as invariantes (docs/03-seguranca.md, seção 3.0). Andamento em [docs/progresso.md](../progresso.md).
+> **Rascunho revisado de 10/10/2026: Login e conexão automáticos.** Escrito por um agente projetista em 08/10/2026 e revisado depois por uma crítica de segurança, qualidade e testabilidade, como os outros três rascunhos. O que mudou está logo abaixo, e o que a crítica apontou está no Apêndice C. Ainda não é decisão: a implementação confere cada ponto contra as invariantes (docs/03-seguranca.md, seção 3.0). Andamento em [docs/progresso.md](../progresso.md).
 >
-> Pacote sugerido: packages/integrations (subpasta src/connect/: catálogo, resolvedor, risco, limites, cartão, máquinas de estado device/PKCE, verificação de concessão, renovação, erros reativos, revogação, projeção para o holograma). Regras de fábrica accounts.* e testes em packages/gate e security/policies; casos de ataque em security/attack-corpus; cofre e execução HTTP dos efeitos no packages/executor; cartão confiável, loopback, openExternal e compositor do snapshot no apps/desktop.
+> Pacote sugerido: packages/integrations (subpasta src/connect/: catálogo, resolvedor, risco, limites, fila, cartão, máquinas de estado device/PKCE, verificação de concessão, renovação, erros reativos, revogação, projeção para o holograma). Regras de fábrica accounts.* e testes em packages/gate e security/policies; casos de ataque em security/attack-corpus; cofre e execução HTTP dos efeitos no packages/executor; cartão confiável (componente React da interface em Next.js, decisão 0013), loopback, openExternal e compositor do snapshot no apps/desktop.
+>
+> **Não confundir:** este rascunho trata da **conexão de contas** (Google, GitHub) por OAuth, em que o login é sempre seu, na página oficial. A **senha local para abrir o Jesus** (hash bcrypt, decisão 0015) é outra coisa e nunca é usada com nenhum provedor.
 
-# Conexão automática de contas: o Jesus conduz o fluxo, mas o login é sempre seu
+# Conexão automática de contas: o Jesus conduz o fluxo, mas o login é sempre seu (revisão 2)
 
-> Área: login e conexão automáticos. Documentos de base: 06-integracoes (6.1–6.3, 6.6, 6.7), 03-seguranca (3.0, 3.4.7, 3.4.8 linha "Contas", 3.4.9 item 2, 3.5, 3.8, 3.11), 02-arquitetura (2.4, 2.5), 08-holograma (8.2, "Código grande no centro").
-> Pacote: `packages/integrations` (subpasta `src/connect/`). Tudo o que é política é **lógica pura**, testável em Linux sem LLM, sem banco e sem rede. Rede, cofre, navegador, área de transferência, relógio e aleatoriedade entram por interfaces injetadas (portas).
+> Área: login e conexão automáticos. Documentos de base: 06-integracoes (6.1–6.3, 6.6, 6.7), 03-seguranca (3.0, 3.4.3, 3.4.7, 3.4.8 linha "Contas", 3.4.9 item 2, 3.5, 3.8, 3.11, 3.18), 02-arquitetura (2.2, 2.4, 2.5), 05-dados-postgresql (5.3), 08-holograma (8.2, "Código grande no centro"), rascunho de subagentes (registro autoritativo de agentes, 5.3).
+> Pacote: `packages/integrations` (subpasta `src/connect/`). Tudo o que é política é **lógica pura**, testável em Linux sem LLM, sem banco e sem rede. Rede, cofre, navegador, área de transferência, relógios e aleatoriedade entram por interfaces injetadas (portas).
+
+## O que mudou na revisão 2
+
+Os números das seções continuam os mesmos da primeira versão. As correções estão aplicadas no corpo; o motivo de cada uma está no Apêndice C.
+
+**Segurança**
+
+1. **Contexto autoritativo, fora do Cérebro.** O orquestrador roda no processo Porteiro + Executor. Contaminação, origem do pedido, agente, modo e presença humana vêm de registros que o Cérebro não escreve (seção 5, "De onde vem o contexto").
+2. **Reconectar só quando o provedor derrubou a conexão.** Desconectar por vontade sua ou pelo "Revogar tudo" apaga as capacidades aprovadas; depois do "Revogar tudo", nenhum cartão de conexão até você sair do modo de incidente (5.1, 14).
+3. **Área de transferência desligada por padrão.** O `user_code` não é inútil: quem digitar antes de você, com a conta dele, faz o Jesus receber um token da conta errada (7, 19).
+4. **Conta confirmada na primeira conexão** ("Não sou eu" revoga na hora) e rótulos do provedor saneados (7, 12).
+5. **A ferramenta do modelo só pede leitura.** Escrita só entra quando uma chamada real precisa dela (reativa, com teto) ou pela interface (9).
+6. **Toda conexão passa pela Camada 1** como a chamada sintética `accounts.connect(...)`: uma regra `deny` sua vale também para a conexão disparada por outra ferramenta (5, 9).
+7. **Sem voz quando a finalidade tem nome vindo de conteúdo externo** (6).
+8. **Recusa só se desfaz com mensagem nova sua**, inclusive em pedido explícito (7).
+9. **Quem grava as aprovações:** só o Executor (depois de validar a aprovação assinada) e a interface; o Cérebro não tem privilégio na tabela (4).
+10. **Cartão com o efeito real de cada capacidade** ("enviar e-mails em seu nome"), não só "leitura e escrita" (3, 8).
+11. **Prazo em todo estado das máquinas:** consulta ou troca que nunca responde não deixa o código na tela para sempre (10, 11).
+12. **Bloquear o Jesus cancela os fluxos:** com a tela de senha (decisão 0015), o código sai da tela e os cartões fecham (9).
+13. **Mascaramento completo** dos formatos de token dos dois provedores e logger sem corpo nas rotas de autorização (17).
+
+**Qualidade e testabilidade**
+
+1. Escopos mais estreitos da Agenda (`calendar.events.owned`, a conferir na fase 7) e `satisfiedBy` corrigido (3).
+2. `ConnectAttempt` guarda as capacidades, para a recusa parcial valer só para elas (7).
+3. Fila de conexão como redutor puro (`connectQueueTransition`), no lugar de prosa (9).
+4. JSON canônico definido para o hash do cartão, com vetores de teste (8).
+5. Intervalos no relógio monotônico; prazo do provedor no relógio de parede (10).
+6. Tipos alinhados (`BlockCode`, `FlowFailure`, `RevokedReason`) e casos novos no Apêndice B.
+7. Integração com a tela **Permissões** (pedido do dono) e com o laboratório (4, 15).
 
 ## 0. A ideia em uma frase
 
@@ -121,6 +153,26 @@ export interface ProviderSpec {
 
 `…/` = `https://www.googleapis.com/auth/`. Unidades amplas (`drive`, `gmail.modify`, `https://mail.google.com/`) só aparecem em `satisfiedBy`: o Jesus **nunca as pede**. Elas apenas evitam um cartão inútil se a concessão já existir.
 
+**Revisão 2: Agenda mais estreita.** `calendar.events` vale para **todas** as agendas, inclusive as compartilhadas com você. O Google tem escopos só para as agendas que são suas (`calendar.events.owned` e `calendar.events.owned.readonly`), que bastam para "marcar dentista". Proposta, a conferir na fase 7 com a documentação da época: `google.calendar.write` pede `…/calendar.events.owned`; `google.calendar.read` pede `…/calendar.events.owned.readonly` (ou `calendar.readonly` se precisar listar as agendas); `calendar.events`, `calendar.events.readonly` e `calendar` entram só em `satisfiedBy`. Na primeira versão, `satisfiedBy` de `google.calendar.read` esquecia `calendar.events`, que também permite ler eventos.
+
+**Revisão 2: efeito de cada capacidade.** "Leitura e escrita" não diz o que importa. Cada capacidade ganha `effectPtBr`, uma frase escrita por nós com o efeito real, que o cartão mostra (seção 8):
+
+| Capacidade | `effectPtBr` |
+|---|---|
+| `github.contents.read` | ler o código dos repositórios liberados |
+| `github.contents.write` | alterar arquivos e fazer push nos repositórios liberados |
+| `github.issues.read` / `.write` | ler issues / abrir, editar e comentar issues em seu nome |
+| `github.pull_requests.read` / `.write` | ler pull requests / abrir, editar e comentar pull requests em seu nome |
+| `google.calendar.read` | ver os eventos da sua agenda |
+| `google.calendar.write` | criar, alterar e apagar eventos da sua agenda (o Google pode enviar convites) |
+| `google.gmail.read` | ler seus e-mails |
+| `google.gmail.compose` | criar rascunhos e **enviar e-mails em seu nome** |
+| `google.contacts.read` | ver seus contatos |
+| `google.drive.metadata.read` | ver a lista de arquivos do Drive (sem o conteúdo) |
+| `google.drive.file` | criar arquivos no Drive e mexer só nos que o Jesus criou ou que você abriu com ele |
+
+`CapabilitySpec` ganha `readonly effectPtBr: string`. Um teste confere que toda capacidade de escrita tem frase e que a de `gmail.compose` contém "enviar".
+
 **Contrato de ferramenta (seção 2.4):** o campo `escopos?: string[]` vira:
 
 ```ts
@@ -145,8 +197,10 @@ Esse livro-razão local de aprovações dá menor privilégio de verdade até no
 ```ts
 export type ConnectionStatus = 'connected' | 'revoking' | 'revocation_pending' | 'revoked';
 export type RevokedReason =
-  | 'user_disconnected' | 'invalid_grant' | 'refresh_expired' | 'consent_expired'
-  | 'vault_write_failed' | 'account_mismatch';
+  | 'user_disconnected' | 'revoke_all' | 'invalid_grant' | 'refresh_expired' | 'consent_expired'
+  | 'vault_write_failed';
+// revisão 2: 'account_mismatch' saiu daqui. No descompasso de conta, quem é revogado e descartado é o
+// token NOVO (seção 12); a conexão registrada continua como estava.
 
 export interface ApprovedCapability { readonly id: CapabilityId; readonly approvedAt: number; }
 export interface AccountResource { readonly kind: 'github_repo'; readonly fullName: string } // minúsculo, 'owner/name'
@@ -174,7 +228,21 @@ export interface ConnectionView {
 }
 ```
 
-Persistência (renomeia a tabela `conexoes` da seção 5 para identificadores em inglês): `connections(id, provider, account_id, account_label, status, revoked_reason, granted_units text[], approved_capabilities jsonb, access_expires_at, refresh_expires_at, vault_ref, connected_at, last_used_at, revoked_at)` e `connection_attempts(id, provider, task_id, trigger, flow_started, outcome, at)`. **Tokens, `device_code`, `code_verifier` e código de autorização nunca vão para o banco**: os tokens ficam só no cofre (DPAPI); os segredos de fluxo ficam só na memória do Executor.
+Persistência (renomeia a tabela `conexoes` da seção 5 para identificadores em inglês; modelos do Prisma, decisão 0014): `connections(id, provider, account_id, account_label, status, revoked_reason, granted_units text[], approved_capabilities jsonb, access_expires_at, refresh_expires_at, vault_ref, connected_at, last_used_at, revoked_at)` e `connection_attempts(id, provider, task_id, trigger, flow_started, outcome, capabilities text[], declined_capabilities text[], after_user_message_id, at)`. **Tokens, `device_code`, `code_verifier` e código de autorização nunca vão para o banco**: os tokens ficam só no cofre (DPAPI); os segredos de fluxo ficam só na memória do Executor.
+
+### 4.1 Quem grava (revisão 2)
+
+- `connections` e `connection_attempts` são gravadas **só** pelo Executor, com um papel de banco próprio, depois de validar a aprovação assinada; e pela interface (papel `jesus_config`), para remover capacidades na tela Permissões. A coluna `approved_capabilities` não tem `UPDATE` para mais ninguém.
+- O Cérebro não tem privilégio nenhum nessas tabelas (nem `SELECT`): recebe só o texto de `describeConnectionsForModel` (seção 16) pela API de dados do lado confiável. Os privilégios por coluna entram como SQL cru na migração do Prisma, porque o Prisma não modela papéis nem `GRANT`.
+- Os segredos de fluxo vivem num repositório em memória do Executor, indexado por `SecretRef`; nada disso é serializável (o tipo não tem `toJSON`), e o teste de propriedade confere que nenhum estado das máquinas, evento de auditoria ou linha de log contém o valor de um segredo.
+
+### 4.2 Tela Permissões (revisão 2; pedido do dono, seção 3.4.7)
+
+As capacidades que você aprovou são permissões como as outras e aparecem na tela **Permissões**: uma linha por (conta, capacidade), com a frase de efeito, a conta usada (`accountLabel`), quando e por qual canal você aprovou e quantas vezes foi usada.
+
+- **Remover vale na hora**, inclusive com uma tarefa em andamento: o Executor confere `usableCapabilities` antes de **cada** chamada, então a próxima chamada que precisar dela volta a pedir (`local_approval`, nível alto).
+- Remover a última capacidade de uma conta oferece também desconectar (seção 14), mas não desconecta sozinho.
+- Toda mudança vira versão (com histórico) e evento de auditoria (`connection.capability_removed`). O Jesus só abre a tela quando você pede; não existe ferramenta do modelo para mudar a lista (invariante 7).
 
 ## 5. Resolvedor de conexão
 
@@ -201,13 +269,17 @@ export interface ActiveFlowView {
 export interface ResolveContext {
   readonly now: number;
   readonly taskId: string;
-  readonly taint: Taint;
+  readonly taint: Taint;                        // tabela tasks (só sobe), lida pelo lado confiável
   readonly trigger: Trigger;
-  readonly origin: RequestOrigin;
-  readonly agent: 'main' | 'subagent';
+  readonly origin: RequestOrigin | 'remote' | 'external'; // canal gravado pelo processo principal em messages
+  readonly agent: 'main' | 'subagent';          // registro autoritativo de agentes do Porteiro
   readonly humanAvailable: boolean;            // false em rotinas agendadas
+  readonly appLocked: boolean;                 // tela de senha do Jesus (decisão 0015)
+  readonly incidentLockdown: boolean;          // depois do "Revogar tudo" (3.18), até você sair pela interface
   readonly mode: 'read_only' | 'ask' | 'plan' | 'auto';
+  readonly ruleVerdict: 'deny' | 'ask' | 'allow' | 'none'; // Camada 1 sobre a chamada sintética accounts.connect(...)
   readonly intentCovered: boolean | 'unknown'; // Camada 3 sobre a chamada que motivou (exigido se taint ≠ clean)
+  readonly lastUserMessageId: number;          // id da mensagem mais recente SUA nesta tarefa
   readonly toolCeiling: readonly CapabilityId[];
   readonly providerConfigured: boolean;         // client_id presente; device flow habilitado no App
   readonly githubAppWriteUnits: readonly string[]; // permissões de escrita configuradas no App (manifesto/config)
@@ -215,7 +287,21 @@ export interface ResolveContext {
   readonly attempts: readonly ConnectAttempt[];
   readonly policy: ConnectPolicy;
 }
+```
 
+**De onde vem o contexto (revisão 2).** O resolvedor e o orquestrador (seção 9) rodam no processo **Porteiro + Executor**. O Cérebro só espera a resposta da chamada pausada e **nenhum campo** de `ResolveContext` vem dele:
+
+| Campo | Fonte autoritativa |
+|---|---|
+| `taint` | `tasks.taint`, marcada pelo Executor ao rotular resultados (só sobe) |
+| `origin`, `lastUserMessageId` | `messages`, gravada pelo processo principal (canal: voz, texto, remoto; o Cérebro não escreve ali) |
+| `agent` | registro autoritativo de agentes do Porteiro (rascunho de subagentes, 5.3) |
+| `mode`, `incidentLockdown` | configuração gravada pela interface (`jesus_config`) |
+| `humanAvailable`, `appLocked` | processo principal (janela, rotina, tela de senha) |
+| `ruleVerdict` | Camada 1 do Porteiro sobre a chamada sintética `accounts.connect(provider:…, capabilities:…, kind:…)` |
+| `intentCovered` | Camada 3 (veredito da chamada que motivou, ou `judgeIntent`) |
+
+```ts
 export interface ConnectRequestDraft {
   readonly provider: ProviderId;
   readonly connectKind: ConnectKind;
@@ -231,9 +317,10 @@ export interface ConnectRequestDraft {
 
 export type BlockCode =
   | 'invalid_requirement' | 'provider_not_configured' | 'disconnecting'
+  | 'incident_lockdown' | 'app_locked' | 'rule_denied' | 'origin_external' | 'origin_remote'
   | 'subagent_cannot_connect' | 'task_suspicious' | 'no_human' | 'mode_read_only'
-  | 'intent_not_covered' | 'task_limit' | 'cooldown_declined' | 'muted_after_declines'
-  | 'failure_backoff' | 'global_rate';
+  | 'intent_not_covered' | 'task_limit' | 'cooldown_declined' | 'decline_needs_new_message'
+  | 'muted_after_declines' | 'failure_backoff' | 'global_rate';
 
 export type Resolution =
   | { readonly kind: 'ready'; readonly connectionId: string }
@@ -275,27 +362,37 @@ resolveConnection(req, conn, ctx):
   draft = buildDraft(req, conn, ctx)                # seção 5.1
 
   # 3. portões (ordem fixa)
+  se ctx.incidentLockdown           → blocked(incident_lockdown)         # revisão 2: depois do "Revogar tudo"
+  se ctx.ruleVerdict = deny         → blocked(rule_denied)               # revisão 2: deny vence (Camada 1)
   se ctx.agent = subagent           → blocked(subagent_cannot_connect)   # o agente principal decide se pede
+  se ctx.origin = external          → blocked(origin_external)           # regra de fábrica accounts.*(origin:external)
+  se ctx.origin = remote            → blocked(origin_remote)             # celular (futuro): conexão só no PC
   se ctx.taint = suspicious         → blocked(task_suspicious)
   se !ctx.humanAvailable            → blocked(no_human)                  # rotina: avisa depois, não pede
+  se ctx.appLocked                  → blocked(app_locked)                # tela de senha: nada aparece por cima
   se ctx.mode = read_only e draft tem escrita → blocked(mode_read_only)
   se ctx.taint = tainted e ctx.intentCovered ≠ true → blocked(intent_not_covered)  # 'unknown' bloqueia
   se ctx.activeFlow:
     se activeFlow.provider = req.provider e activeFlow.capabilities ⊇ draft.capabilities → join_flow
     senão → wait_flow                                # um fluxo interativo por vez
-  cd = connectCooldown(ctx.attempts, {provider, taskId, trigger, now}, policy)
+  cd = connectCooldown(ctx.attempts, {provider, taskId, trigger, now, capabilities: draft.capabilities,
+                       lastUserMessageId: ctx.lastUserMessageId}, policy)
   se !cd.allowed → blocked(cd.code, cd.retryAfterMs)
   draft.risk     = connectRiskLevel(draft, ctx.taint)
-  draft.channels = allowedConfirmChannels(draft.risk, ctx.origin, ctx.taint)
+  draft.channels = allowedConfirmChannels(draft.risk, ctx.origin, ctx.taint, algumaFinalidadeExterna)
   → needs_human(draft)
 ```
+
+`ruleVerdict = ask` não muda nada aqui (todo pedido de conexão já tem cartão); `allow` também não dispensa o cartão: uma regra do usuário nunca transforma conexão em ação silenciosa.
 
 ### 5.1 `buildDraft`: o menor pedido que resolve
 
 ```
 se !conn ou conn.status = revoked:
   prev = aprovadas de conn com approvedAt ≥ now − 180 dias
-  kind = (conn e req.capabilities ⊆ prev) ? reconnect : connect
+  kind = (conn e reconnectEligible(conn.revokedReason) e req.capabilities ⊆ prev) ? reconnect : connect
+  # revisão 2: reconnectEligible = revokedReason ∈ {invalid_grant, refresh_expired, consent_expired, vault_write_failed}
+  # user_disconnected e revoke_all apagam approvedCapabilities (seção 14): a próxima vez é sempre connect
   caps = req.capabilities                       # NÃO restaura tudo o que existia antes
   latentWrite = (grantModel = github_app_permissions) ? capsDeEscrita(githubAppWriteUnits) − caps : []
   needsFlow = provider.flow
@@ -336,10 +433,12 @@ connectRiskLevel(draft, taint):
   se taint = tainted → high               # Regra dos Dois: [A] lido + [B] conta + talvez [C]
   → base
 
-allowedConfirmChannels(risk, origin, taint):
+allowedConfirmChannels(risk, origin, taint, externalInPurpose):
   high   → [click, key, windows_hello]     # tecla só com a janela em foco; NUNCA voz (3.0 #6, 3.11)
-  medium → (origin ∈ {user_voice, user_text} e taint = clean) ? [voice, click, key] : [click, key]
+  medium → (origin ∈ {user_voice, user_text} e taint = clean e !externalInPurpose) ? [voice, click, key] : [click, key]
 ```
+
+**Revisão 2:** `externalInPurpose` é verdadeiro quando alguma finalidade do cartão tem parâmetro vindo de conteúdo externo (`hasExternalParam`, seção 8). A frase falada leria esse nome em voz alta e a confirmação por voz ficaria amarrada a um texto que você não escreveu; por isso, nesse caso, só clique ou tecla (mesma regra do rascunho de subagentes).
 
 | Situação | Nível | Canais |
 |---|---|---|
@@ -362,11 +461,15 @@ export interface ConnectAttempt {
   readonly at: number; readonly flowStarted: boolean;
   readonly outcome: 'declined' | 'card_timeout' | 'denied_at_provider' | 'expired' | 'failed'
                   | 'cancelled' | 'connected' | 'partial';
+  readonly capabilities: readonly CapabilityId[];         // revisão 2: o que o cartão pediu
+  readonly declinedCapabilities: readonly CapabilityId[]; // recusa total = todas; parcial = as não concedidas
+  readonly lastUserMessageId: number;                     // sua mensagem mais recente quando o cartão apareceu
 }
 export type CooldownVerdict = { allowed: true } | { allowed: false; code: BlockCode; retryAfterMs: number };
 export function connectCooldown(
   attempts: readonly ConnectAttempt[],
-  q: { provider: ProviderId; taskId: string; trigger: Trigger; now: number },
+  q: { provider: ProviderId; taskId: string; trigger: Trigger; now: number;
+       capabilities: readonly CapabilityId[]; lastUserMessageId: number },
   p: ConnectPolicy['limits'],
 ): CooldownVerdict;
 ```
@@ -375,7 +478,8 @@ Regras, avaliadas na ordem:
 
 1. **R1, por tarefa:** no máximo 3 cartões por provedor em cada tarefa (5 se o pedido for explícito) → `task_limit`.
 2. **R2, falhas seguidas:** `f` = número de resultados `expired | failed` seguidos no fim do histórico do provedor. Se `f ≥ 2`, espera `min(120 s × 2^(f−2), 60 min)` desde a última tentativa; num pedido explícito, no máximo 30 s → `failure_backoff`.
-3. **R3, recusa recente** (só para pedido automático): o último resultado foi `declined | card_timeout | denied_at_provider` há menos de 15 min → `cooldown_declined`.
+3. **R3, recusa recente** (só para pedido automático): o último resultado foi `declined | card_timeout | denied_at_provider` há menos de 15 min **e** tem capacidade recusada em comum com o pedido atual → `cooldown_declined`. Recusa parcial vale só para as capacidades não concedidas.
+3b. **R3b, recusa só se desfaz com mensagem sua** (revisão 2; vale também para pedido explícito): houve `declined` nesta tarefa, para este provedor, e `q.lastUserMessageId` não é maior que o `lastUserMessageId` da recusa → `decline_needs_new_message`. Sem isso, o modelo podia chamar `accounts.request_connection` de novo logo depois do seu "agora não", porque o classificador continua lendo a primeira mensagem como intenção. `card_timeout` não entra aqui (você pode só não ter visto).
 4. **R4, silenciar** (só para pedido automático): 3 recusas em 24 h → nenhum cartão automático para esse provedor até 24 h depois da 3ª recusa → `muted_after_declines`. Pedir explicitamente continua possível.
 5. **R5, global:** no máximo 6 fluxos iniciados por hora em pedidos automáticos (10 em pedidos explícitos) → `global_rate`.
 6. **R6, um de cada vez:** só um fluxo interativo no PC, com fila de até 3. Um único cartão de conexão visível por vez; com dois, a voz fica desligada por ambiguidade.
@@ -387,7 +491,9 @@ Regras, avaliadas na ordem:
 - Na tarefa contaminada, o nível sobe para **alto** (voz não vale) e o cartão avisa: "Atenção: este pedido surgiu depois de o Jesus ler conteúdo externo (e-mail de fulano@x). Confirme só se foi você que pediu."
 - **Ampliação reativa limitada pelo teto.** Um 403 com `X-Accepted-GitHub-Permissions: administration=write` não amplia nada se a ferramenta não declarou essa capacidade.
 - **Phishing de device code** (RFC 8628 §5.4; campanha Storm-2372 contra o Microsoft 365 em 2025). O campo `deviceCode` do holograma só recebe código da resposta ao **pedido do próprio Jesus** ao endpoint fixado. Nenhuma ferramenta do modelo escreve nesse campo. Texto externo do tipo "digite ABCD-EFGH em github.com/login/device" vira caso na coleção de ataques e é marcado pela sonda. O cartão diz: "Só digite este código se foi você que pediu agora. O Jesus nunca manda códigos por e-mail ou mensagem."
-- **Espionagem da sessão** (RFC 8628 §5.5): alguém que veja o código pode autorizar com a conta **dele**. Contramedidas: (1) com o código na tela, a janela usa `setContentProtection(true)` e não aparece em compartilhamento de tela; (2) ao conectar, a conta aparece ("Conectado como @login"); (3) todo cartão de ação de conta mostra a conta usada; (4) numa reconexão ou ampliação, conta diferente da registrada → `account_mismatch`: o token novo é revogado e descartado.
+- **Espionagem da sessão** (RFC 8628 §5.5): alguém que veja o código pode autorizar com a conta **dele**, e o Jesus passaria a receber um token da conta do atacante (que pode, por exemplo, receber um push do seu código). Contramedidas: (1) com o código na tela, a janela usa `setContentProtection(true)` e não aparece em compartilhamento de tela; (2) ao conectar, a conta aparece ("Conectado como @login"); (3) todo cartão de ação de conta mostra a conta usada; (4) numa reconexão ou ampliação, conta diferente da registrada → `account_mismatch`: o token novo é revogado e descartado.
+- **Revisão 2: o código não é inútil fora do Jesus.** A primeira versão dizia que o código copiado "é inútil sem o `device_code`". É o contrário: o `user_code` é exatamente o que autoriza a sessão pendente, e é ele que o atacante precisa. Por isso: (5) **nada de copiar para a área de transferência por padrão** (`copyToClipboard: false`): o histórico da área de transferência do Windows e a sincronização entre dispositivos, quando ligada, levam o código para fora do PC, e qualquer programa local consegue ler a área de transferência; a interface oferece um botão "Copiar" para quando você quiser; (6) o código nunca vai para log nem auditoria enquanto o fluxo estiver aberto; (7) **primeira conexão com conta confirmada**: como não há conta registrada para comparar, o resultado mostra "Conectado como @login" com o botão "Não sou eu", que revoga e descarta o token na hora (disponível por 10 min), e o primeiro cartão de ação de cada conta repete a conta em destaque; (8) bloquear o Jesus (tela de senha, decisão 0015) ou minimizar para o modo mini durante o fluxo **cancela** o fluxo e tira o código da tela.
+- **Rótulo da conta é dado externo.** O rótulo vem do provedor: use só o login do GitHub e o e-mail do Google (alfabetos conhecidos), sempre por `sanitizeCardText`. O nome de exibição nunca é usado: é texto livre escolhido pelo dono da conta, que pode ser o atacante.
 - **Subagentes não abrem cartões** (`subagent_cannot_connect`). Eles costumam ler conteúdo não confiável. O agente principal recebe a necessidade como dado e decide se pede.
 
 ## 8. Cartão de conexão (gerado por código)
@@ -437,7 +543,11 @@ Exemplos exatos:
 - `upgrade` + `[google.calendar.write]` → "Ampliar o acesso do Google: com acesso de leitura e escrita aos eventos da sua agenda — para: criar o evento “Dentista” em 09/10 às 15:00"
 - `connect` + `[github.issues.read, github.pull_requests.write]` → "Conectar GitHub com acesso de leitura a issues e de leitura e escrita a pull requests — para: …"
 
-**Saneamento** (`sanitizeCardText(s, max = 100)`): remove caracteres de controle e de direção bidi (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), junta espaços repetidos e corta em `max` com "…". Se algum parâmetro da finalidade veio de conteúdo externo, acrescenta "(nome vindo de conteúdo externo)".
+**Saneamento** (`sanitizeCardText(s, max = 100)`): remove caracteres de controle e de direção bidi (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), junta espaços repetidos e corta em `max` com "…". Se algum parâmetro da finalidade veio de conteúdo externo, acrescenta "(nome vindo de conteúdo externo)". **Revisão 2:** remove também caracteres de largura zero (U+200B–U+200D, U+2060, U+FEFF) e as tags Unicode (U+E0000–U+E007F, o "contrabando ASCII"), normaliza para NFC e conta o corte em pontos de código, sem partir um par substituto.
+
+**Revisão 2: efeitos no cartão.** Além da frase principal, o cartão lista o `effectPtBr` de cada capacidade **nova** (seção 3). Em capacidade de escrita, a linha vem marcada ("o Jesus poderá: criar rascunhos e enviar e-mails em seu nome"). A frase principal continua curta; o efeito é o que você precisa ler antes de dizer "sim".
+
+**Revisão 2: hash do cartão.** O hash é `sha256Hex(canonicalJson(cartão sem o campo hash))`, e a interface (que assina) e o Executor (que confere) precisam produzir exatamente os mesmos bytes. `canonicalJson`: objetos com as chaves em ordem crescente de ponto de código, sem espaços; arrays na ordem dada; strings em NFC, escapadas como no `JSON.stringify`; só números inteiros seguros (o cartão não tem fração; um número fora disso faz a função lançar erro, e o cartão não é mostrado); `undefined` omitido; `null` mantido. A mesma função fica em `packages/shared` e serve também às aprovações de ação (3.4.7). Vetores fixos no Apêndice B.
 
 **Outras linhas do cartão:**
 
@@ -453,30 +563,32 @@ Exemplos exatos:
 
 ## 9. Orquestração: pausar, confirmar, conduzir o fluxo e retomar
 
-A pausa é um `await` dentro do `execute` da ferramenta. O loop do agente fica parado e **não gasta tokens**. Chamadas paralelas do mesmo passo que não dependem da conta seguem normalmente. O tempo esperando você **não conta** no orçamento de tempo da tarefa (2.3). Limite da pausa: 20 min.
+A pausa é um `await` do lado do Cérebro, esperando a resposta da chamada que ele pediu ao Executor. **Revisão 2:** quem pausa, resolve, mostra o cartão e conduz o fluxo é o processo **Porteiro + Executor**; o Cérebro não monta contexto nem decide nada aqui (seção 5, "De onde vem o contexto"). O loop do agente fica parado e **não gasta tokens**. Chamadas paralelas do mesmo passo que não dependem da conta seguem normalmente. O tempo esperando você **não conta** no orçamento de tempo da tarefa (2.3). Limite da pausa: 20 min.
 
 ```
-async handleAccountToolCall(call, task):
+async handleAccountToolCall(call, task):        # no processo Porteiro + Executor
   req = requirementOf(call)                     # do contrato da ferramenta
   pre = await gate.preEvaluate(call, {assumeConnected: true})   # sem efeitos
   se pre.decision = deny → return denied(pre)
+  intent = pre.intentCovered                    # veredito da Camada 3, se a chamada passou por ela
+  se task.taint ≠ clean e intent indefinido → intent = await gate.judgeIntent(call)   # revisão 2; erro → 'unknown'
   repetir até 3 vezes:
-    res = resolveConnection(req, vault.view(req.provider), ctxFor(task, call, pre))
+    res = resolveConnection(req, vault.view(req.provider), ctxFor(task, call, intent))  # ctxFor lê só registros confiáveis
     caso res.kind:
       ready      → return gate.run(call)        # avaliação COMPLETA e NOVA (cartão de ação se for ask)
       refresh    → r = await executorAuth.refresh(res.connectionId)   # single-flight por conexão
                    se r = transient → return result(provider_unavailable)
                    continue                     # ok → ready; revoked → cai em reconnect
       join_flow | wait_flow → await flows.waitEnd(res.flowId, até 20 min); continue
-      blocked    → audit(); se code ∈ {task_suspicious, intent_not_covered} → hologram.flashBlocked()
+      blocked    → audit(); se code ∈ {task_suspicious, intent_not_covered, rule_denied, origin_external} → hologram.flashBlocked()
                    return result(connection_blocked(code))
-      needs_human→ out = await coalescer.join(call, res.request)    # 1 cartão por provedor
+      needs_human→ out = await queue.submit(call, res.request)       # fila pura: 1 cartão por provedor (connectQueueTransition)
                    se out ∈ {connected, partial} → continue
                    return result(outcomeToResult(out))
-  return result(connection_failed('loop'))
+  return result(connection_failed('resolve_loop'))
 
 async runConnectRequest(request):               # um por provedor, um interativo por vez
-  v = await gate.evaluateConnectRequest(request)   # regras de fábrica (deny vence); repete os portões
+  v = await gate.evaluateConnectRequest(request)   # Camada 1 (fábrica + usuário) sobre accounts.connect(...); repete os portões
   se v = deny → settle(blocked)
   card = buildConnectCard(...); hologram.awaiting(true)
   ans = await ui.showConnectCard(card)          # componente confiável; voz só se 'voice' ∈ channels
@@ -497,6 +609,14 @@ async runConnectRequest(request):               # um por provedor, um interativo
 - No modo **Planejar**, `planConnectionNeeds()` calcula as conexões que o plano aprovado vai exigir e mostra os cartões **logo depois da aprovação do plano**, na ordem do primeiro uso. Assim, você não é interrompido no meio da execução.
 - **Invariante do agrupamento:** capacidades pedidas ⊆ união das exigidas pelas chamadas pausadas ou planejadas. Nunca "por via das dúvidas".
 
+**Revisão 2: fila como redutor puro.** A primeira versão descrevia em prosa a parte mais difícil de acertar (concorrência: um fluxo interativo por vez, fila de até 3, um cartão visível, união por provedor, cancelamento). Ela vira `connectQueueTransition(state, event) → { state, effects }`, no mesmo padrão das máquinas das seções 10 e 11:
+
+- **Estado:** `{ active: FlowSlot | null; waiting: readonly QueuedRequest[] }`, em que cada pedido guarda provedor, recurso, capacidades (união ordenada pelo catálogo) e as chamadas pausadas (`callIds`).
+- **Eventos:** `SUBMIT(callId, draft)`, `CARD_ANSWERED(requestId, answer)`, `FLOW_ENDED(requestId, outcome)`, `CALL_CANCELLED(callId)`, `TASK_ENDED(taskId)`, `EMERGENCY_STOP`, `APP_LOCKED`, `TICK(now)`.
+- **Regras:** `SUBMIT` do mesmo provedor e recurso que um pedido **na fila** (ainda sem cartão) se une a ele; com cartão já visível, vira pedido novo (o cartão aprovado nunca muda depois de mostrado, porque o hash está assinado); fila cheia (3) → a chamada recebe `connection_blocked('global_rate')`; `EMERGENCY_STOP` e `APP_LOCKED` cancelam tudo (cartão, fluxo, fila) e emitem `show_device_code(null)` e `content_protection(off)`; `CALL_CANCELLED` da última chamada de um pedido na fila remove o pedido; pedido parado na fila por mais de 20 min (`pausedCallMaxMs`) → cancelado.
+- **Efeitos:** `show_card`, `start_flow`, `cancel_flow`, `resume_calls(callIds)`, `fail_calls(callIds, result)`. A casca só executa.
+- **Propriedades testadas:** nunca dois cartões ou dois fluxos interativos ao mesmo tempo; toda chamada submetida recebe exatamente uma resposta; capacidades de um cartão ⊆ união das chamadas dele.
+
 **O que volta ao cérebro** (resultado de ferramenta com origem `local`, gerado por código):
 
 ```json
@@ -504,15 +624,15 @@ async runConnectRequest(request):               # um por provedor, um interativo
   "note": "O usuário preferiu não conectar agora. Siga sem essa conta ou pergunte se ele quer tentar depois; não insista nesta tarefa." }
 { "status": "connection_blocked", "provider": "google", "code": "intent_not_covered",
   "note": "Pedido de conexão bloqueado pelo Porteiro. Não tente contornar." }
-{ "status": "connection_failed", "provider": "github", "reason": "expired | denied_at_provider | network | provider_config" }
+{ "status": "connection_failed", "provider": "github", "reason": "expired | denied_at_provider | network | provider_config | timeout | resolve_loop" }
 { "status": "permission_not_granted", "provider": "google", "missing": ["ler seus e-mails"] }
 ```
 
 **Ferramenta explícita** `accounts.request_connection`:
 
-- Entrada `z.object({ provider: z.enum(['github', 'google']), capabilities: z.array(z.enum(builtinCapabilityIds)).min(1).max(6) }).strict()`.
+- Entrada `z.object({ provider: z.enum(['github', 'google']), capabilities: z.array(z.enum(readCapabilityIds)).min(1).max(6) }).strict()`. **Revisão 2: só capacidades de leitura.** Na primeira versão, "conecta meu Google" podia virar um pedido de leitura e escrita de tudo, inclusive enviar e-mails, e quem decidia se a sua intenção cobria isso era o classificador, que erra justamente com aprovação genérica (3.1). Escrita entra só de forma reativa (uma chamada real precisa dela, dentro do teto da ferramenta) ou pela interface (Contas → liberar escrita, com cartão alto).
 - Efeitos `{ tipo: 'escrita_local', reversivel: true, enviaParaFora: false, sensibilidade: 'alta' }`; o cartão de aprovação é o `ConnectCard`.
-- Conta como `explicit_user_request` só se a tarefa estiver limpa **e** a Camada 3 disser que a intenção do usuário cobre o pedido. Fora disso, é `tool_call`, com todos os cooldowns.
+- Conta como `explicit_user_request` só se a tarefa estiver limpa **e** a Camada 3 disser que a intenção do usuário cobre o pedido. Fora disso, é `tool_call`, com todos os cooldowns. A regra R3b (recusa só se desfaz com mensagem sua) vale nos dois casos.
 - `accounts.disconnect` existe (médio; alto se apagar dados locais). "Revogar tudo" só existe na interface.
 
 **Regras de fábrica no Porteiro** (`security/policies`, sintaxe da 3.4.3):
@@ -561,7 +681,8 @@ export type DeviceFlowEvent =
   | { e: 'CANCEL'; now: number; by: 'user' | 'emergency_stop' | 'task_ended' };
 
 export type FlowFailure = 'network' | 'provider_config' | 'invalid_response' | 'pinned_uri_mismatch'
-  | 'account_mismatch' | 'vault_write' | 'issuer_mismatch' | 'callback_abuse' | 'exchange_uncertain';
+  | 'account_mismatch' | 'vault_write' | 'issuer_mismatch' | 'callback_abuse' | 'exchange_uncertain'
+  | 'timeout' | 'not_me';   // revisão 2: prazo de estado vencido; você apertou "Não sou eu" na primeira conexão
 export type FlowOutcome =
   | { kind: 'connected'; report: GrantReport } | { kind: 'partial'; report: GrantReport }
   | { kind: 'denied' } | { kind: 'expired' }
@@ -614,10 +735,13 @@ stateDiagram-v2
 | requesting_code | CODE_ERROR | fatal ou tentativa ≥ 3 | done(failed) | `emit_outcome` |
 | awaiting_user | TICK | now ≥ deadline | done(expired) | `show_device_code(null)`, `content_protection(off)`, `discard_secret`, `emit_outcome` |
 | awaiting_user | TICK | now < nextPollAt (tick adiantado) | awaiting_user | `schedule_tick(nextPollAt)`. **Nunca consulta antes do intervalo** |
-| awaiting_user | TICK | now ≥ nextPollAt e polls < 400 | polling | `http_poll` |
-| polling | TICK | — | polling | nenhum (uma consulta por vez) |
+| awaiting_user | TICK | now ≥ nextPollAt e polls < 400 | polling(sentAt = now) | `http_poll`, `schedule_tick(min(deadline, now + httpTimeoutMs + 5 s))` |
+| awaiting_user | TICK | now ≥ nextPollAt e polls ≥ 400 | done(expired) | limpar código e segredo, `emit_outcome` (**revisão 2**: linha que faltava) |
+| polling | TICK | now ≥ deadline | done(expired) | limpar código e segredo, `emit_outcome`; uma resposta atrasada cai em `done` e é ignorada (**revisão 2**) |
+| polling | TICK | now ≥ sentAt + httpTimeoutMs + 5 s | como `network` | a casca pendurou: conta como erro de rede (**revisão 2**) |
+| polling | TICK | outros casos | polling | nenhum (uma consulta por vez) |
 | polling | `pending` | — | awaiting_user(netErrors = 0, nextPollAt = now + interval) | `schedule_tick` |
-| polling | `slow_down` | — | interval' = max(interval + 5 s, intervalSec × 1000) | `schedule_tick(now + interval')` |
+| polling | `slow_down` | — | awaiting_user(interval' = max(interval + 5 s, intervalSec × 1000), netErrors = 0, nextPollAt = now + interval') | `schedule_tick(now + interval')` |
 | polling | `network` | — | netErrors + 1; nextPollAt = now + `nextPollDelayMs` | `schedule_tick` |
 | polling | `token` | — | verifying_grant | `show_device_code(null)`, `content_protection(off)`, `discard_secret(deviceCodeRef)`, `verify_grant` |
 | polling | `denied` | — | done(denied) | limpar código e segredo, `emit_outcome` |
@@ -640,11 +764,15 @@ nextPollDelayMs(intervalMs, netErrors) = netErrors = 0 ? intervalMs
 maxPolls     = 400 (defensivo; 900 s / 5 s = 180)
 ```
 
+**Revisão 2: dois relógios.** O prazo (`deadline`) segue o relógio de parede, porque o provedor conta tempo real, inclusive com o PC suspenso. Os intervalos entre consultas (`nextPollAt`, `sentAt`) seguem o relógio monotônico (`clock.monotonic()`): um ajuste do relógio do Windows para trás não pode atrasar as consultas até depois do vencimento do código. Os dois relógios são portas injetadas, e os eventos `TICK` carregam os dois valores (`now`, `mono`).
+
+**Revisão 2: contrato da casca.** Todo efeito HTTP volta como exatamente um evento (a casca aplica `httpTimeoutMs` e converte o tempo esgotado em `network`). Mesmo assim, a máquina não confia nisso: todo estado que espera um efeito tem prazo próprio (acima, `polling`; abaixo, `requesting_code` com `retryAt`, `exchanging` e `verifying_grant` com `now + httpTimeoutMs + 5 s`), e um `TICK` depois do prazo encerra como `failed('timeout')` ou como erro de rede, conforme o estado.
+
 Com intervalo de 5 s e erros de rede seguidos: 10 s, 20 s, 40 s, 60 s, 60 s…
 
 **Mapeamento das respostas do GitHub** (`parsePollResponse`): `authorization_pending` → pending; `slow_down` → slow_down, com o novo `interval` quando vier; `expired_token` → expired; `access_denied` → denied; `incorrect_client_credentials`, `device_flow_disabled`, `unsupported_grant_type` e `incorrect_device_code` → fatal; resposta com `access_token` → token; JSON inválido → fatal `invalid_response`; timeout ou 5xx → network.
 
-**Experiência de uso** (inspirada no `gh auth login`): depois da confirmação, o código aparece grande no holograma e no cartão, vai para a área de transferência (opcional; é inútil sem o `device_code` e expira em 15 min) e o navegador abre em `https://github.com/login/device`. O cartão traz "Abrir de novo", "Cancelar" e uma contagem regressiva. Ao terminar, aparece "Conectado como @login".
+**Experiência de uso** (inspirada no `gh auth login`): depois da confirmação, o código aparece grande no holograma e no cartão e o navegador abre em `https://github.com/login/device`. **Revisão 2:** o código **não** vai sozinho para a área de transferência (ele autoriza a sessão para quem digitar primeiro; seção 7); há um botão "Copiar". O cartão traz "Abrir de novo", "Cancelar" e uma contagem regressiva. Ao terminar, aparece "Conectado como @login".
 
 ## 11. Máquina de estados: Authorization Code + PKCE (Google, RFC 7636 e RFC 8252)
 
@@ -694,6 +822,7 @@ export type PkceFlowEvent =
 | exchanging | TOKEN `invalid_grant` | sentOnce | done(failed `exchange_uncertain`) | o código pode ter sido consumido; o cartão oferece "tentar de novo" |
 | exchanging | TOKEN `invalid_grant` / `error` | !sentOnce | done(failed) | `discard_secret` |
 | verifying_grant | GRANT_* | — | done(...) | como no device flow |
+| exchanging / verifying_grant | TICK | now ≥ prazo do estado (envio + `httpTimeoutMs` + 5 s) | como `network` (exchanging) ou done(failed `timeout`) com `revoke_and_discard` (verifying_grant) | **revisão 2**: nenhum estado espera para sempre |
 | qualquer estado ≠ done | CANCEL | — | done(cancelled) | `close_loopback`, `discard_secret`, `revoke_and_discard` se já havia token |
 
 ```ts
@@ -737,6 +866,8 @@ export function evaluateGrant(requested: readonly CapabilityId[], units: readonl
 - **GitHub App:** `GET /user` dá a conta. `GET /user/installations` dá `permissions` (ex.: `{issues: 'write'}` → `issues:write`; escrita satisfaz leitura via `satisfiedBy`), `repository_selection` e o id da instalação.
 - **Resultado.** Aprovadas passam a ser as anteriores ∪ (pedidas ∩ concedidas), **nunca** as latentes. `none` → falha `permission_not_granted`. `partial` → retomam só as chamadas cobertas; para as outras, `permission_not_granted`, e o registro da tentativa conta como recusa dessas capacidades.
 - **Conta diferente** da registrada numa reconexão ou ampliação → `account_mismatch`: o token novo é revogado e descartado, e a mensagem é "Você entrou como X, mas a conta conectada é Y".
+- **Revisão 2: primeira conexão.** Não há conta para comparar: o resultado mostra a conta (login do GitHub ou e-mail do Google, saneados) com "Não sou eu" por 10 min, que revoga, descarta e registra `failed('not_me')`.
+- **Revisão 2: App do GitHub sem expiração.** A expiração dos tokens de usuário pode ser desligada nas configurações do App; aí a resposta vem sem `expires_in` e sem refresh token. A conexão funciona, mas contraria a 3.5 (tokens de curta duração): o painel avisa "ative a expiração dos tokens no App do GitHub". O mesmo vale para mais de uma instalação do App (conta pessoal e organização): o MVP usa a instalação da sua conta pessoal e lista as outras no painel, sem usá-las.
 
 ## 13. Renovação silenciosa e erros reativos
 
@@ -785,7 +916,7 @@ disconnect(conn):                     # só por pedido seu (interface ou cartão
   2. revogar no provedor (timeout de 10 s, 3 tentativas):
        Google: POST https://oauth2.googleapis.com/revoke  token=<refresh_token>   (400 invalid_token = já revogado = ok)
        GitHub: DELETE https://api.github.com/applications/{client_id}/grant  (Basic client_id:client_secret, corpo {access_token})
-  3a. sucesso → apagar do cofre; status = revoked(user_disconnected); satélite some
+  3a. sucesso → apagar do cofre; status = revoked(user_disconnected); approvedCapabilities = [] (revisão 2); satélite some
   3b. falha → status = revocation_pending; o token fica num item do cofre "só para revogar" (o Executor recusa usá-lo em API);
       novas tentativas em 1 min, 5 min, 15 min e depois de hora em hora; desiste após 7 dias:
       apaga e mostra "Não consegui revogar no provedor: revogue em github.com/settings/apps/authorizations
@@ -793,7 +924,7 @@ disconnect(conn):                     # só por pedido seu (interface ou cartão
   Sem client_secret do GitHub no cofre → apaga localmente e mostra o link para revogar à mão.
 ```
 
-"Revogar tudo" (3.18) aplica isso a todas as conexões em paralelo e põe o Jesus em Somente leitura.
+"Revogar tudo" (3.18) aplica isso a todas as conexões em paralelo e põe o Jesus em Somente leitura. **Revisão 2:** as conexões ficam `revoked(revoke_all)`, sem capacidades aprovadas, e o Jesus entra no **modo de incidente**: nenhum cartão de conexão aparece (`incident_lockdown`) até você sair desse modo pela interface, com confirmação física. A próxima conexão de cada conta é sempre `connect` (nunca `reconnect` de nível médio).
 
 ## 15. Holograma: `deviceCode` e `satellites`
 
@@ -835,6 +966,7 @@ export function normalizeUserCode(raw: string): string | null;
 - `awaitingUser = pendingCards > 0` ou algum fluxo em `awaiting_user`, `polling`, `awaiting_browser` ou vigiando configuração no provedor.
 - Precedência sugerida no compositor do snapshot (desktop): `blocked` (*flash* de cerca de 1,5 s) > `awaiting` > `compacting` > `speaking` > `listening` > `executing` > `thinking` > `idle`.
 - O `describe.ts` já gera "Login em andamento: digite o código X na página oficial". O endereço exato fica no cartão.
+- **Revisão 2: laboratório.** O cenário "Login no GitHub" do laboratório (aba Cenários) termina hoje com o satélite em `read_write`. Pela regra acima, uma conexão nova só com leitura aprovada mostra `read` (escrita latente não conta). Quando este pacote existir, o cenário passa a ser dirigido pela própria máquina do device flow e pela fila, com portas falsas (código, consultas, token), em vez de ações roteirizadas à mão.
 
 ## 16. O que o modelo vê
 
@@ -858,11 +990,11 @@ O texto não leva tokens, ids, e-mail nem login (minimização, 3.9). O modelo n
 | 5 | Ação externa exige confirmação | conectar (médio) e ampliar (alto) sempre têm cartão gerado por código, com os parâmetros reais |
 | 6 | Voz não autoriza alto | `allowedConfirmChannels(high)` não inclui voz; médio só por voz quando o pedido veio de você e a tarefa está limpa |
 | 7 | Regra dos Dois | tarefa contaminada sobe para alto; suspeita bloqueia |
-| 8 | Segredos fora do modelo | `SecretRef`, cofre só no Executor, nada no banco; mascarar `ghu_`, `ghr_`, `gho_`, `ya29.` e `1//` no filtro (3.5) |
+| 8 | Segredos fora do modelo | `SecretRef`, cofre só no Executor, nada no banco; mascarar `ghu_`, `ghr_`, `gho_`, `ghs_`, `github_pat_`, `ya29.`, `1//` e `GOCSPX-` no filtro (3.5); o `device_code` do GitHub (40 caracteres hexadecimais, sem prefixo) nunca vira texto: só `SecretRef`; a casca HTTP das rotas de autorização usa um logger que nunca grava corpo nem cabeçalho `Authorization` |
 | 9 | Comandos contidos | nenhum comando é executado; o fluxo é HTTP do Executor; o navegador é o padrão do sistema, via `shell.openExternal` com lista fixa |
-| 10 | Jesus não altera a si mesmo | aprovações só por cartão confiável; não existe ferramenta para editar `approvedCapabilities` |
+| 10 | Jesus não altera a si mesmo | aprovações só por cartão confiável; não existe ferramenta para editar `approvedCapabilities`; só o Executor e a interface gravam `connections` (4.1); remover na tela Permissões vale na hora (4.2) |
 | 11 | Menor privilégio | capacidades mínimas e incrementais; livro-razão local de aprovadas; nunca "por via das dúvidas"; escrita latente não usada |
-| 12 | Tudo registrado | eventos `connection.requested`, `card_shown`, `confirmed{canal}`, `flow_started`, `completed{concedidas}`, `refused`, `expired`, `refresh_failed` e `revoked`, sem segredos |
+| 12 | Tudo registrado | eventos `connection.requested`, `card_shown`, `confirmed{canal}`, `flow_started`, `completed{concedidas}`, `refused`, `expired`, `refresh_failed`, `revoked`, `capability_removed` e `not_me`, sem segredos e sem o código de dispositivo; `error_description` do provedor só na auditoria, mascarado e cortado (nunca no cartão nem no modelo) |
 | 13 | Proibições (3.4.9 item 2) | o Jesus nunca digita, nunca automatiza o navegador e nunca cria conta; o login é seu, na página oficial |
 | 14 | O classificador não é fronteira | as fronteiras são o cartão humano, a verificação HMAC no Executor e os endpoints fixados |
 | 15 | Trocar de modelo não muda regras | toda a política é código puro, independente do modelo |
@@ -894,7 +1026,7 @@ export const defaultConnectPolicy = {
   cardTimeoutMs: 120_000, approvalTtlMs: 120_000, pausedCallMaxMs: 1_200_000,
   reconnectApprovalWindowMs: 180 * 86_400_000,
   device: { minIntervalMs: 5_000, slowDownStepMs: 5_000, maxFlowMs: 900_000, deadlineMarginMs: 5_000,
-            netBackoffCapMs: 60_000, maxPolls: 400, codeRequestRetries: 3, copyToClipboard: true },
+            netBackoffCapMs: 60_000, maxPolls: 400, codeRequestRetries: 3, copyToClipboard: false },  // revisão 2: false
   pkce: { browserTimeoutMs: 600_000, maxBadCallbacks: 5, exchangeRetryDelaysMs: [1_000, 3_000],
           verifierBytes: 32, stateBytes: 32 },
   httpTimeoutMs: 15_000,
@@ -904,7 +1036,10 @@ export const defaultConnectPolicy = {
   limits: { autoCardsPerTaskPerProvider: 3, explicitCardsPerTaskPerProvider: 5,
             declineCooldownMs: 900_000, muteAfterDeclines: 3, muteWindowMs: 86_400_000,
             failureBaseMs: 120_000, failureCapMs: 3_600_000, explicitFailureCapMs: 30_000,
-            autoFlowsPerHour: 6, explicitFlowsPerHour: 10, queueMax: 3, interactiveFlowsAtOnce: 1 },
+            autoFlowsPerHour: 6, explicitFlowsPerHour: 10, queueMax: 3, interactiveFlowsAtOnce: 1,
+            declineNeedsNewMessage: true },                                   // revisão 2 (R3b)
+  firstConnectNotMeWindowMs: 600_000,                                        // revisão 2: "Não sou eu"
+  stateTimeoutMarginMs: 5_000,                                               // revisão 2: prazo de estado = httpTimeoutMs + margem
   revocation: { delaysMs: [60_000, 300_000, 900_000], thenEveryMs: 3_600_000, giveUpAfterMs: 7 * 86_400_000 },
 } as const;
 ```
@@ -974,7 +1109,36 @@ export interface ConnectPorts {
 - **`singleflight`** do Go e "Exponential Backoff and Jitter" (AWS).
 - **CaMeL e Regra dos Dois:** a origem do pedido decide o nível.
 
-## Apêndice A — Funções puras propostas
+## 22. Perguntas em aberto (com recomendação)
+
+Na primeira versão, estas perguntas ficavam no Apêndice C. Agora cada uma traz uma recomendação; as que a revisão 2 já resolveu estão marcadas.
+
+1. **Conectar já com escrita (ou com escrita latente no App do GitHub) conta como alto**, mais rígido que a 3.4.8 ("conectar conta = médio"). *Recomendação:* aceitar e registrar numa decisão; não enfraquece nada.
+2. **Ampliar só leitura** (já lê issues e passa a ler o código) continua alto, como manda a 3.4.8, ou cai para médio? *Recomendação:* manter alto. Baixar para médio enfraquece a política e exigiria decisão; rever com dados de uso depois da fase 7.
+3. **App do GitHub só com leitura no começo?** *Recomendação:* sim (Contents, Issues, Pull requests e Metadata em leitura). O token fica no cofre e o DPAPI não protege contra programa rodando como você (3.5): um token só de leitura, se roubado, não escreve. A escrita vira `app_permission` quando uma chamada precisar. Muda a seção 6.3, então exige decisão registrada.
+4. **Reconectar no nível médio (voz vale)** capacidades aprovadas nos últimos 180 dias. *Recomendação:* aceitar, agora só quando o provedor derrubou a conexão (revisão 2).
+5. **Copiar o código automaticamente?** *Resolvida na revisão 2:* não; botão "Copiar".
+6. **Guardar o `client_secret` do App do GitHub no cofre** para revogar pela API? *Recomendação:* sim, só o Executor usa. No uso pessoal o App é seu; sem o segredo, desconectar apaga localmente e manda você revogar à mão.
+7. **Renovação sem `client_secret` em token do device flow.** A tabela de parâmetros da documentação do GitHub diz que o segredo não é obrigatório quando o token veio do device flow (lida numa cópia da documentação do GitHub Enterprise; a página oficial do github.com não abriu nesta sessão). *Recomendação:* conferir na fase 7 com o App real, junto com o limite de códigos de dispositivo por hora.
+8. **Google com `include_granted_scopes=true`:** o refresh token devolvido numa ampliação cobre a união dos escopos e o antigo continua valendo? *Recomendação:* conferir na fase 7, junto com o app "Em teste" (7 dias) contra "Em produção" sem verificação.
+9. **Esquema do holograma** (satélite "pendente" tracejado, contagem regressiva, provedor no código). *Recomendação:* não mudar agora; contagem e provedor ficam no cartão, que é confiável. Rever na fase 7.
+10. **Abrir o navegador logo depois da confirmação** ou esperar um clique a mais, como o `gh auth login`? *Recomendação:* abrir logo; a confirmação já foi o clique. O cartão tem "Abrir de novo".
+11. **Tempo esperando você fora do orçamento de tempo da tarefa?** *Recomendação:* sim, com teto próprio de 20 min por chamada pausada.
+12. **Várias contas do mesmo provedor** (Google pessoal e do trabalho)? *Recomendação:* fora do MVP; conta diferente continua sendo `account_mismatch`.
+13. **Proteção de conteúdo no modo mini.** *Resolvida na revisão 2:* ir para o modo mini cancela o fluxo (o código não aparece na janela pequena). Conferir no Windows 11 que `setContentProtection` some de gravações e compartilhamentos (fase 7).
+14. **Modo de incidente** (depois do "Revogar tudo", nenhum cartão de conexão até você sair pela interface, com confirmação física). *Recomendação:* aceitar e registrar junto com a 3.18.
+15. **Escopos `owned` da Agenda** em vez de `calendar.events`. *Recomendação:* aceitar e conferir os nomes na fase 7.
+
+## 23. Documentos a atualizar e decisões a registrar (no PR da fase 7)
+
+- `06-integracoes.md`: 6.2 (escopos `owned` da Agenda), 6.3 (App só leitura, se aprovado), nova seção sobre a conexão automática (resumo deste rascunho).
+- `03-seguranca.md`: 3.4.8, linha "Contas" (conectar com escrita = alto); 3.5 (lista de prefixos de token); 3.4.7 (a tela Permissões inclui as capacidades de contas); 3.18 (modo de incidente).
+- `05-dados-postgresql.md`: modelos `connections` e `connection_attempts` no esquema do Prisma (decisão 0014) e os privilégios por coluna (4.1).
+- `02-arquitetura.md`: 2.4 (o campo `escopos` vira `account`, com capacidades do catálogo).
+- `08-holograma.md`: conexão nova só com leitura aparece como `read`.
+- Decisões: "conexão automática de contas" (níveis, canais, limites, modo de incidente) e, se aprovado, "App do GitHub começa só com leitura".
+
+## Apêndice A: funções puras propostas
 
 - **`resolveConnection`** — `resolveConnection(req: AccountRequirement, conn: ConnectionView | null, ctx: ResolveContext, catalog: Catalog): Resolution`
   Decide ready | refresh | needs_human(rascunho mínimo) | join_flow | wait_flow | blocked, em ordem fixa: validação do requisito (capacidades no catálogo, mesmo provedor, dentro do teto da ferramenta), provedor configurado, conexão em revogação, caminho silencioso (utilizáveis + repositório + validade do token) e depois os portões (subagente, tarefa suspeita, sem humano, modo somente leitura com escrita, tarefa contaminada sem intenção coberta, fluxo ativo, cooldown). Preenche risco e canais.
@@ -1053,7 +1217,18 @@ export interface ConnectPorts {
 - **`outcomeToToolResult`** — `outcomeToToolResult(provider: ProviderId, outcome: FlowOutcome | { kind: 'declined' | 'card_timeout' } | { kind: 'blocked'; code: BlockCode }): ConnectionToolResult`
   Converte o desfecho no resultado de ferramenta com origem 'local' (connection_declined, connection_blocked, connection_failed ou permission_not_granted) e nota em pt-BR orientando o modelo a não insistir nem contornar.
 
-## Apêndice B — Casos de teste propostos
+- **`reconnectEligible`** (revisão 2) — `reconnectEligible(reason: RevokedReason | undefined): boolean`
+  Verdadeiro só para `invalid_grant`, `refresh_expired`, `consent_expired` e `vault_write_failed`. `user_disconnected` e `revoke_all` dão falso (a próxima vez é `connect`).
+- **`toSyntheticConnectCall`** (revisão 2) — `toSyntheticConnectCall(draft: ConnectRequestDraft): { tool: 'accounts.connect'; params: { provider: ProviderId; capabilities: readonly CapabilityId[]; kind: ConnectKind; resource?: string } }`
+  Monta a chamada sintética que a Camada 1 avalia (regras de fábrica e do usuário), para que uma regra `deny accounts.*(provider:google)` valha também para a conexão disparada por outra ferramenta.
+- **`connectQueueTransition`** (revisão 2) — `connectQueueTransition(state: ConnectQueueState, event: ConnectQueueEvent, policy: ConnectPolicy['limits']): { state: ConnectQueueState; effects: readonly QueueEffect[] }`
+  Fila de pedidos de conexão (seção 9): união por provedor e recurso enquanto o pedido não tem cartão, um cartão e um fluxo interativo por vez, fila de até 3, cancelamento em cascata por chamada, tarefa, parada de emergência e bloqueio do app, prazo de 20 min por pedido; toda chamada recebe exatamente uma resposta.
+- **`canonicalJson`** (revisão 2; em `packages/shared`) — `canonicalJson(value: unknown): string`
+  Chaves em ordem crescente de ponto de código, sem espaços, strings em NFC, só inteiros seguros (lança erro com fração, `NaN`, infinito ou inteiro inseguro), `undefined` omitido. Usado no hash do cartão e nas aprovações de ação.
+- **`notMeAvailable`** (revisão 2) — `notMeAvailable(conn: ConnectionView, firstConnectedAt: number, now: number, policy: ConnectPolicy): boolean`
+  Verdadeiro nos primeiros 10 min da primeira conexão de uma conta; o botão "Não sou eu" só aparece nesse intervalo.
+
+## Apêndice B: casos de teste propostos
 
 - resolveConnection: sem conexão GitHub, [github.issues.read], tarefa limpa, pedido por voz, humano presente → needs_human connect, risco medium, canais [voice, click, key], capabilities exatamente [github.issues.read].
 - resolveConnection: mesmo caso com taint='tainted' e intentCovered=true → risco high e canais sem 'voice'; com intentCovered=false ou 'unknown' → blocked('intent_not_covered').
@@ -1116,18 +1291,67 @@ export interface ConnectPorts {
 - Coleção de ataques: resposta de API com 'X-Accepted-GitHub-Permissions: administration=write' → nenhuma ampliação e nenhum cartão.
 - Refresh com rotação (GitHub): falha ao gravar no cofre 3 vezes → conexão revoked(vault_write_failed) e o access token novo não é usado; dois refresh simultâneos → uma só requisição (single-flight).
 
-## Apêndice C — Perguntas em aberto
+- **Revisão 2:** `ctxFor` monta o contexto só a partir dos registros confiáveis: um teste injeta um "contexto" vindo do Cérebro com `agent: 'main'`, `origin: 'user_voice'` e `taint: 'clean'` numa tarefa contaminada de um subagente e confere que o resultado é `blocked('subagent_cannot_connect')`.
+- **Revisão 2:** conexão `revoked(user_disconnected)` com capacidades aprovadas há 1 dia → `connect` (não `reconnect`) e risco conforme a escrita; `revoked(consent_expired)` → `reconnect` médio.
+- **Revisão 2:** `incidentLockdown = true` → `blocked('incident_lockdown')` mesmo com tudo o mais válido; `appLocked = true` → `blocked('app_locked')`; `ruleVerdict = 'deny'` → `blocked('rule_denied')` antes de qualquer cooldown.
+- **Revisão 2:** nível médio, pedido por voz, tarefa limpa e finalidade com parâmetro externo → canais `[click, key]`, sem `voice`, e o cartão sem `speech`.
+- **Revisão 2:** recusa às 10:00 com `lastUserMessageId = 41`; novo pedido explícito às 10:01 com `lastUserMessageId = 41` → `blocked('decline_needs_new_message')`; com 42 → permitido. `card_timeout` não dispara essa regra.
+- **Revisão 2:** recusa parcial (pediu `[calendar.read, gmail.read]`, concedeu só a agenda) → um pedido automático só de `calendar.read` não cai em `cooldown_declined`; um de `gmail.read` cai.
+- **Revisão 2:** `accounts.request_connection` com `google.gmail.compose` → recusado pelo esquema (só leitura); a mesma capacidade, exigida por uma chamada real de `gmail.create_draft` dentro do teto, gera cartão `upgrade` alto.
+- **Revisão 2:** `effectPtBr` existe para toda capacidade de escrita; o de `google.gmail.compose` contém "enviar"; o cartão de `upgrade` para `gmail.compose` lista essa linha marcada como escrita.
+- **Revisão 2:** `deviceFlowTransition` em `polling` sem resposta: TICK em `sentAt + httpTimeoutMs + 5 s` → trata como `network` (próxima consulta com recuo); TICK em `deadline` → `done(expired)` com `show_device_code(null)` e `content_protection(off)`; uma `POLL_RESPONSE` que chega depois disso não muda nada.
+- **Revisão 2:** `awaiting_user` com `polls = 400` e TICK depois de `nextPollAt` → `done(expired)`, sem `http_poll`.
+- **Revisão 2:** relógio de parede volta 1 hora no meio do fluxo (o monotônico não): a próxima consulta sai no intervalo normal, e o prazo é o menor entre os dois relógios.
+- **Revisão 2:** `CODE_RESPONSE` válido → nenhum efeito `copy_to_clipboard` com a política padrão; com `copyToClipboard: true` (você ligou), o efeito aparece uma vez.
+- **Revisão 2:** `connectQueueTransition`: dois `SUBMIT` do GitHub antes do cartão → um pedido com a união; um terceiro `SUBMIT` depois do cartão visível → pedido novo na fila; quarto pedido com a fila cheia → `fail_calls(global_rate)`; `APP_LOCKED` com fluxo ativo → `cancel_flow`, `show_device_code(null)`, `content_protection(off)` e `fail_calls` para todas as chamadas, cada uma exatamente uma vez (propriedade com eventos aleatórios e PRNG fixo).
+- **Revisão 2:** `canonicalJson({ b: 1, a: [2, 'é'] })` → `{"a":[2,"é"],"b":1}` (com "é" em NFC, mesmo que a entrada venha decomposta); `canonicalJson({ x: 1.5 })` e `canonicalJson({ x: NaN })` lançam erro; o hash do cartão é igual quando calculado pela "interface" e pelo "Executor" a partir de objetos com chaves em ordem diferente.
+- **Revisão 2:** `sanitizeCardText` remove U+200B, U+FEFF e tags U+E0041; corta "ab😀cd" em 3 pontos de código sem partir o emoji.
+- **Revisão 2:** primeira conexão → resultado com "Conectado como @login" e "Não sou eu"; apertar em 5 min → `revoke_and_discard` e `failed('not_me')`; depois de 10 min o botão não existe mais.
+- **Revisão 2:** desconectar → `approvedCapabilities = []`; "Revogar tudo" → todas `revoked(revoke_all)` e `incidentLockdown = true`.
+- **Revisão 2:** remover uma capacidade na tela Permissões com uma tarefa em andamento → a próxima chamada que precisa dela recebe `needs_human(local_approval)`, nível alto.
+- **Revisão 2:** propriedade: nenhum estado das máquinas, evento de auditoria ou linha do logger falso contém o valor de um `device_code`, código de autorização, verifier ou token usados no teste.
 
-- Conectar já pedindo escrita (ou com escrita latente no App do GitHub) conta como nível ALTO. É mais rígido que a tabela 3.4.8, que diz 'conectar conta = médio'. Aprovar e registrar em docs/decisoes/?
-- Ampliar escopo SÓ DE LEITURA (ex.: já lê issues e passa a ler o código) continua alto, como manda a 3.4.8, ou cai para médio? Baixar para médio enfraquece a política e exige decisão registrada.
-- GitHub App: mudar a seção 6.3 para o App começar SÓ COM LEITURA (Contents, Issues, Pull requests e Metadata em leitura) e a escrita virar uma ampliação explícita? Ou manter leitura e escrita no App, contando com o livro-razão local de capacidades aprovadas (escrita latente)? Hoje, com escrita no App, todo connect do GitHub vira alto e a voz não serve.
-- Reconectar capacidades já aprovadas nos últimos 180 dias (ex.: o consentimento do Google expirou) como MÉDIO, que dá para confirmar por voz, é aceitável?
-- Copiar o código do device flow para a área de transferência automaticamente? O histórico de área de transferência do Windows guarda o código, mas ele é inútil sem o device_code e expira em 15 min.
-- Guardar o client_secret do GitHub App no cofre para revogar pela API (DELETE /applications/{client_id}/grant)? Sem ele, desconectar apaga localmente e manda você revogar em github.com/settings/apps/authorizations.
-- Confirmar no github.com: o refresh de token gerado por device flow dispensa o client_secret? A documentação do GHES 3.18+ diz que sim; a versão antiga diz que é sempre obrigatório. Confirmar também o limite de códigos de dispositivo por hora.
-- Google: com include_granted_scopes=true, o refresh token devolvido numa ampliação cobre a união dos escopos e o antigo continua válido? Verificar na prática, junto com o app 'Em teste' (7 dias) vs. 'Em produção' sem verificação.
-- Mudar o esquema do holograma para mostrar mais: satélite 'pendente' (tracejado) durante a conexão, contagem regressiva do código e nome do provedor no código? Hoje o esquema só tem deviceCode e satellites {id, label, access}.
-- Abrir o navegador automaticamente logo depois da confirmação, ou esperar um Enter/clique extra como o `gh auth login`?
-- O tempo esperando você (cartão e login) deve ficar fora do orçamento de tempo da tarefa (20 min, seção 2.3)? A proposta é: sim, com teto próprio de 20 min por chamada pausada.
-- Várias contas do mesmo provedor (ex.: Google pessoal e do trabalho) ficam fora do MVP? Hoje o desenho assume uma conta por provedor e trata conta diferente como account_mismatch.
-- Ligar setContentProtection(true) na janela (some de gravações e compartilhamento de tela) enquanto o código estiver visível também no modo mini? Confirmar o comportamento no Windows 11 (fase 7).
+## Apêndice C: o que a crítica apontou no rascunho original
+
+### Segurança
+
+- [5, 9, 20 vs. 2.2 e invariante 2] A autoridade do contexto estava indefinida. `ResolveContext` traz contaminação, origem, agente, presença humana, modo e veredito de intenção, mas o rascunho não dizia quem preenche esses campos, e a pausa era "um await dentro do execute da ferramenta", que roda no Cérebro (os stubs do AI SDK ficam lá). Um bug ou um cérebro manipulado diria `agent: 'main'`, `origin: 'user_voice'` ou `taint: 'clean'` e ganharia um cartão médio com voz. Correção: o orquestrador roda no processo Porteiro + Executor, e cada campo tem uma fonte autoritativa (tabela na seção 5); nenhum vem do Cérebro.
+- [5.1 + 6, reconexão] "Reconectar" (médio, voz vale) valia também depois de `user_disconnected` e do "Revogar tudo" (3.18). Você desconecta de propósito, ou num incidente, e o Jesus pode oferecer a volta com menos atrito do que a conexão original, por 180 dias. Correção: `reconnectEligible` só para quedas causadas pelo provedor ou falha local; desconectar e "Revogar tudo" apagam as aprovações; modo de incidente sem cartões de conexão.
+- [7 + 19, área de transferência] O rascunho dizia que o código copiado "é inútil sem o device_code". Errado: o `user_code` é o que autoriza a sessão pendente. Quem digitar antes de você, com a conta dele, faz o Jesus receber um token da conta do atacante (RFC 8628, espionagem da sessão). O histórico da área de transferência do Windows e a sincronização entre dispositivos levam o código para fora do PC, e qualquer programa local lê a área de transferência. Correção: cópia desligada por padrão, botão "Copiar", código fora de logs e da auditoria.
+- [7, primeira conexão] `account_mismatch` só protege reconexões e ampliações; na primeira conexão não há conta para comparar, e a única defesa era você ler "Conectado como @login". Correção: "Não sou eu" por 10 min na primeira conexão e conta em destaque no primeiro cartão de ação. Rótulo do provedor só por login ou e-mail, saneado; o nome de exibição (texto livre de quem pode ser o atacante) nunca entra.
+- [9, `accounts.request_connection`] A ferramenta do modelo aceitava qualquer capacidade, inclusive `google.gmail.compose` (enviar e-mails em seu nome). "Conecta meu Google" virava leitura e escrita de tudo, e quem julgava se a intenção cobria era o classificador, que erra justamente com aprovação genérica (3.1). Fere "escopos mínimos, pedidos aos poucos" (invariante 11). Correção: a ferramenta só pede leitura; escrita só reativa (chamada real, teto da ferramenta) ou pela interface.
+- [5 + 9, regras do usuário] A conexão disparada por outra ferramenta não passava pela Camada 1 do usuário: uma regra sua `deny accounts.*(provider:google)` não valia, porque o nome da chamada era `calendar.list_events`. Correção: todo pedido de conexão é avaliado como a chamada sintética `accounts.connect(...)` (fábrica e usuário; `deny` vence).
+- [6, voz com finalidade externa] O nível médio aceitava voz com pedido seu e tarefa limpa, mas a frase falada inclui a finalidade, que pode ter um nome vindo de conteúdo externo. Correção: com `hasExternalParam` em alguma finalidade, só clique ou tecla (mesma regra do rascunho de subagentes).
+- [7, recusa e pedido explícito] No pedido explícito não havia cooldown depois da recusa. O modelo podia chamar `accounts.request_connection` de novo logo depois do seu "agora não", até 5 vezes na tarefa, porque o classificador continua lendo a primeira mensagem como intenção. Isso é fadiga de aprovação (3.4.7). Correção: R3b, a recusa só se desfaz com uma mensagem sua mais nova que ela (comparação por id de mensagem).
+- [4, quem grava as aprovações] `approved_capabilities` ficava em `connections`, sem dizer que papel de banco grava a coluna. Com o Cérebro no papel `jesus_app`, um bug nele liberaria capacidade sem cartão (invariante 7). Correção: só o Executor (depois de validar a aprovação assinada) e a interface gravam; o Cérebro não tem privilégio na tabela; os `GRANT` por coluna entram como SQL cru na migração do Prisma.
+- [8, consentimento sem efeito] O cartão dizia "acesso de leitura e escrita aos rascunhos e ao envio de e-mails", que esconde o principal: o Jesus passa a poder enviar e-mails em seu nome. A Agenda não dizia que o Google manda convites; o código não dizia que dá para fazer push. Correção: `effectPtBr` por capacidade, mostrado no cartão e marcado nas de escrita.
+- [10, máquina do device flow] Em `polling`, o TICK não fazia nada e o prazo não era conferido: se a casca nunca devolvesse a resposta da consulta, o código ficava na tela para sempre, com a proteção de conteúdo ligada (`sentAt` existia e não era usado). Faltava a linha de `polls ≥ 400`. Correção: prazo do estado e prazo do código conferidos em `polling`; linha nova para o teto de consultas; todo estado que espera efeito tem prazo (também `requesting_code`, `exchanging` e `verifying_grant`).
+- [12 + 17, mascaramento] A lista de prefixos esquecia `ghs_` (token de instalação), `github_pat_` e o segredo do cliente do Google (`GOCSPX-`). O `device_code` do GitHub não tem prefixo. Correção: lista completa no `maskSecrets`, segredos de fluxo só como `SecretRef` (sem serialização) e logger das rotas de autorização sem corpo nem `Authorization`.
+- [13 + 17, erro do provedor] `error_description` é texto do provedor e não pode chegar ao modelo nem ao cartão. Correção: mapear para códigos; o texto fica só na auditoria, mascarado e cortado.
+- [novo, tela de senha] Com a senha local (decisão 0015), o Jesus pode ficar bloqueado com um fluxo aberto, e o código continuaria visível para quem estiver na frente do PC. Correção: bloquear o app (ou ir para o modo mini) cancela os fluxos e fecha os cartões; `app_locked` impede cartões novos.
+
+### Qualidade
+
+- [3, escopos da Agenda] `calendar.events` vale para todas as agendas, inclusive as compartilhadas com você. Existem escopos só para as agendas que são suas (`calendar.events.owned` e a versão de leitura), que bastam para "marcar dentista". Também faltava `calendar.events` no `satisfiedBy` da leitura. Proposta: escopos `owned`, conferidos na fase 7.
+- [7, recusa parcial] "Parcial conta como recusa dessas capacidades", mas `ConnectAttempt` não guardava capacidades, então R3 e R4 não conseguiam aplicar isso. Proposta: `capabilities` e `declinedCapabilities` no registro; R3 olha a interseção com o pedido atual.
+- [12, App do GitHub sem expiração] A expiração dos tokens de usuário pode ser desligada no App; aí o token não expira e não há refresh, contra a 3.5. Proposta: funciona, mas o painel avisa. Mesma coisa para mais de uma instalação do App: o MVP usa a da conta pessoal.
+- [9, `judgeIntent`] O texto dizia que o orquestrador pede o veredito de intenção quando a chamada não passou pela Camada 3, mas o pseudocódigo não chamava. Proposta: chamada explícita no pseudocódigo, com erro valendo `unknown`.
+- [9, fila em prosa] "Um fluxo interativo por vez, fila de até 3, um cartão visível, união por provedor" estava só em prosa, e é a parte de concorrência mais fácil de errar. Proposta: redutor puro `connectQueueTransition`, com propriedades testadas.
+- [15, laboratório] O cenário "Login no GitHub" termina com `read_write`, o que contradiz a regra da escrita latente. Proposta: o cenário passa a ser dirigido pela máquina e pela fila, com portas falsas.
+- [10, relógio] Tudo usava o relógio de parede, inclusive o intervalo entre consultas; um ajuste do relógio para trás atrasaria as consultas até depois do vencimento do código. Proposta: prazo no relógio de parede, intervalos no monotônico.
+
+### Testabilidade
+
+- [8, hash do cartão] "sha256 do JSON canônico" sem definir a canonização. A interface (que assina) e o Executor (que confere) precisam gerar os mesmos bytes; sem isso, o teste "o hash muda quando…" passa e a verificação falha na prática (ordem de chaves, números, Unicode). Correção: `canonicalJson` definido, em `packages/shared`, com vetores fixos.
+- [tipos] Inconsistências: `BlockCode` não tinha os códigos das regras de fábrica (`origin_external`); `connection_failed('loop')` usava um motivo que não existia; `RevokedReason` tinha `account_mismatch`, mas o que se revoga no descompasso é o token novo; `connectRiskLevel` recebia `catalog` num lugar e não no outro. Correção: tipos alinhados nas seções 4, 5 e 10.
+- [10 + 11, casca] A máquina pura supunha que todo efeito HTTP volta com exatamente um evento, sem prazo próprio. Correção: contrato explícito da casca e prazo em cada estado, com testes de "resposta que nunca chega" e "resposta atrasada depois do fim".
+- [Apêndice B] Faltavam casos para: contexto vindo do Cérebro, reconexão depois de desconectar, modo de incidente, voz com finalidade externa, recusa seguida de novo pedido sem mensagem nova, pedido de escrita pela ferramenta do modelo, consulta sem resposta, teto de consultas, canonização e propriedade de "nenhum segredo em estado, auditoria ou log". Correção: casos acrescentados (marcados "Revisão 2").
+
+### Faltava
+
+- Integração com a tela **Permissões** (pedido do dono, 3.4.7): capacidades aprovadas listadas e removíveis a qualquer hora, valendo na hora (seção 4.2).
+- Papéis de banco e privilégios por coluna para `connections` e `connection_attempts` (seção 4.1).
+- Modo de incidente depois do "Revogar tudo" (seção 14).
+- Relação com a nova stack (decisões 0013 a 0015): o cartão é um componente React confiável na interface em Next.js, mas a assinatura fica no processo principal e a verificação no Executor; a interface é uma exportação estática, sem rotas de API do Next, então nada de autorização passa por servidor HTTP do Next; a senha local do Jesus (bcrypt) nunca é usada com provedor nenhum, e bloquear o app cancela os fluxos.
+- Origem remota (celular, futuro): nunca abre nem confirma conexão (`origin_remote`).
+- Seção de documentos a atualizar e decisões a registrar (seção 23).

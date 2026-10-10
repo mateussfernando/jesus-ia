@@ -34,7 +34,7 @@ Descartado de vez: API direta do DeepSeek com dados pessoais (dados na China) e 
   - [Contexto automático por modelo](rascunhos/algoritmo-contexto.md) (revisado) → `packages/models` + `packages/core/src/context`
   - [Subagentes automáticos](rascunhos/algoritmo-subagentes.md) (revisado) → `packages/core/src/subagents` + checagens em `packages/gate`
   - [Memória automática](rascunhos/algoritmo-memoria.md) (revisado) → `packages/memory` (+ `maskSecrets`/`detectSensitive` em `packages/shared`)
-  - [Login e conexão automáticos](rascunhos/algoritmo-login.md) (**só o rascunho**: a crítica caiu pelo limite de uso) → `packages/integrations/src/connect`
+  - [Login e conexão automáticos](rascunhos/algoritmo-login.md) (revisado em 10/10/2026, numa sessão própria; o que mudou fica no topo e a crítica no Apêndice C) → `packages/integrations/src/connect`
 
 - **Limite de contexto automático: implementado** (commits `a87ac38` e seguinte).
   - `packages/models`: catálogo curado (Claude Haiku/Sonnet/Opus 5.5, preços oficiais de 08/10/2026), cartão conservador para modelo desconhecido, preço por faixa, custo exato em picodólares e estimativa de tokens. 18 testes.
@@ -64,7 +64,7 @@ Descartado de vez: API direta do DeepSeek com dados pessoais (dados na China) e 
   - 297 testes no projeto (108 em `core`, 113 em `models`, 42 no holograma, 34 no laboratório); lint, tipos e build limpos.
 
 **Falta (nesta ordem):**
-1. Fazer a crítica do rascunho de **login** (segurança, qualidade e testabilidade), como foi feito com os outros três.
+1. ~~Fazer a crítica do rascunho de **login**~~: feita em 10/10/2026 (revisão 2, com 15 perguntas com recomendação na seção 22).
 2. Implementar, um pacote por vez, com testes: memória → login → subagentes. Ligar cada um ao holograma e trocar os controles manuais correspondentes do laboratório por simulação automática.
 3. Promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.
 
