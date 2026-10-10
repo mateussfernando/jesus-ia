@@ -42,7 +42,7 @@
 | App desktop `.exe` | Electron: maduro no Windows, com atualização | PyInstaller/Nuitka + pywebview; empacotar dependências de ML é trabalhoso |
 | Agente multi-modelo | Vercel AI SDK | Pydantic AI, LiteLLM (empate) |
 | MCP | SDK de referência | SDK oficial também (leve vantagem do TS) |
-| PostgreSQL | Drizzle/Kysely + `pg` | SQLAlchemy + psycopg (empate) |
+| PostgreSQL | Prisma (ou Drizzle/Kysely) + `pg` | SQLAlchemy + psycopg (empate) |
 | Google e GitHub | `googleapis`, Octokit (oficiais) | clientes oficiais também (empate) |
 | Voz local | sherpa-onnx (Node) cobre ativação, VAD, STT e TTS | melhor ecossistema (faster-whisper, openWakeWord) |
 | IA/ML pesado | fraco | forte |
@@ -63,7 +63,7 @@
 | Linguagem | TypeScript (modo `strict`) | uma linguagem para tudo | Python (seção 4.5) |
 | Runtime | Node.js LTS (24 hoje; o 26 vira LTS em 28/10/2026) | suporte longo | — |
 | App desktop | Electron (versão estável atual) + electron-builder (instalador NSIS `.exe`) | maduro no Windows; janelas transparentes; `utilityProcess`; `safeStorage` | Tauri 2 (mais leve, mas o núcleo é em Rust) |
-| Build e UI | Vite (`electron-vite`) + React | rápido; ecossistema grande | Svelte, Solid |
+| Build e UI | **Next.js 16 (App Router) + React**, em exportação estática carregada pelo Electron ([decisão 0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md)) | pedido do dono; sem servidor HTTP local; CSP com hashes | Vite + React (usado na fase 0) |
 | Holograma | Three.js + React Three Fiber + pós-processamento (bloom) | padrão para WebGL | Babylon.js |
 | Estado da UI | Zustand | simples | Redux |
 | Núcleo do agente | Vercel AI SDK (`ai`): `ToolLoopAgent` + `toolApproval` | multi-provedor; aprovação de ferramentas nativa; aprovações assinadas | Mastra; loop próprio |
@@ -71,7 +71,7 @@
 | Validação | Zod | esquemas das ferramentas | Valibot |
 | MCP | `@modelcontextprotocol/sdk` (v1 estável; a v2 está em beta) | SDK oficial de referência | — |
 | Banco | PostgreSQL 18 + pgvector 0.8.x | ver [Parte 5](05-dados-postgresql.md) | PostgreSQL 19 quando sair a versão final |
-| Acesso ao banco | Drizzle ORM + driver `pg` + drizzle-kit (migrações) | tipado; suporta pgvector | Kysely; Prisma |
+| Acesso ao banco | **Prisma 7** (cliente sem motor nativo, adaptador `@prisma/adapter-pg` sobre o `pg`) + migrações em SQL aplicadas por um migrador próprio ([decisão 0014](decisoes/0014-prisma-como-orm.md)) | pedido do dono; tipado; pgvector e o resto em SQL cru nas migrações | Drizzle; Kysely |
 | Embeddings | locais via Ollama (`bge-m3` ou `qwen3-embedding`) | privacidade; multilíngue | API do provedor |
 | Voz local | `sherpa-onnx-node` (VAD Silero, STT Parakeet v3 ou Whisper, TTS Piper ou Kokoro) | tudo em Node, offline | Python: faster-whisper + openWakeWord |
 | Palavra de ativação | Picovoice Porcupine (`@picovoice/porcupine-node`, aceita português) | chave gratuita para uso pessoal | detecção via STT contínuo |
@@ -81,6 +81,7 @@
 | Microsoft | `@azure/msal-node` | oficial | — |
 | OAuth genérico | `openid-client` (PKCE, retorno local) | padrão | — |
 | Segredos | `safeStorage` do Electron (DPAPI) | nativo | Gerenciador de Credenciais via módulo nativo (o antigo `keytar` foi arquivado) |
+| Senha local e cifragem | **bcrypt** (`bcryptjs`, JavaScript puro, custo 12) para a senha do Jesus e o código de recuperação; **AES-256-GCM** (`node:crypto`) para dados que precisam ser lidos de volta ([decisão 0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)) | o bcrypt é hash (sem volta): serve para conferir senha, nunca para cifrar dados | Argon2id (módulo nativo) |
 | Parser de comandos | `tree-sitter` + gramática bash; parser de AST do PowerShell | normalização do Porteiro | — |
 | Execução contida | processo do Windows com token restrito + Job Object (APIs nativas, via módulo nativo pequeno) | nada externo para instalar | upgrade: AppContainer; opcional: WSL2 |
 | Logs | pino (aplicação) + tabela de auditoria no PostgreSQL | rápido | — |
@@ -102,6 +103,8 @@
 - **PostgreSQL** como processo filho gerenciado pelo processo principal (sobe e desce junto com o app).
 - **Empacotamento:** electron-builder (NSIS). Binários (PostgreSQL, modelos de voz) ficam fora do `asar` (`extraResources`/`asarUnpack`).
 - **Atualização:** electron-updater (GitHub Releases privado ou pasta local). Assinatura de código é opcional para uso pessoal; sem ela, o SmartScreen mostra um aviso.
+- **Interface (decisão 0013):** o renderer carrega a exportação estática do Next.js (`apps/ui/out`) pelo protocolo `app://`, nunca `file://`. Não há rota de API, *server action* nem servidor do Next rodando: a interface fala com o sistema só por IPC, pela ponte do `contextBridge`. A CSP de cada página traz os hashes dos scripts inline do App Router (passo `scripts/csp.mjs` depois do build); o protocolo `app://` manda a mesma política no cabeçalho.
+- **Senha local (decisão 0015):** o processo principal guarda o estado de bloqueio (`@jesus/auth`), confere a senha (hash bcrypt na tabela `app_credentials`) e decide o que a janela mostra; a interface só exibe a tela de entrada.
 
 ### Núcleo do agente (AI SDK) e o encaixe do Porteiro
 
@@ -182,19 +185,20 @@ jesus-ia/
 ├─ CLAUDE.md                 # contexto para o Claude Code
 ├─ docs/                     # documentação do projeto
 ├─ apps/
-│  ├─ hologram-lab/          # fase 0: protótipo web do holograma com dados falsos (existe)
-│  └─ desktop/               # Electron: main, preload, janelas
-│     └─ renderer/           # React; usa o pacote hologram
+│  ├─ ui/                    # interface em Next.js (exportação estática): Cenários, tela de entrada… (existe)
+│  └─ desktop/               # Electron: main, preload, janelas, protocolo app:// (carrega o apps/ui)
 ├─ packages/
 │  ├─ hologram/              # holograma: componente React Three Fiber + lógica visual pura (existe)
 │  ├─ core/                  # loop do agente, contexto, compactação, subagentes
 │  ├─ gate/                  # Porteiro: normalização, regras, classificador, políticas
 │  ├─ executor/              # execução de ferramentas, cofre, sandbox, checkpoints
 │  ├─ tools/                 # definições das ferramentas (arquivos, terminal, google, github…)
-│  ├─ db/                    # Drizzle: esquema, migrações, repositórios
+│  ├─ db/                    # Prisma: esquema, migrações SQL, migrador, repositórios (existe)
 │  ├─ memory/                # memória de longo prazo, busca híbrida
 │  ├─ voice/                 # ativação, VAD, STT, TTS
-│  ├─ models/                # registro de modelos e provedores, custos
+│  ├─ models/                # registro de modelos e provedores, custos (existe)
+│  ├─ crypto/                # bcrypt (senhas) e AES-256-GCM (dados) (existe)
+│  ├─ auth/                  # senha local do Jesus: regras, tentativas, bloqueio (existe)
 │  ├─ integrations/          # OAuth (Google, GitHub, Microsoft), MCP
 │  └─ shared/                # tipos, utilitários, mascaramento de segredos
 ├─ security/
@@ -222,7 +226,9 @@ Verificadas em 07/10/2026. Confira de novo na hora de instalar.
 | Node.js | 24 LTS (fase ativa até 20/10/2026); o 26 vira LTS em 28/10/2026 |
 | npm | 12.2 é a `latest` (30/09/2026; exige Node ^22.22.2, ^24.15 ou 26+); a linha 11 está na 11.21. O projeto aceita 11.16+ ou 12: `min-release-age` existe desde a 11.10 e `strict-allow-scripts` desde a 11.16. O Node 24 traz o npm 11.16+ a partir do 24.18 (o 24.21 traz o 11.19); o Node 22 ainda traz o npm 10, que ignora essas opções sem aviso |
 | TypeScript | 6.0 no projeto. A 7.0 (compilador nativo) já saiu, mas o typescript-eslint ainda aceita só `< 6.1` ([decisão 0008](decisoes/0008-holograma-como-pacote-e-laboratorio.md)) |
-| Front-end da fase 0 | Vite 8, React 19.3, Three.js 0.186, React Three Fiber 9, `@react-three/postprocessing` 3, Zustand 5, Vitest 5 |
+| Front-end | Next.js 16.4 (Turbopack), React 19.3, Three.js 0.186, React Three Fiber 9, `@react-three/postprocessing` 3, Zustand 5, Vitest 5. A fase 0 usou o Vite 8, trocado pelo Next.js na [decisão 0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md) |
+| Prisma | 7.10 (cliente, CLI e `@prisma/adapter-pg` fixados na mesma versão). A etiqueta `latest` do pacote `prisma` apontava, em 10/10/2026, para um candidato da versão 8: não usar |
+| bcrypt | `bcryptjs` 3.0.3 (JavaScript puro, sem script de instalação) |
 | Electron | linha 44.x estável (setembro de 2026) |
 | Vercel AI SDK | v7 (lançada em junho de 2026, segundo fontes de terceiros); a v6 (dezembro de 2025) introduziu a aprovação de ferramentas |
 | SDK TypeScript do MCP | v1 estável; v2 em beta (pacotes separados `@modelcontextprotocol/client` e `/server`) |

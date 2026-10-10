@@ -1,6 +1,6 @@
 # 0008 — Holograma como pacote próprio, com laboratório web
 
-- Status: aceita (a parte do pnpm foi substituída pela [0009](0009-npm-em-vez-de-pnpm.md))
+- Status: aceita (a parte do pnpm foi substituída pela [0009](0009-npm-em-vez-de-pnpm.md); o laboratório em Vite, pela [0013](0013-interface-em-nextjs-dentro-do-electron.md), que o leva para a aba Cenários do app em Next.js)
 - Data: 07/10/2026
 
 ## Contexto

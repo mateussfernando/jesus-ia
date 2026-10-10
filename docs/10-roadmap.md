@@ -7,7 +7,7 @@
 | Fase | Entrega | Pronto quando… |
 |---|---|---|
 | **0. Holograma** | protótipo web do holograma com dados falsos (estados, satélites, contexto, cores) | roda a 60 fps e você aprova a identidade visual |
-| **1. Esqueleto** | monorepo, Electron abrindo janela, chat por texto, 1 provedor, ferramentas só de leitura (arquivos), registro; aba **Cenários** com o laboratório do holograma (fica até a fase 10, seção [8.8](08-holograma.md)) | conversa e lê arquivos de uma pasta liberada; testes rodando no CI |
+| **1. Esqueleto** | monorepo, Electron abrindo janela com a interface em Next.js, **senha local** (tela de entrada), chat por texto, 1 provedor, ferramentas só de leitura (arquivos), registro; aba **Cenários** com o laboratório do holograma (fica até a fase 10, seção [8.8](08-holograma.md)) | abre pedindo a senha, conversa e lê arquivos de uma pasta liberada; testes rodando no CI |
 | **1.5. Conversa por voz** | segurar uma tecla para falar, transcrição local, resposta falada e holograma ouvindo e falando; **só perguntas e respostas**, sem executar nada (decisão [0012](decisoes/0012-conversa-por-voz-antes-da-execucao.md)) | você pergunta por voz e ouve a resposta no seu PC |
 | **2. Porteiro** | normalização, regras `deny/ask/allow`, caminhos protegidos e críticos, cartões de confirmação assinados, auditoria encadeada | 100% dos testes de regras passando; nenhuma ação executa sem passar pelo Porteiro |
 | **3. Mãos com contenção** | terminal no Windows com as compensações da seção [3.6](03-seguranca.md) (ambiente limpo, token restrito, Job Object), edição com checkpoint, git local; WSL2 opcional depois | roda os testes de um projeto real; cancelar mata a árvore de processos; o desfazer funciona |
@@ -21,7 +21,7 @@
 
 **A ordem importa: o Porteiro vem antes de o Jesus ganhar acesso ao terminal e às contas.**
 
-**Andamento (08/10/2026):** fase 0 **concluída** (`packages/hologram` + `apps/hologram-lab`, seção [8.8](08-holograma.md)). O dono do projeto aprovou a identidade visual e mediu 75 fps (o máximo da tela) num PC de 8 GB com placa de vídeo dedicada; em GPU integrada ainda não foi medido.
+**Andamento (10/10/2026):** fase 0 **concluída** (`packages/hologram` + o laboratório, seção [8.8](08-holograma.md)). O dono do projeto aprovou a identidade visual e mediu 75 fps (o máximo da tela) num PC de 8 GB com placa de vídeo dedicada; em GPU integrada ainda não foi medido. Em 10/10/2026, a pedido do dono, o projeto passou para React + Next.js + TypeScript, Prisma e senha local com bcrypt (decisões [0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md) a [0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)). Da fase 1 já existem: a interface em Next.js (`apps/ui`, com a aba Cenários e a tela de entrada), o login local (`packages/auth` + `packages/crypto`) e o pacote do banco (`packages/db`, com a tabela da senha). Falta o Electron (`apps/desktop`), o chat, o provedor e as ferramentas de leitura.
 
 ## 10.2 Usando os créditos do Claude Code na nuvem
 
@@ -48,7 +48,10 @@
 
 **Decidido em 08/10/2026:** primeiro cérebro = **Claude Haiku 5.5** ([decisão 0011](decisoes/0011-primeiro-modelo-claude-haiku.md)), o mais barato com privacidade entre as opções comparadas. A primeira escolha, o DeepSeek na DeepInfra ([0010](decisoes/0010-primeiro-modelo-deepseek-via-deepinfra.md)), saiu mais cara que o esperado.
 
+**Decidido em 10/10/2026:** interface em **Next.js dentro do Electron** ([0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md)), **Prisma** como ORM ([0014](decisoes/0014-prisma-como-orm.md)) e **senha local com bcrypt**, com dados cifrados por AES-256-GCM ([0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)).
+
 **Em aberto:**
 
 1. **Modelo do Porteiro** (classificador de risco): não será o DeepSeek. Decidir na fase 2.
 2. **Distribuir** para outras pessoas um dia? Muda a verificação do Google, a assinatura do instalador e as licenças (o Piper é GPL-3.0). Pode esperar.
+3. **Derivar a chave dos dados também da senha local?** Protegeria os dados até contra programas rodando como você (o DPAPI não protege), mas nada cifrado poderia ser lido com o Jesus bloqueado, nem por rotinas, e perder a senha e o código de recuperação seria perder os dados (decisão 0015). Decidir depois das rotinas (fase 9).

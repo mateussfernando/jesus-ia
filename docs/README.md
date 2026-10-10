@@ -2,7 +2,7 @@
 
 Assistente pessoal de IA para Windows, inspirado no JARVIS e na arquitetura do Claude Code.
 
-> **Status (08/10/2026):** fase 0 (protótipo do holograma) concluída e aprovada. Detalhes na seção [8.8](08-holograma.md).
+> **Status (10/10/2026):** fase 0 (protótipo do holograma) concluída e aprovada. O projeto passou para React + Next.js + TypeScript, com Prisma e senha local com bcrypt ([decisões 0013 a 0015](decisoes/)). Detalhes na seção [8.8](08-holograma.md) e no [diário de bordo](progresso.md).
 
 ## Por onde começar
 

@@ -1,6 +1,6 @@
 # 0002 — TypeScript + Electron
 
-- Status: aceita (o gerenciador de pacotes foi substituído pela [0009](0009-npm-em-vez-de-pnpm.md))
+- Status: aceita (o gerenciador de pacotes foi substituído pela [0009](0009-npm-em-vez-de-pnpm.md); a interface dentro do Electron é Next.js, pela [0013](0013-interface-em-nextjs-dentro-do-electron.md))
 - Data: 07/10/2026
 
 ## Contexto

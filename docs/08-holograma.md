@@ -69,7 +69,7 @@ Resumo da seção [3.12](03-seguranca.md): cartões de confirmação num compone
 | `packages/hologram/src/visual.ts` | lógica pura: estado → velocidades, cores e deformações; contexto → raio; gasto → nível; pulsos; suavização |
 | `packages/hologram/src/shaders.ts` | shaders GLSL das partículas, dos anéis e das estrelas |
 | `packages/hologram/src/describe.ts` | o mesmo conteúdo em texto (pt-BR), para o painel e leitores de tela |
-| `apps/hologram-lab` | o laboratório: painel de controles, cenários roteirizados com legenda e medidor de fps |
+| `apps/ui/src/lab` | o laboratório: painel de controles, cenários roteirizados com legenda e medidor de fps. Desde 10/10/2026 é a aba **Cenários** (`/cenarios/`) da interface em Next.js ([decisão 0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md)); na fase 0 era o app Vite `apps/hologram-lab` |
 
 ### Como a gramática da seção 8.2 virou código
 
@@ -94,11 +94,11 @@ Resumo da seção [3.12](03-seguranca.md): cartões de confirmação num compone
 - **Modo leve automático:** cai para 2.400 partículas e bloom em 35% da resolução quando a taxa fica abaixo de 42 fps por 3 segundos seguidos, ou quando o aparelho informa que está na bateria.
 - "Reduzir movimento" do sistema: animações a 25% da velocidade, sem pisca do alerta e sem paralaxe da câmera.
 - Modo mini: fundo transparente (sem bloom, que apagaria a transparência), sem satélites, rótulos, estrelas nem anel de gasto.
-- CSP restritiva no build (`script-src 'self'`, nada remoto).
+- CSP restritiva no build (`script-src 'self'` mais os hashes dos scripts inline do Next.js, nada remoto; seção 3.12).
 
 ### Como avaliar (no seu PC)
 
-1. `npm install` e `npm run dev:hologram` (Node 24.18 ou mais novo, que traz o npm 11.16+; veja o README); abra `http://localhost:5173` no Chrome ou Edge. Ou baixe o artefato `hologram-lab` do CI e sirva a pasta com qualquer servidor estático.
+1. `npm install` e `npm run dev:hologram` (Node 24.18 ou mais novo, que traz o npm 11.16+; veja o README); abra `http://127.0.0.1:5173/cenarios/` no Chrome ou Edge. Ou baixe o artefato `interface` do CI e sirva a pasta com qualquer servidor estático (a aba fica em `/cenarios/`).
 2. Rode os cenários do painel: **Marcar dentista** (seção 6.7), **Ataque bloqueado**, **Convite precisa de você**, **Contexto cheio e compactação automática**, **Disjuntor da compactação**, **Subagentes**, **Login no GitHub** e **Orçamento do dia**.
 3. Confira o medidor no canto superior esquerdo: o critério é **60 fps em GPU integrada** no modo completo. Ele também mostra se o modo leve entrou sozinho.
 4. Diga o que mudar: cores, tamanho, velocidade, brilho, densidade, o que sobra ou falta.
