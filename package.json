@@ -23,7 +23,9 @@
     }
   },
   "allowScripts": {
-    "fsevents": false
+    "fsevents": false,
+    "@prisma/engines": false,
+    "prisma": false
   },
   "scripts": {
     "dev:hologram": "npm run dev --workspace=@jesus/hologram-lab",

@@ -4,7 +4,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', 'jesus-ia-ideacao.md'] },
+  { ignores: ['**/dist/**', '**/out/**', '**/.next/**', '**/node_modules/**', '**/coverage/**', '**/src/generated/**', 'jesus-ia-ideacao.md'] },
   js.configs.recommended,
   ...tseslint.configs.strict,
   {
@@ -16,6 +16,11 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
     },
+  },
+  {
+    // Scripts de build e manutenção rodam no Node.
+    files: ['**/scripts/**/*.{js,mjs}', '**/*.config.{js,mjs}'],
+    languageOptions: { globals: globals.node },
   },
   {
     // Cena 3D: o padrão do React Three Fiber é mudar objetos do Three.js (materiais, uniforms, posições)
