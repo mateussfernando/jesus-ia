@@ -1,3 +1,4 @@
+import '../zod-jitless';
 import {
   accessLabels,
   describeSnapshot,
@@ -16,6 +17,7 @@ import type { ReactNode } from 'react';
 import { describeLabBudget, labModels } from './autoContext';
 import { satelliteCatalog, scenarios } from './scenarios';
 import { useLabStore } from './store';
+import './lab.css';
 
 const taints: readonly Taint[] = ['clean', 'tainted', 'suspicious'];
 const taintShort: Record<Taint, string> = { clean: 'Limpa', tainted: 'Contaminada', suspicious: 'Suspeita' };
@@ -35,7 +37,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-export function App() {
+/** Aba Cenários (seção 8.8): o laboratório do holograma, só com dados falsos. */
+export function LabApp() {
   const snapshot = useLabStore((s) => s.snapshot);
   const modelKey = useLabStore((s) => s.modelKey);
   const setModel = useLabStore((s) => s.setModel);
@@ -90,7 +93,7 @@ export function App() {
       <aside className="panel">
         <header className="panel-header">
           <h1>
-            Jesus <span>holograma · fase 0</span>
+            Jesus <span>holograma · cenários</span>
           </h1>
           <button type="button" className="ghost" onClick={reset}>
             Reiniciar

@@ -17,6 +17,19 @@ jobs:
     name: Lint, tipos, testes e build (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # PostgreSQL com pgvector para os testes de integração do @jesus/db (decisão 0014). Só existe durante o job.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v5
         with:
@@ -35,11 +48,14 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+        env:
+          JESUS_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       - run: npm run build
 
-      - name: Publicar o protótipo do holograma
+      # Exportação estática do Next.js (decisão 0013), com a aba Cenários e a tela de entrada.
+      - name: Publicar a interface
         uses: actions/upload-artifact@v7
         with:
-          name: hologram-lab
-          path: apps/hologram-lab/dist
+          name: interface
+          path: apps/ui/out
           retention-days: 14
