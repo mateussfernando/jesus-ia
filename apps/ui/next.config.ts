@@ -1,18 +1,17 @@
 import type { NextConfig } from 'next';
 
 /**
- * Interface do Jesus (decisão 0013): exportação estática, sem servidor. O Electron carrega a pasta `out` pelo
- * protocolo `app://`; tudo o que a interface pede ao sistema passa por IPC. Depois do build, `scripts/csp.mjs`
- * grava em cada página a CSP com os hashes dos scripts inline (seção 3.12).
+ * Interface do Jesus (decisões 0013 e 0016): app Next.js completo, com páginas, Server Actions e rotas no mesmo
+ * lugar. No app de desktop, o servidor do Next roda dentro do Electron e atende só a janela do Jesus, sem porta
+ * aberta (fase 1). A CSP com nonce sai do `src/proxy.ts` a cada pedido (seção 3.12).
  */
 const config: NextConfig = {
-  output: 'export',
   trailingSlash: true,
   images: { unoptimized: true },
   poweredByHeader: false,
   reactStrictMode: true,
   // Os pacotes do projeto exportam o código-fonte TypeScript.
-  transpilePackages: ['@jesus/auth', '@jesus/core', '@jesus/crypto', '@jesus/hologram', '@jesus/models'],
+  transpilePackages: ['@jesus/auth', '@jesus/core', '@jesus/crypto', '@jesus/db', '@jesus/hologram', '@jesus/models'],
 };
 
 export default config;

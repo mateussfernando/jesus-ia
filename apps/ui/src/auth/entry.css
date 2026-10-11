@@ -9,21 +9,6 @@
   padding: 32px 16px;
 }
 
-.entry-loading {
-  padding: 32px;
-  color: var(--silver-dark);
-}
-
-.demo-banner {
-  max-width: 440px;
-  margin: 0;
-  padding: 10px 14px;
-  border: 1px dashed var(--line-strong);
-  border-radius: 8px;
-  color: var(--silver-dark);
-  font-size: 13px;
-}
-
 .entry-panel {
   width: 100%;
   max-width: 440px;
@@ -102,11 +87,6 @@
 .primary:disabled {
   opacity: 0.45;
   cursor: default;
-}
-
-.as-link {
-  display: inline-block;
-  text-decoration: none;
 }
 
 .link {

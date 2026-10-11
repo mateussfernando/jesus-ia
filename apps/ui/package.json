@@ -3,16 +3,19 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Interface do Jesus em Next.js (decisão 0013): exportação estática que o Electron carrega; inclui a aba Cenários (laboratório do holograma) e a tela de entrada.",
+  "description": "Interface e back-end da interface do Jesus em Next.js (decisões 0013 e 0016): páginas, Server Actions e rotas no mesmo app; dentro do Electron, sem porta aberta. Inclui a aba Cenários e a tela de entrada.",
   "scripts": {
-    "dev": "node scripts/next.mjs dev --hostname 127.0.0.1 --port 5173",
-    "build": "node scripts/next.mjs build && node scripts/csp.mjs out",
+    "dev": "node ../../packages/db/scripts/generate.mjs && node scripts/next.mjs dev --hostname 127.0.0.1 --port 5173",
+    "build": "node ../../packages/db/scripts/generate.mjs && node scripts/next.mjs build",
+    "start": "node scripts/next.mjs start --hostname 127.0.0.1 --port 5173",
     "test": "vitest run",
-    "typecheck": "node scripts/next.mjs typegen && tsc -p tsconfig.json"
+    "typecheck": "node ../../packages/db/scripts/generate.mjs && node scripts/next.mjs typegen && tsc -p tsconfig.json"
   },
   "dependencies": {
     "@jesus/auth": "*",
     "@jesus/core": "*",
+    "@jesus/crypto": "*",
+    "@jesus/db": "*",
     "@jesus/hologram": "*",
     "@jesus/models": "*",
     "next": "16.4.0",

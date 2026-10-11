@@ -21,7 +21,7 @@
 
 **A ordem importa: o Porteiro vem antes de o Jesus ganhar acesso ao terminal e às contas.**
 
-**Andamento (10/10/2026):** fase 0 **concluída** (`packages/hologram` + o laboratório, seção [8.8](08-holograma.md)). O dono do projeto aprovou a identidade visual e mediu 75 fps (o máximo da tela) num PC de 8 GB com placa de vídeo dedicada; em GPU integrada ainda não foi medido. Em 10/10/2026, a pedido do dono, o projeto passou para React + Next.js + TypeScript, Prisma e senha local com bcrypt (decisões [0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md) a [0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)). Da fase 1 já existem: a interface em Next.js (`apps/ui`, com a aba Cenários e a tela de entrada), o login local (`packages/auth` + `packages/crypto`) e o pacote do banco (`packages/db`, com a tabela da senha). Falta o Electron (`apps/desktop`), o chat, o provedor e as ferramentas de leitura.
+**Andamento (10/10/2026):** fase 0 **concluída** (`packages/hologram` + o laboratório, seção [8.8](08-holograma.md)). O dono do projeto aprovou a identidade visual e mediu 75 fps (o máximo da tela) num PC de 8 GB com placa de vídeo dedicada; em GPU integrada ainda não foi medido. Em 10/10/2026, a pedido do dono, o projeto passou para React + Next.js + TypeScript, Prisma e senha local com bcrypt (decisões [0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md) a [0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)). Em 11/10/2026, também a pedido do dono, a interface ganhou o servidor do Next (rotas e Server Actions como back-end, sem porta no app instalado; [decisão 0016](decisoes/0016-nextjs-com-servidor-dentro-do-electron.md)). Da fase 1 já existem: a interface com back-end em Next.js (`apps/ui`, com a aba Cenários e a tela de entrada protegendo as outras páginas), o login local (`packages/auth` + `packages/crypto`) e o pacote do banco (`packages/db`, com a tabela da senha). Falta o Electron (`apps/desktop`), o chat, o provedor e as ferramentas de leitura.
 
 ## 10.2 Usando os créditos do Claude Code na nuvem
 
@@ -48,7 +48,7 @@
 
 **Decidido em 08/10/2026:** primeiro cérebro = **Claude Haiku 5.5** ([decisão 0011](decisoes/0011-primeiro-modelo-claude-haiku.md)), o mais barato com privacidade entre as opções comparadas. A primeira escolha, o DeepSeek na DeepInfra ([0010](decisoes/0010-primeiro-modelo-deepseek-via-deepinfra.md)), saiu mais cara que o esperado.
 
-**Decidido em 10/10/2026:** interface em **Next.js dentro do Electron** ([0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md)), **Prisma** como ORM ([0014](decisoes/0014-prisma-como-orm.md)) e **senha local com bcrypt**, com dados cifrados por AES-256-GCM ([0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)).
+**Decidido em 10 e 11/10/2026:** interface em **Next.js dentro do Electron**, com servidor e sem porta ([0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md) e [0016](decisoes/0016-nextjs-com-servidor-dentro-do-electron.md)), **Prisma** como ORM ([0014](decisoes/0014-prisma-como-orm.md)) e **senha local com bcrypt**, com dados cifrados por AES-256-GCM ([0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)).
 
 **Em aberto:**
 

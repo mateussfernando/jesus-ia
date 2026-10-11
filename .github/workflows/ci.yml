@@ -51,11 +51,3 @@ jobs:
         env:
           JESUS_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       - run: npm run build
-
-      # Exportação estática do Next.js (decisão 0013), com a aba Cenários e a tela de entrada.
-      - name: Publicar a interface
-        uses: actions/upload-artifact@v7
-        with:
-          name: interface
-          path: apps/ui/out
-          retention-days: 14

@@ -2,7 +2,7 @@
 
 > **Leia isto antes de qualquer tarefa** e atualize ao terminar cada etapa (o que foi feito, o que falta, onde parou). Serve para continuar o trabalho em outra sessão sem perder contexto. O resumo fixo do projeto está no [`CLAUDE.md`](../CLAUDE.md); aqui fica o **andamento**.
 
-**Última atualização:** 10/10/2026, sessão na nuvem (branch `ccr-d2d5ac72-nmmks6`, criada a partir da `main-7zybuc` no commit `d940e18`; veja "Branch" abaixo).
+**Última atualização:** 11/10/2026, sessão na nuvem (branch `ccr-d2d5ac72-nmmks6`, criada a partir da `main-7zybuc` no commit `d940e18`; veja "Branch" abaixo).
 
 ## Onde estamos
 
@@ -79,8 +79,16 @@ Descartado de vez: API direta do DeepSeek com dados pessoais (dados na China) e 
 - CI: PostgreSQL com pgvector como serviço (testes do banco) e artefato `interface` no lugar de `hologram-lab`.
 - 376 testes no projeto; lint, tipos e build limpos.
 
+## Feito em 11/10/2026: back-end no Next.js (pedido do dono)
+
+- O dono explicou por que quis o Next.js: **front-end e back-end num lugar só, com o sistema de rotas**. A exportação estática (0013) desligava isso. [Decisão 0016](decisoes/0016-nextjs-com-servidor-dentro-do-electron.md): o `apps/ui` agora é um app Next.js com servidor; no app instalado, o Electron entrega os pedidos da janela do Jesus ao servidor do Next dentro do próprio app, **sem abrir porta** (provado num teste: página, redirecionamento e Server Action atendidos por um adaptador em memória).
+- Login no servidor: Server Actions (`app/entrar/actions.ts`, `app/(app)/actions.ts`), sessão por cookie `HttpOnly`/`SameSite=Strict` com só o SHA-256 guardado, `requireUnlocked()` em cada página protegida, botão "Bloquear" e sinal de uso, credencial num arquivo JSON (troca atômica, falha fechada se adulterado) até a fase 4.
+- CSP com nonce a cada pedido (`src/proxy.ts`), sem `unsafe-inline`; saíram o passo de hashes e o modo de demonstração no navegador.
+- Conferido no Chromium contra o `next start`: sem sessão vai para a entrada; código de recuperação aparece; cookie com as flags certas; Cenários abre; página protegida recusada com o app bloqueado; Server Action forjada de outra origem recusada sem contar tentativa; nenhuma violação de CSP.
+- Revisão independente (ultracode, pedida pelo dono) de `packages/crypto`, `packages/auth` e `packages/db` rodando; as correções entram em seguida.
+
 **Falta (nesta ordem):**
-1. **Fase 1, Electron (`apps/desktop`):** processo principal com as regras da seção 3.12, protocolo `app://` servindo `apps/ui/out` com a CSP no cabeçalho (os hashes já ficam no `<meta>` de cada página), preload com a ponte mínima (`window.jesus.auth`, tipo `AuthBridge` em `apps/ui/src/auth/bridge.ts`), máquina de bloqueio ligada a `powerMonitor` (bloqueio do Windows, suspensão) e ao tempo sem uso, e build do `.exe` no CI `windows-latest`. **Escolha pendente:** a senha local precisa de banco já na fase 1, mas o PostgreSQL embutido é da fase 4. Recomendação: na fase 1, um `CredentialRepo` em arquivo na pasta do app (a porta já existe), trocado pelo `@jesus/db` na fase 4; a alternativa é adiantar o PostgreSQL embutido.
+1. **Fase 1, Electron (`apps/desktop`):** processo principal com as regras da seção 3.12; interceptação de `https://jesus.invalid/` só na sessão da janela, entregando ao servidor do Next dentro do app (adaptador de pedidos testado em 11/10/2026; decidir processo principal ou `utilityProcess` medindo memória e travamentos); `JESUS_DATA_DIR` na pasta de dados do usuário e `JESUS_HTTPS=1`; eventos de bloqueio do Windows e suspensão (`powerMonitor`) chegando à máquina de bloqueio do servidor; build do `.exe` no CI `windows-latest`. A senha local fica em arquivo na fase 1 (já implementado) e passa para o `@jesus/db` na fase 4.
 2. Fase 1, resto: chat por texto com o Claude Haiku 5.5 (chave pelo cofre), ferramentas só de leitura, registro.
 3. Implementar, um pacote por vez, com testes: memória (com `maskSecrets`/`detectSensitive`/`canonicalJson` em `packages/shared`) → login automático de contas → subagentes. Ligar cada um ao holograma e trocar os controles manuais correspondentes do laboratório por simulação automática.
 4. Promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.

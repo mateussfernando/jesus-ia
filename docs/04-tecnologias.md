@@ -63,7 +63,7 @@
 | Linguagem | TypeScript (modo `strict`) | uma linguagem para tudo | Python (seção 4.5) |
 | Runtime | Node.js LTS (24 hoje; o 26 vira LTS em 28/10/2026) | suporte longo | — |
 | App desktop | Electron (versão estável atual) + electron-builder (instalador NSIS `.exe`) | maduro no Windows; janelas transparentes; `utilityProcess`; `safeStorage` | Tauri 2 (mais leve, mas o núcleo é em Rust) |
-| Build e UI | **Next.js 16 (App Router) + React**, em exportação estática carregada pelo Electron ([decisão 0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md)) | pedido do dono; sem servidor HTTP local; CSP com hashes | Vite + React (usado na fase 0) |
+| Build e UI | **Next.js 16 (App Router) + React**, com servidor: páginas, Server Actions e rotas como back-end da interface, dentro do Electron e sem porta aberta ([decisões 0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md) e [0016](decisoes/0016-nextjs-com-servidor-dentro-do-electron.md)) | pedido do dono: front e back-end num lugar só; CSP com nonce | exportação estática + IPC (0013); Vite + React (fase 0) |
 | Holograma | Three.js + React Three Fiber + pós-processamento (bloom) | padrão para WebGL | Babylon.js |
 | Estado da UI | Zustand | simples | Redux |
 | Núcleo do agente | Vercel AI SDK (`ai`): `ToolLoopAgent` + `toolApproval` | multi-provedor; aprovação de ferramentas nativa; aprovações assinadas | Mastra; loop próprio |
@@ -103,7 +103,7 @@
 - **PostgreSQL** como processo filho gerenciado pelo processo principal (sobe e desce junto com o app).
 - **Empacotamento:** electron-builder (NSIS). Binários (PostgreSQL, modelos de voz) ficam fora do `asar` (`extraResources`/`asarUnpack`).
 - **Atualização:** electron-updater (GitHub Releases privado ou pasta local). Assinatura de código é opcional para uso pessoal; sem ela, o SmartScreen mostra um aviso.
-- **Interface (decisão 0013):** o renderer carrega a exportação estática do Next.js (`apps/ui/out`) pelo protocolo `app://`, nunca `file://`. Não há rota de API, *server action* nem servidor do Next rodando: a interface fala com o sistema só por IPC, pela ponte do `contextBridge`. A CSP de cada página traz os hashes dos scripts inline do App Router (passo `scripts/csp.mjs` depois do build); o protocolo `app://` manda a mesma política no cabeçalho.
+- **Interface (decisões 0013 e 0016):** a janela carrega `https://jesus.invalid/`, um endereço que não existe na internet. O Electron intercepta esses pedidos só na sessão da janela do Jesus (`protocol.handle`), recusa qualquer outro endereço e entrega cada pedido ao servidor do Next carregado no próprio app (`next({ dir }).getRequestHandler()` com um adaptador em memória): nenhuma porta é aberta. Páginas, Server Actions e rotas do `apps/ui` são o back-end da interface; o Cérebro, o Porteiro + Executor e a voz continuam em `utilityProcess` próprios, falando com o Next por IPC. Rodar o Next no processo principal ou num `utilityProcess` só dele é decidido na fase 1, medindo.
 - **Senha local (decisão 0015):** o processo principal guarda o estado de bloqueio (`@jesus/auth`), confere a senha (hash bcrypt na tabela `app_credentials`) e decide o que a janela mostra; a interface só exibe a tela de entrada.
 
 ### Núcleo do agente (AI SDK) e o encaixe do Porteiro
@@ -185,7 +185,7 @@ jesus-ia/
 ├─ CLAUDE.md                 # contexto para o Claude Code
 ├─ docs/                     # documentação do projeto
 ├─ apps/
-│  ├─ ui/                    # interface em Next.js (exportação estática): Cenários, tela de entrada… (existe)
+│  ├─ ui/                    # interface e back-end da interface em Next.js: Cenários, tela de entrada… (existe)
 │  └─ desktop/               # Electron: main, preload, janelas, protocolo app:// (carrega o apps/ui)
 ├─ packages/
 │  ├─ hologram/              # holograma: componente React Three Fiber + lógica visual pura (existe)

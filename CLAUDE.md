@@ -10,7 +10,7 @@ Fase 0 (holograma) concluída e aprovada. Em 10/10/2026 o projeto passou para a 
 
 ## O que é
 
-App Electron + TypeScript para Windows, com a interface em React + Next.js (exportação estática, sem servidor): agente multi-modelo (Vercel AI SDK), Porteiro de segurança **fora** da IA, PostgreSQL local (pgvector) com Prisma, senha local com bcrypt, voz em pt-BR (sherpa-onnx) e holograma em Three.js. Arquitetura inspirada no Claude Code (mapa conceito a conceito em `docs/02-arquitetura.md`, seção 2.1).
+App Electron + TypeScript para Windows, com a interface em React + Next.js (páginas, Server Actions e rotas como back-end da interface, dentro do app e sem porta aberta): agente multi-modelo (Vercel AI SDK), Porteiro de segurança **fora** da IA, PostgreSQL local (pgvector) com Prisma, senha local com bcrypt, voz em pt-BR (sherpa-onnx) e holograma em Three.js. Arquitetura inspirada no Claude Code (mapa conceito a conceito em `docs/02-arquitetura.md`, seção 2.1).
 
 ## Invariantes de segurança
 
@@ -26,7 +26,7 @@ Nunca enfraquecer sem uma decisão registrada em `docs/decisoes/`. Lista complet
 
 ## Decisões já tomadas
 
-TypeScript + Electron · interface em Next.js (exportação estática dentro do Electron) · Prisma + PostgreSQL local embutido · senha local com bcrypt e dados cifrados com AES-256-GCM (bcrypt é hash, não cifra) · alvo de 8 a 16 GB de RAM sem GPU dedicada · comandos direto no Windows, sem instalar nada externo (WSL2 opcional) · identificadores em inglês e textos em pt-BR · uso pessoal. Detalhes em `docs/decisoes/`.
+TypeScript + Electron · interface em Next.js com servidor dentro do Electron, sem porta (decisão 0016) · Prisma + PostgreSQL local embutido · senha local com bcrypt e dados cifrados com AES-256-GCM (bcrypt é hash, não cifra) · alvo de 8 a 16 GB de RAM sem GPU dedicada · comandos direto no Windows, sem instalar nada externo (WSL2 opcional) · identificadores em inglês e textos em pt-BR · uso pessoal. Detalhes em `docs/decisoes/`.
 
 ## Convenções
 
@@ -69,7 +69,7 @@ TypeScript + Electron · interface em Next.js (exportação estática dentro do 
 Gerenciador: **npm 11.16 ou mais novo** (workspaces). Não use pnpm nem yarn. Regras em `.npmrc` e na decisão 0009.
 
 - `npm install`: instala. Versões novas só entram com 3 dias ou mais de publicadas, e nenhum script de instalação de dependência roda.
-- `npm run dev:hologram` (ou `npm run dev:ui`): abre a interface em Next.js em `http://127.0.0.1:5173`; o laboratório fica em `/cenarios/` e a tela de entrada em `/entrar/` (no navegador, em modo de demonstração).
+- `npm run dev:hologram` (ou `npm run dev:ui`): abre a interface em Next.js em `http://127.0.0.1:5173`. Na primeira vez, crie a senha local (fica em `apps/ui/.jesus-dev`, fora do git); depois, o laboratório fica em `/cenarios/`. `npm run start -w @jesus/ui` serve o build de produção na mesma porta.
 - Banco: `npm run generate -w @jesus/db` gera o cliente do Prisma sem baixar binário (os scripts `typecheck` e `test` do pacote já fazem isso). Os testes de integração do banco rodam com `JESUS_TEST_DATABASE_URL` apontando para um PostgreSQL de teste (no CI, um contêiner); sem ela, são pulados. Na nuvem: `bash scripts/cloud-test-db.sh` sobe um PostgreSQL local e mostra a URL. Migração nova: escreva no `schema.prisma`, gere o SQL com `npm run db:migrate:dev -w @jesus/db` (só na máquina de quem desenvolve: baixa o binário nativo do Prisma, decisão 0014) e complete à mão o que o Prisma não modela.
 - `npm run lint` · `npm run typecheck` · `npm test` · `npm run build`: o mesmo que o CI roda (o CI usa `npm ci`).
 - Dependência nova num pacote: `npm install <pacote> -w packages/hologram` (ou `-w apps/ui`). Revise o diff do `package-lock.json` no PR. Se o workspace for novo, rode `npm install` antes, para o npm registrar a pasta (senão a dependência não é gravada).
@@ -86,7 +86,7 @@ Gerenciador: **npm 11.16 ou mais novo** (workspaces). Não use pnpm nem yarn. Re
 - `packages/crypto`: bcrypt (`bcryptjs`, custo 12, recusa acima de 72 bytes), códigos de recuperação e cifragem de campos com AES-256-GCM (dado autenticado e id de chave). `./password` e `./random` também rodam no navegador.
 - `packages/auth`: senha local do Jesus: regras da senha, espera progressiva após erros, máquina de bloqueio por inatividade e serviço de login com portas injetadas.
 - `packages/db`: Prisma 7 (`prisma/schema.prisma`, migrações SQL em `prisma/migrations`), migrador próprio com soma de verificação (`src/migrate.ts`) e repositórios (`src/credentials.ts`). O cliente gerado (`src/generated`) não vai para o git.
-- `apps/ui`: interface em Next.js 16 (App Router, exportação estática em `out/`, CSP com hashes gravada por `scripts/csp.mjs`). Rotas: `/` (início), `/cenarios/` (o laboratório da fase 0: `src/lab/`, com cenários roteirizados, limite de contexto pelo modelo e compactação simulada) e `/entrar/` (senha local; ponte do Electron em `src/auth/bridge.ts`, demonstração em memória no navegador). **Pedido do dono:** a aba Cenários fica da fase 1 até a final (seção 8.8).
+- `apps/ui`: interface e back-end da interface em Next.js 16 (App Router com servidor, decisão 0016). `src/proxy.ts` põe a CSP com nonce em cada página; `src/server/` tem o login no servidor (estado de acesso, sessão por cookie, credencial em arquivo); `src/app/entrar/actions.ts` e `src/app/(app)/actions.ts` são as Server Actions. Rotas: `/entrar/` (senha local) e, protegidas por `requireUnlocked()` em cada página, `/` (início) e `/cenarios/` (o laboratório da fase 0: `src/lab/`, com cenários roteirizados, limite de contexto pelo modelo e compactação simulada). Toda Server Action valida a entrada e confere a sessão sozinha. **Pedido do dono:** a aba Cenários fica da fase 1 até a final (seção 8.8).
 - `docs/progresso.md`: diário de bordo (andamento entre sessões). `docs/rascunhos/`: especificações em rascunho, ainda não promovidas a documentação oficial.
 - `.claude/`: `settings.json` registra o gancho de início de sessão (`hooks/session-start.sh`).
 

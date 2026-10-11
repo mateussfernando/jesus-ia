@@ -8,25 +8,23 @@ import {
 } from '@jesus/auth';
 import type { PasswordProblem, RecoveryResult, SetupResult, UnlockResult } from '@jesus/auth';
 import { BCRYPT_MAX_BYTES } from '@jesus/crypto/password';
-import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { resolveAuthBridge } from './bridge';
-import type { ResolvedBridge } from './bridge';
+import { recoverWithCode, setupPassword, unlockWithPassword } from '../app/entrar/actions';
 import './entry.css';
 
 /**
- * Tela de entrada do Jesus (decisão 0015): criar a senha na primeira vez, desbloquear e recuperar com o código.
- * A tela só mostra e coleta; quem confere a senha é o serviço de login (no app, o processo principal).
+ * Tela de entrada do Jesus (decisões 0015 e 0016): criar a senha na primeira vez, desbloquear e recuperar com o
+ * código. A tela só mostra e coleta: quem confere a senha é o servidor do app, pelas Server Actions de
+ * `app/entrar/actions.ts`. A página nunca recebe o hash e não consegue se desbloquear sozinha.
  */
 
 type Screen =
-  | { kind: 'loading' }
   | { kind: 'setup' }
-  | { kind: 'show_code'; code: string; next: 'unlocked' }
+  | { kind: 'show_code'; code: string }
   | { kind: 'unlock' }
-  | { kind: 'recover' }
-  | { kind: 'unlocked' };
+  | { kind: 'recover' };
 
 function formatWait(ms: number): string {
   const seconds = Math.ceil(ms / 1000);
@@ -130,9 +128,9 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-export function EntryScreen() {
-  const resolved = useMemo<ResolvedBridge | null>(() => (typeof window === 'undefined' ? null : resolveAuthBridge()), []);
-  const [screen, setScreen] = useState<Screen>({ kind: 'loading' });
+export function EntryScreen({ initial, unlocked }: { initial: 'setup' | 'unlock'; unlocked: boolean }) {
+  const router = useRouter();
+  const [screen, setScreen] = useState<Screen>({ kind: initial });
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [code, setCode] = useState('');
@@ -141,16 +139,10 @@ export function EntryScreen() {
   const [working, setWorking] = useState(false);
   const [codeSaved, setCodeSaved] = useState(false);
 
+  // Desbloqueado (agora ou numa visita anterior) → início; menos enquanto o código de recuperação está na tela.
   useEffect(() => {
-    if (resolved === null) return;
-    let alive = true;
-    void resolved.bridge.status().then((status) => {
-      if (alive) setScreen(status === 'setup_required' ? { kind: 'setup' } : { kind: 'unlock' });
-    });
-    return () => {
-      alive = false;
-    };
-  }, [resolved]);
+    if (unlocked && screen.kind !== 'show_code') router.replace('/');
+  }, [unlocked, screen.kind, router]);
 
   function resetFields() {
     setPassword('');
@@ -162,7 +154,7 @@ export function EntryScreen() {
 
   async function submit(event: FormEvent, action: () => Promise<void>) {
     event.preventDefault();
-    if (working || resolved === null) return;
+    if (working) return;
     setWorking(true);
     setMessage(null);
     try {
@@ -173,18 +165,6 @@ export function EntryScreen() {
       setWorking(false);
     }
   }
-
-  if (resolved === null || screen.kind === 'loading') {
-    return <p className="entry-loading">Carregando…</p>;
-  }
-  const { bridge, demo } = resolved;
-
-  const demoBanner = demo && (
-    <p className="demo-banner" role="note">
-      Modo de demonstração: no navegador não existe o app de desktop, então nada é guardado e recarregar a página
-      apaga a senha. O hash bcrypt (custo 12) é o mesmo do app de verdade.
-    </p>
-  );
 
   let body: ReactNode;
   switch (screen.kind) {
@@ -202,10 +182,10 @@ export function EntryScreen() {
                   setMessage('As duas senhas não são iguais.');
                   return;
                 }
-                const result = await bridge.setup(password);
+                const result = await setupPassword(password);
                 if (result.ok) {
                   resetFields();
-                  setScreen({ kind: 'show_code', code: result.recoveryCode, next: 'unlocked' });
+                  setScreen({ kind: 'show_code', code: result.recoveryCode });
                 } else if (result.reason === 'weak_password') {
                   setProblems(result.problems);
                 } else {
@@ -250,7 +230,7 @@ export function EntryScreen() {
             disabled={!codeSaved}
             onClick={() => {
               setCodeSaved(false);
-              setScreen({ kind: screen.next });
+              router.replace('/');
             }}
           >
             Continuar
@@ -265,9 +245,9 @@ export function EntryScreen() {
           <form
             onSubmit={(e) =>
               submit(e, async () => {
-                const result = await bridge.unlock(password);
+                const result = await unlockWithPassword(password);
                 setPassword('');
-                if (result.ok) setScreen({ kind: 'unlocked' });
+                if (result.ok) router.replace('/');
                 else setMessage(unlockMessage(result));
               })
             }
@@ -315,10 +295,10 @@ export function EntryScreen() {
                   setMessage('As duas senhas não são iguais.');
                   return;
                 }
-                const result = await bridge.recover(code, password);
+                const result = await recoverWithCode(code, password);
                 if (result.ok) {
                   resetFields();
-                  setScreen({ kind: 'show_code', code: result.recoveryCode, next: 'unlocked' });
+                  setScreen({ kind: 'show_code', code: result.recoveryCode });
                 } else if (result.reason === 'weak_password') {
                   setProblems(result.problems);
                 } else {
@@ -368,38 +348,9 @@ export function EntryScreen() {
       );
       break;
 
-    case 'unlocked':
-      body = (
-        <Panel title="Desbloqueado">
-          <p className="lead">
-            {demo
-              ? 'Na demonstração, o desbloqueio para aqui. No app de desktop, o processo principal abre a central de comando.'
-              : 'Abrindo o Jesus…'}
-          </p>
-          <Link href="/cenarios/" className="primary as-link">
-            Ir para Cenários
-          </Link>
-          {demo && (
-            <button
-              type="button"
-              className="link"
-              onClick={() => {
-                resetFields();
-                setScreen({ kind: 'unlock' });
-              }}
-            >
-              Bloquear de novo (para testar o desbloqueio)
-            </button>
-          )}
-        </Panel>
-      );
-      break;
   }
 
   return (
-    <main className="entry">
-      {demoBanner}
-      {body}
-    </main>
+    <main className="entry">{body}</main>
   );
 }

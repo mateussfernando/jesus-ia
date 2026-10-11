@@ -94,11 +94,11 @@ Resumo da seção [3.12](03-seguranca.md): cartões de confirmação num compone
 - **Modo leve automático:** cai para 2.400 partículas e bloom em 35% da resolução quando a taxa fica abaixo de 42 fps por 3 segundos seguidos, ou quando o aparelho informa que está na bateria.
 - "Reduzir movimento" do sistema: animações a 25% da velocidade, sem pisca do alerta e sem paralaxe da câmera.
 - Modo mini: fundo transparente (sem bloom, que apagaria a transparência), sem satélites, rótulos, estrelas nem anel de gasto.
-- CSP restritiva no build (`script-src 'self'` mais os hashes dos scripts inline do Next.js, nada remoto; seção 3.12).
+- CSP restritiva com nonce novo a cada pedido (`script-src 'self' 'nonce-…' 'strict-dynamic'`, nada remoto; seção 3.12).
 
 ### Como avaliar (no seu PC)
 
-1. `npm install` e `npm run dev:hologram` (Node 24.18 ou mais novo, que traz o npm 11.16+; veja o README); abra `http://127.0.0.1:5173/cenarios/` no Chrome ou Edge. Ou baixe o artefato `interface` do CI e sirva a pasta com qualquer servidor estático (a aba fica em `/cenarios/`).
+1. `npm install` e `npm run dev:hologram` (Node 24.18 ou mais novo, que traz o npm 11.16+; veja o README); abra `http://127.0.0.1:5173` no Chrome ou Edge. Na primeira vez, crie a senha local do Jesus (fica em `apps/ui/.jesus-dev`, fora do git) e anote o código de recuperação; depois, a aba fica em `/cenarios/`.
 2. Rode os cenários do painel: **Marcar dentista** (seção 6.7), **Ataque bloqueado**, **Convite precisa de você**, **Contexto cheio e compactação automática**, **Disjuntor da compactação**, **Subagentes**, **Login no GitHub** e **Orçamento do dia**.
 3. Confira o medidor no canto superior esquerdo: o critério é **60 fps em GPU integrada** no modo completo. Ele também mostra se o modo leve entrou sozinho.
 4. Diga o que mudar: cores, tamanho, velocidade, brilho, densidade, o que sobra ou falta.

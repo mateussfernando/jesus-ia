@@ -1,6 +1,6 @@
 # 0013 — Interface em Next.js dentro do Electron
 
-- Status: aceita
+- Status: aceita (a exportação estática, sem servidor, foi substituída pela [0016](0016-nextjs-com-servidor-dentro-do-electron.md): o app usa o servidor do Next, sem porta)
 - Data: 10/10/2026
 - Complementa: [0002](0002-typescript-e-electron.md) (o Electron continua) e [0008](0008-holograma-como-pacote-e-laboratorio.md) (o laboratório sai do Vite)
 
