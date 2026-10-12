@@ -24,7 +24,11 @@ export interface AppliedMigration {
 
 export type MigrationPlan =
   | { readonly ok: true; readonly pending: readonly MigrationFile[] }
-  | { readonly ok: false; readonly error: 'checksum_mismatch' | 'unknown_applied' | 'out_of_order' | 'duplicate_name'; readonly name: string };
+  | {
+      readonly ok: false;
+      readonly error: 'checksum_mismatch' | 'unknown_applied' | 'out_of_order' | 'duplicate_name' | 'transaction_control';
+      readonly name: string;
+    };
 
 const MIGRATION_NAME = /^\d{14}_[a-z0-9_]+$/;
 
@@ -34,6 +38,100 @@ const MIGRATION_NAME = /^\d{14}_[a-z0-9_]+$/;
  */
 export function migrationChecksum(sql: string): string {
   return createHash('sha256').update(sql.replace(/\r\n?/g, '\n'), 'utf8').digest('hex');
+}
+
+/**
+ * Comandos do SQL, sem comentários e com strings, identificadores entre aspas e corpos `$tag$…$tag$` trocados
+ * por marcadores: um `END` dentro de um `DO $$ … END $$` ou de uma string não conta como comando.
+ */
+export function sqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = '';
+  let i = 0;
+  while (i < sql.length) {
+    const c = sql[i];
+    const next = sql[i + 1];
+    if (c === '-' && next === '-') {
+      const end = sql.indexOf('\n', i);
+      i = end === -1 ? sql.length : end;
+      current += ' ';
+    } else if (c === '/' && next === '*') {
+      // Comentários de bloco do PostgreSQL podem ser aninhados.
+      let depth = 1;
+      i += 2;
+      while (i < sql.length && depth > 0) {
+        if (sql[i] === '/' && sql[i + 1] === '*') {
+          depth++;
+          i += 2;
+        } else if (sql[i] === '*' && sql[i + 1] === '/') {
+          depth--;
+          i += 2;
+        } else i++;
+      }
+      current += ' ';
+    } else if (c === "'") {
+      // E'…' aceita \' dentro; nas strings comuns, só '' escapa a aspa.
+      const prev = current.at(-1);
+      const beforePrev = current.at(-2);
+      const escapes = (prev === 'E' || prev === 'e') && (beforePrev === undefined || !/[\w$]/.test(beforePrev));
+      i++;
+      while (i < sql.length) {
+        if (escapes && sql[i] === '\\') i += 2;
+        else if (sql[i] === "'" && sql[i + 1] === "'") i += 2;
+        else if (sql[i] === "'") {
+          i++;
+          break;
+        } else i++;
+      }
+      current += "''";
+    } else if (c === '"') {
+      i++;
+      while (i < sql.length) {
+        if (sql[i] === '"' && sql[i + 1] === '"') i += 2;
+        else if (sql[i] === '"') {
+          i++;
+          break;
+        } else i++;
+      }
+      current += '""';
+    } else if (c === '$' && !/[\w$]/.test(current.at(-1) ?? ' ')) {
+      const tag = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i));
+      if (tag === null) {
+        current += c;
+        i++;
+      } else {
+        const end = sql.indexOf(tag[0], i + tag[0].length);
+        i = end === -1 ? sql.length : end + tag[0].length;
+        current += ' $$ ';
+      }
+    } else if (c === ';') {
+      if (current.trim() !== '') statements.push(current.trim());
+      current = '';
+      i++;
+    } else {
+      current += c;
+      i++;
+    }
+  }
+  if (current.trim() !== '') statements.push(current.trim());
+  return statements;
+}
+
+const TRANSACTION_CONTROL =
+  /^(?:BEGIN|COMMIT|ROLLBACK|ABORT|END|START\s+TRANSACTION|SAVEPOINT|RELEASE|PREPARE\s+TRANSACTION)\b/i;
+
+/**
+ * Primeiro comando de controle de transação do arquivo (`BEGIN`, `COMMIT`, `ROLLBACK`…), ou `null`. O migrador
+ * já abre a transação de cada arquivo: um `COMMIT` no arquivo fecharia essa transação no meio, gravando metade
+ * da migração sem registrá-la (o `prisma migrate dev` gera `BEGIN;`/`COMMIT;` para mudar enums). Corpos de
+ * função com `BEGIN ATOMIC … END` também caem aqui: use o corpo entre `$$`.
+ */
+export function findTransactionControl(sql: string): string | null {
+  for (const statement of sqlStatements(sql)) {
+    const match = TRANSACTION_CONTROL.exec(statement);
+    if (match !== null) return match[0].toUpperCase().replace(/\s+/g, ' ');
+  }
+  return null;
 }
 
 /** Decide o que aplicar. Lógica pura: não lê disco nem banco. */
@@ -58,6 +156,8 @@ export function planMigrations(available: readonly MigrationFile[], applied: rea
   const pending = sorted.filter((m) => !appliedNames.has(m.name));
   const early = pending.find((m) => m.name < lastApplied);
   if (early !== undefined) return { ok: false, error: 'out_of_order', name: early.name };
+  const withControl = pending.find((m) => findTransactionControl(m.sql) !== null);
+  if (withControl !== undefined) return { ok: false, error: 'transaction_control', name: withControl.name };
   return { ok: true, pending };
 }
 
@@ -97,18 +197,26 @@ export class MigrationError extends Error {
 /** Número fixo da trava consultiva: duas instâncias do app não migram ao mesmo tempo. */
 const MIGRATION_LOCK_KEY = 0x4a_45_53_55; // "JESU"
 
+/** Id da transação atual (atribui um, se ainda não houver). */
+async function currentTransactionId(client: ClientBase): Promise<string> {
+  const { rows } = await client.query<{ xid: string }>('SELECT pg_current_xact_id()::text AS xid');
+  return rows[0]?.xid ?? '';
+}
+
 /**
  * Aplica as migrações pendentes. Cada arquivo roda numa transação própria, junto com o registro em
  * `jesus_migrations`: ou entra inteiro, ou não entra. Devolve os nomes aplicados.
  */
 export async function applyMigrations(client: ClientBase, files: readonly MigrationFile[]): Promise<string[]> {
-  await client.query(`CREATE TABLE IF NOT EXISTS jesus_migrations (
-    name text PRIMARY KEY,
-    checksum text NOT NULL,
-    applied_at timestamptz NOT NULL DEFAULT now()
-  )`);
+  // A trava vem antes de tudo, até da tabela de controle: dois `CREATE TABLE IF NOT EXISTS` ao mesmo tempo
+  // num banco novo esbarram no catálogo do PostgreSQL e um deles falha em vez de esperar.
   await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
   try {
+    await client.query(`CREATE TABLE IF NOT EXISTS jesus_migrations (
+      name text PRIMARY KEY,
+      checksum text NOT NULL,
+      applied_at timestamptz NOT NULL DEFAULT now()
+    )`);
     const { rows } = await client.query<{ name: string; checksum: string }>(
       'SELECT name, checksum FROM jesus_migrations ORDER BY name',
     );
@@ -118,7 +226,13 @@ export async function applyMigrations(client: ClientBase, files: readonly Migrat
     for (const migration of plan.pending) {
       await client.query('BEGIN');
       try {
+        const before = await currentTransactionId(client);
         await client.query(migration.sql);
+        // Segunda barreira, além da checagem do texto: se o arquivo fechou ou desfez a transação do migrador,
+        // o id muda e nada é registrado como aplicado.
+        if ((await currentTransactionId(client)) !== before) {
+          throw new MigrationError('transaction_control', migration.name);
+        }
         await client.query('INSERT INTO jesus_migrations (name, checksum) VALUES ($1, $2)', [
           migration.name,
           migration.checksum,

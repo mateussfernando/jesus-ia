@@ -5,13 +5,18 @@
   "type": "module",
   "description": "Banco do Jesus: esquema Prisma (PostgreSQL), migrações em SQL, migrador próprio e repositórios (decisão 0014).",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./credentials": "./src/credentials.ts",
+    "./migrate": "./src/migrate.ts"
   },
   "scripts": {
     "generate": "node scripts/generate.mjs",
     "test": "node scripts/generate.mjs && vitest run",
     "typecheck": "node scripts/generate.mjs && tsc -p tsconfig.json",
-    "db:migrate:dev": "prisma migrate dev"
+    "db:migrate:create": "node scripts/prisma-dev.mjs migrate dev --create-only",
+    "db:migrate:dev": "node scripts/prisma-dev.mjs migrate dev",
+    "db:apply": "node scripts/apply-migrations.mjs"
   },
   "dependencies": {
     "@jesus/auth": "*",

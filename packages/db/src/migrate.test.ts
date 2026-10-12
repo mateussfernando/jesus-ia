@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultMigrationsDir, migrationChecksum, planMigrations, readMigrations } from './migrate';
+import { defaultMigrationsDir, findTransactionControl, migrationChecksum, planMigrations, readMigrations, sqlStatements } from './migrate';
 import type { MigrationFile } from './migrate';
 
 function file(name: string, sql = `-- ${name}`): MigrationFile {
@@ -47,6 +47,61 @@ describe('planMigrations', () => {
 
   it('recusa nomes repetidos', () => {
     expect(planMigrations([a, file(a.name, '-- outra')], [])).toMatchObject({ ok: false, error: 'duplicate_name' });
+  });
+});
+
+describe('controle de transação dentro do arquivo', () => {
+  const enumFromPrisma = [
+    '-- AlterEnum',
+    'BEGIN;',
+    'CREATE TYPE "Role_new" AS ENUM (\'A\', \'B\');',
+    'ALTER TYPE "Role" RENAME TO "Role_old";',
+    'COMMIT;',
+  ].join('\n');
+
+  it('acusa BEGIN, COMMIT, ROLLBACK e parentes no começo de um comando', () => {
+    expect(findTransactionControl(enumFromPrisma)).toBe('BEGIN');
+    expect(findTransactionControl('CREATE TABLE t (x int); COMMIT;')).toBe('COMMIT');
+    expect(findTransactionControl('CREATE TABLE important (id int);\nROLLBACK;')).toBe('ROLLBACK');
+    expect(findTransactionControl('select 1; start   transaction; select 2')).toBe('START TRANSACTION');
+    expect(findTransactionControl('SAVEPOINT a; RELEASE a;')).toBe('SAVEPOINT');
+    expect(findTransactionControl('/* x */ end;')).toBe('END');
+    expect(findTransactionControl('abort')).toBe('ABORT');
+  });
+
+  it('não confunde com END de bloco DO, strings, identificadores nem comentários', () => {
+    const roles = [
+      'DO $$',
+      'BEGIN',
+      '  CREATE ROLE jesus_app NOLOGIN;',
+      'EXCEPTION WHEN duplicate_object THEN NULL;',
+      'END',
+      '$$;',
+      "COMMENT ON TABLE t IS 'BEGIN; COMMIT;';",
+      "SELECT E'it\\'s; COMMIT;';",
+      'SELECT "commit" FROM "x;y";',
+      '-- COMMIT;',
+      '/* outer /* ROLLBACK; */ still comment; COMMIT; */',
+      'CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql AS $body$ BEGIN RETURN 1; END $body$;',
+      'SELECT CASE WHEN true THEN 1 END;',
+      'SELECT $1;',
+    ].join('\n');
+    expect(findTransactionControl(roles)).toBeNull();
+  });
+
+  it('separa os comandos sem os trechos citados', () => {
+    expect(sqlStatements("SELECT 'a;b'; -- c;\nSELECT 2;")).toEqual(["SELECT ''", 'SELECT 2']);
+    expect(sqlStatements('DO $x$ BEGIN END $x$; SELECT 1')).toEqual(['DO  $$', 'SELECT 1']);
+  });
+
+  it('a migração pendente com controle de transação é recusada antes de aplicar qualquer coisa', () => {
+    const ok = file('20260101000000_a');
+    const bad = { ...file('20260102000000_b'), sql: enumFromPrisma };
+    expect(planMigrations([ok, bad], [])).toEqual({ ok: false, error: 'transaction_control', name: bad.name });
+  });
+
+  it('as migrações do pacote não têm controle de transação', async () => {
+    for (const f of await readMigrations(defaultMigrationsDir())) expect(findTransactionControl(f.sql), f.name).toBeNull();
   });
 });
 

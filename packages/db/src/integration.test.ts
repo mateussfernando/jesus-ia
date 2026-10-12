@@ -47,6 +47,49 @@ suite('banco de verdade', () => {
     expect(await applyMigrations(client, files)).toEqual([]);
   });
 
+  it('várias instâncias migrando um banco novo ao mesmo tempo: uma aplica, as outras esperam a trava', async () => {
+    const name = `jesus_test_${randomBytes(6).toString('hex')}`;
+    await admin.query(`CREATE DATABASE ${name}`);
+    const url = new URL(adminUrl ?? '');
+    url.pathname = `/${name}`;
+    const clients = Array.from({ length: 6 }, () => new pg.Client({ connectionString: url.toString() }));
+    try {
+      await Promise.all(clients.map((c) => c.connect()));
+      const files = await readMigrations(defaultMigrationsDir());
+      const results = await Promise.all(clients.map((c) => applyMigrations(c, files)));
+      expect(results.filter((r) => r.length > 0)).toEqual([files.map((f) => f.name)]);
+    } finally {
+      await Promise.all(clients.map((c) => c.end()));
+      await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+    }
+  });
+
+  it('arquivo que fecha ou desfaz a transação do migrador não é registrado como aplicado', async () => {
+    const files = await readMigrations(defaultMigrationsDir());
+    const sneaky = (name: string, sql: string) => ({ name, sql, checksum: migrationChecksum(sql) });
+    // A checagem do texto pega antes de rodar qualquer coisa.
+    await expect(
+      applyMigrations(client, [...files, sneaky('20990101000000_commit', 'CREATE TABLE half (id int); COMMIT;')]),
+    ).rejects.toMatchObject({ code: 'transaction_control' });
+    const half = await client.query("SELECT to_regclass('half') AS t");
+    expect(half.rows[0]).toEqual({ t: null });
+    const { rows } = await client.query('SELECT name FROM jesus_migrations ORDER BY name');
+    expect(rows.map((r: { name: string }) => r.name)).toEqual(files.map((f) => f.name));
+
+    // Se a checagem do texto deixasse passar, o id da transação acusa: simula um COMMIT que ela não viu.
+    const marker = 'SELECT 1 AS escondido';
+    const leaky = {
+      query: (text: unknown, params?: unknown[]) =>
+        client.query(text === marker ? 'CREATE TABLE half2 (id int); COMMIT;' : (text as string), params),
+    } as unknown as pg.ClientBase;
+    await expect(applyMigrations(leaky, [...files, sneaky('20990101000000_leak', marker)])).rejects.toMatchObject({
+      code: 'transaction_control',
+    });
+    const after = await client.query('SELECT name FROM jesus_migrations ORDER BY name');
+    expect(after.rows.map((r: { name: string }) => r.name)).toEqual(files.map((f) => f.name));
+    await client.query('DROP TABLE IF EXISTS half2');
+  });
+
   it('recusa abrir o banco se uma migração aplicada mudou', async () => {
     const files = await readMigrations(defaultMigrationsDir());
     const tampered = files.map((f, i) => (i === 0 ? { ...f, sql: `${f.sql}\n-- x`, checksum: migrationChecksum(`${f.sql}\n-- x`) } : f));
@@ -97,6 +140,20 @@ suite('banco de verdade', () => {
 
     await repo.recordSuccess();
     expect(await repo.load()).toMatchObject({ failedAttempts: 0, lastFailedAt: null });
+
+    // Relógio que voltou: a data do último erro vem para agora, só se estiver no futuro e houver erros.
+    await repo.recordFailure(1_700_000_100_000);
+    await repo.anchorFailureClock(1_700_000_200_000);
+    expect(await repo.load()).toMatchObject({ failedAttempts: 1, lastFailedAt: 1_700_000_100_000 });
+    await repo.anchorFailureClock(1_700_000_050_000);
+    expect(await repo.load()).toMatchObject({ failedAttempts: 1, lastFailedAt: 1_700_000_050_000 });
+    await repo.recordSuccess();
+    await repo.anchorFailureClock(1_600_000_000_000);
+    expect(await repo.load()).toMatchObject({ failedAttempts: 0, lastFailedAt: null });
+    await client.query('UPDATE app_credentials SET failed_attempts = 7, last_failed_at = NULL');
+    await repo.anchorFailureClock(1_700_000_300_000);
+    expect(await repo.load()).toMatchObject({ failedAttempts: 7, lastFailedAt: 1_700_000_300_000 });
+    await repo.recordSuccess();
 
     const other = await hashPassword('outra senha bem comprida', { cost: 4 });
     await repo.replaceSecrets({ passwordHash: other, at: 1_800_000_000_000 });

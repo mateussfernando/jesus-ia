@@ -57,6 +57,15 @@ export function createCredentialRepo(prisma: PrismaClient): CredentialRepo {
       });
     },
 
+    async anchorFailureClock(at) {
+      // Uma instrução só (UPDATE … WHERE): não desfaz um erro gravado por outra conferência no meio do caminho.
+      const when = new Date(at);
+      await prisma.appCredential.updateMany({
+        where: { id: SINGLE_ROW, failedAttempts: { gt: 0 }, OR: [{ lastFailedAt: null }, { lastFailedAt: { gt: when } }] },
+        data: { lastFailedAt: when },
+      });
+    },
+
     async replaceSecrets({ passwordHash, recoveryHash, at }) {
       await prisma.appCredential.update({
         where: { id: SINGLE_ROW },
