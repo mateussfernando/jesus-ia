@@ -1,9 +1,8 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import { checkSession, lockNow, touch } from '../app/(app)/actions';
-import { sessionTimings } from './session-timing';
+import { sessionTimings, shouldSignal } from './session-timing';
 import './session.css';
 
 /**
@@ -11,11 +10,17 @@ import './session.css';
  * servidor quando você usa a tela. Duas coisas separadas:
  * - a conferência periódica (e ao voltar a ficar visível) só pergunta se a sessão vale: não conta como uso, senão
  *   a janela aberta e parada nunca bloquearia;
- * - o sinal de uso sai só de tecla, clique ou rolagem de verdade, no máximo uma vez a cada `activityEveryMs`.
+ * - o sinal de uso sai só de tecla, clique ou rolagem de verdade, no máximo uma vez a cada `activityEveryMs`
+ *   (medido no relógio monotônico).
+ * Bloqueado → carga completa da tela de entrada: tira da memória o que estava na tela e não depende do cache do
+ * roteador (que mede validade com o relógio de parede).
  */
+function goToEntry() {
+  window.location.replace('/entrar/');
+}
+
 export function SessionKeeper({ idleMs }: { idleMs: number }) {
-  const router = useRouter();
-  const lastActivity = useRef(0);
+  const lastActivity = useRef(Number.NEGATIVE_INFINITY);
 
   useEffect(() => {
     const { checkEveryMs, activityEveryMs } = sessionTimings(idleMs);
@@ -23,17 +28,17 @@ export function SessionKeeper({ idleMs }: { idleMs: number }) {
     const follow = async (call: () => Promise<{ unlocked: boolean }>) => {
       try {
         const { unlocked } = await call();
-        if (alive && !unlocked) router.replace('/entrar/');
+        if (alive && !unlocked) goToEntry();
       } catch {
-        if (alive) router.replace('/entrar/');
+        if (alive) goToEntry();
       }
     };
     const check = () => {
       if (document.visibilityState === 'visible') void follow(checkSession);
     };
     const onActivity = () => {
-      const now = Date.now();
-      if (now - lastActivity.current < activityEveryMs) return;
+      const now = performance.now();
+      if (!shouldSignal(now, lastActivity.current, activityEveryMs)) return;
       lastActivity.current = now;
       void follow(touch);
     };
@@ -50,7 +55,7 @@ export function SessionKeeper({ idleMs }: { idleMs: number }) {
       window.removeEventListener('pointerdown', onActivity);
       window.removeEventListener('wheel', onActivity);
     };
-  }, [router, idleMs]);
+  }, [idleMs]);
 
   return (
     <button
@@ -58,7 +63,7 @@ export function SessionKeeper({ idleMs }: { idleMs: number }) {
       className="lock-button"
       onClick={async () => {
         await lockNow();
-        router.replace('/entrar/');
+        goToEntry();
       }}
     >
       Bloquear

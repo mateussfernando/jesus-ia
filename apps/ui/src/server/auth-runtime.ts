@@ -37,11 +37,15 @@ export interface AuthRuntime {
 }
 
 const RUNTIME_KEY = Symbol.for('jesus.ui.auth-runtime');
-type RuntimeHolder = typeof globalThis & { [RUNTIME_KEY]?: Promise<AuthRuntime> | undefined };
+const REPO_KEY = Symbol.for('jesus.ui.credential-repo');
+type RuntimeHolder = typeof globalThis & {
+  [RUNTIME_KEY]?: Promise<AuthRuntime> | undefined;
+  [REPO_KEY]?: Promise<CredentialRepo>;
+};
 
 async function createRepo(): Promise<CredentialRepo> {
   const store = credentialStoreFromEnv(process.env, process.cwd());
-  // A URL traz a senha do banco (invariante 5): fica só na memória deste módulo.
+  // A URL traz a senha do banco (invariante 5): fica só na memória deste processo.
   delete process.env['JESUS_DATABASE_URL'];
   if (store.kind === 'file') return createFileCredentialRepo(store.path);
   // Carregado só quando há banco: sem `JESUS_DATABASE_URL`, o driver do PostgreSQL nem entra no processo.
@@ -52,6 +56,16 @@ async function createRepo(): Promise<CredentialRepo> {
   return createCredentialRepo(createDbClient(store.url));
 }
 
+/**
+ * O repositório é escolhido uma vez por processo e nunca muda: uma nova tentativa depois de o banco falhar usa o
+ * mesmo banco (e falha de novo, fechada), nunca cai para o arquivo. Erro de configuração também fica até reiniciar.
+ */
+function credentialRepo(): Promise<CredentialRepo> {
+  const holder = globalThis as RuntimeHolder;
+  holder[REPO_KEY] ??= createRepo();
+  return holder[REPO_KEY];
+}
+
 /** Só o tipo do evento e a operação: nada de senha, hash ou código (a auditoria de verdade chega na fase 2). */
 function auditLine(event: AuthAuditEvent): string {
   return 'op' in event ? `[auth] ${event.type} (${event.op})` : `[auth] ${event.type}`;
@@ -59,7 +73,7 @@ function auditLine(event: AuthAuditEvent): string {
 
 async function buildRuntime(): Promise<AuthRuntime> {
   const service = createAuthService({
-    repo: await createRepo(),
+    repo: await credentialRepo(),
     clock: { now: () => Date.now() },
     hasher: bcryptHasher(),
     audit: (event) => console.info(auditLine(event)),
@@ -74,7 +88,8 @@ async function buildRuntime(): Promise<AuthRuntime> {
 /**
  * O mesmo estado para páginas, Server Actions e rotas, mesmo que o Next carregue este módulo mais de uma vez
  * (camadas diferentes do build): por isso o estado mora num símbolo global do processo. Se a montagem falhar
- * (arquivo ilegível, banco fora do ar), o pedido falha fechado e o próximo tenta de novo.
+ * (arquivo ilegível, banco fora do ar), o pedido falha fechado e o próximo tenta de novo, com o mesmo
+ * repositório (`credentialRepo`).
  */
 export function getAuthRuntime(): Promise<AuthRuntime> {
   const holder = globalThis as RuntimeHolder;

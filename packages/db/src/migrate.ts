@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,9 +40,15 @@ export function migrationChecksum(sql: string): string {
   return createHash('sha256').update(sql.replace(/\r\n?/g, '\n'), 'utf8').digest('hex');
 }
 
+/** Caractere que continua um identificador no PostgreSQL (`ident_cont`: letras, dígitos, `_`, `$` e todo não ASCII). */
+const IDENT_CONT = /[\w$\u0080-\uFFFF]/;
+/** Marca de *dollar quote*: `$$` ou `$tag$`, com a tag começando por letra, `_` ou caractere não ASCII. */
+const DOLLAR_TAG = /^\$(?:[A-Za-z_\u0080-\uFFFF][\w\u0080-\uFFFF]*)?\$/;
+
 /**
  * Comandos do SQL, sem comentários e com strings, identificadores entre aspas e corpos `$tag$…$tag$` trocados
- * por marcadores: um `END` dentro de um `DO $$ … END $$` ou de uma string não conta como comando.
+ * por marcadores: um `END` dentro de um `DO $$ … END $$` ou de uma string não conta como comando. Lê como o
+ * analisador do PostgreSQL com `standard_conforming_strings = on`, que o migrador fixa antes de cada arquivo.
  */
 export function sqlStatements(sql: string): string[] {
   const statements: string[] = [];
@@ -52,8 +58,10 @@ export function sqlStatements(sql: string): string[] {
     const c = sql[i];
     const next = sql[i + 1];
     if (c === '-' && next === '-') {
-      const end = sql.indexOf('\n', i);
-      i = end === -1 ? sql.length : end;
+      // O comentário termina no primeiro \n ou \r, como no PostgreSQL.
+      let end = i + 2;
+      while (end < sql.length && sql[end] !== '\n' && sql[end] !== '\r') end++;
+      i = end;
       current += ' ';
     } else if (c === '/' && next === '*') {
       // Comentários de bloco do PostgreSQL podem ser aninhados.
@@ -73,7 +81,7 @@ export function sqlStatements(sql: string): string[] {
       // E'…' aceita \' dentro; nas strings comuns, só '' escapa a aspa.
       const prev = current.at(-1);
       const beforePrev = current.at(-2);
-      const escapes = (prev === 'E' || prev === 'e') && (beforePrev === undefined || !/[\w$]/.test(beforePrev));
+      const escapes = (prev === 'E' || prev === 'e') && (beforePrev === undefined || !IDENT_CONT.test(beforePrev));
       i++;
       while (i < sql.length) {
         if (escapes && sql[i] === '\\') i += 2;
@@ -94,8 +102,8 @@ export function sqlStatements(sql: string): string[] {
         } else i++;
       }
       current += '""';
-    } else if (c === '$' && !/[\w$]/.test(current.at(-1) ?? ' ')) {
-      const tag = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i));
+    } else if (c === '$' && !IDENT_CONT.test(current.at(-1) ?? ' ')) {
+      const tag = DOLLAR_TAG.exec(sql.slice(i));
       if (tag === null) {
         current += c;
         i++;
@@ -197,11 +205,8 @@ export class MigrationError extends Error {
 /** Número fixo da trava consultiva: duas instâncias do app não migram ao mesmo tempo. */
 const MIGRATION_LOCK_KEY = 0x4a_45_53_55; // "JESU"
 
-/** Id da transação atual (atribui um, se ainda não houver). */
-async function currentTransactionId(client: ClientBase): Promise<string> {
-  const { rows } = await client.query<{ xid: string }>('SELECT pg_current_xact_id()::text AS xid');
-  return rows[0]?.xid ?? '';
-}
+/** Marca da transação do migrador: some se o arquivo fechar ou desfizer a transação. */
+const TX_MARKER = 'jesus.migration_tx';
 
 /**
  * Aplica as migrações pendentes. Cada arquivo roda numa transação própria, junto com o registro em
@@ -226,13 +231,19 @@ export async function applyMigrations(client: ClientBase, files: readonly Migrat
     for (const migration of plan.pending) {
       await client.query('BEGIN');
       try {
-        const before = await currentTransactionId(client);
+        // Só SET aqui: um SELECT tiraria o primeiro snapshot, e um arquivo que começa com SET TRANSACTION falharia.
+        // O SQL do arquivo é lido sempre com standard_conforming_strings ligado, como a checagem do texto supõe,
+        // mesmo que um arquivo anterior tenha desligado na sessão.
+        const token = randomBytes(16).toString('hex');
+        await client.query('SET LOCAL standard_conforming_strings = on');
+        await client.query(`SET LOCAL ${TX_MARKER} = '${token}'`);
         await client.query(migration.sql);
-        // Segunda barreira, além da checagem do texto: se o arquivo fechou ou desfez a transação do migrador,
-        // o id muda e nada é registrado como aplicado.
-        if ((await currentTransactionId(client)) !== before) {
-          throw new MigrationError('transaction_control', migration.name);
-        }
+        // Segunda barreira, além da checagem do texto: se o arquivo fechou ou desfez a transação do migrador, a
+        // marca local some e nada é registrado como aplicado.
+        const { rows: marker } = await client.query<{ value: string | null }>(
+          `SELECT current_setting('${TX_MARKER}', true) AS value`,
+        );
+        if (marker[0]?.value !== token) throw new MigrationError('transaction_control', migration.name);
         await client.query('INSERT INTO jesus_migrations (name, checksum) VALUES ($1, $2)', [
           migration.name,
           migration.checksum,

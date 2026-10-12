@@ -167,6 +167,24 @@ describe('desbloquear', () => {
     ]);
   });
 
+  it('alternar operações durante a espera não volta a encher a auditoria', async () => {
+    const { service, events, advance } = setupHarness();
+    await service.setup(GOOD);
+    for (let i = 0; i < 5; i++) await service.unlock('errada');
+    for (let i = 0; i < 50; i++) {
+      await service.unlock('chute');
+      await service.recover('xx', 'cafe forte na varanda azul');
+      await service.changePassword('chute', 'cafe forte na varanda azul');
+    }
+    const throttled = () => events.filter((e) => e.type === 'auth.throttled').map((e) => ('op' in e ? e.op : ''));
+    expect(throttled()).toEqual(['unlock', 'recover', 'change_password']);
+    // Uma espera nova (depois de mais um erro) volta a registrar.
+    advance(30_000);
+    await service.unlock('errada de novo');
+    await service.unlock('chute');
+    expect(throttled()).toEqual(['unlock', 'recover', 'change_password', 'unlock']);
+  });
+
   it('a auditoria nunca leva senha, hash nem código', async () => {
     const { service, events } = setupHarness();
     await service.setup(GOOD);

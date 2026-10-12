@@ -90,6 +90,30 @@ suite('banco de verdade', () => {
     await client.query('DROP TABLE IF EXISTS half2');
   });
 
+  it('aplica migração que começa com SET TRANSACTION (a marca do migrador não tira snapshot)', async () => {
+    const files = await readMigrations(defaultMigrationsDir());
+    const sql = 'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;\nCREATE TABLE settx_ok (id int);';
+    const extra = { name: '20990102000000_settx', sql, checksum: migrationChecksum(sql) };
+    expect(await applyMigrations(client, [...files, extra])).toEqual([extra.name]);
+    await client.query('DROP TABLE settx_ok');
+    await client.query('DELETE FROM jesus_migrations WHERE name = $1', [extra.name]);
+  });
+
+  it('standard_conforming_strings desligado por uma migração anterior não engana a checagem do texto', async () => {
+    const files = await readMigrations(defaultMigrationsDir());
+    const off = 'SET standard_conforming_strings = off;';
+    const sneaky = "CREATE TABLE scs_half (id int);\nCOMMENT ON TABLE scs_half IS 'it\\'s';\nCOMMIT;\nCREATE TABLE scs_b (id int);";
+    const a = { name: '20990103000000_scs_off', sql: off, checksum: migrationChecksum(off) };
+    const b = { name: '20990104000000_scs_sneaky', sql: sneaky, checksum: migrationChecksum(sneaky) };
+    await expect(applyMigrations(client, [...files, a, b])).rejects.toBeDefined();
+    const half = await client.query("SELECT to_regclass('scs_half') AS t");
+    expect(half.rows[0]).toEqual({ t: null });
+    const { rows } = await client.query('SELECT name FROM jesus_migrations WHERE name = $1', [b.name]);
+    expect(rows).toEqual([]);
+    await client.query('DELETE FROM jesus_migrations WHERE name = $1', [a.name]);
+    await client.query('SET standard_conforming_strings = on');
+  });
+
   it('recusa abrir o banco se uma migração aplicada mudou', async () => {
     const files = await readMigrations(defaultMigrationsDir());
     const tampered = files.map((f, i) => (i === 0 ? { ...f, sql: `${f.sql}\n-- x`, checksum: migrationChecksum(`${f.sql}\n-- x`) } : f));

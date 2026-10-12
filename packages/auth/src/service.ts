@@ -93,8 +93,9 @@ export function createAuthService(ports: AuthPorts): AuthService {
   const audit = ports.audit ?? (() => undefined);
   // Uma conferência por vez: duas tentativas simultâneas não podem passar juntas pela checagem de espera.
   let busy = false;
-  // Última espera já registrada na auditoria (operação, erros e data do último erro).
-  let lastThrottleAudit: string | null = null;
+  // Última espera já registrada na auditoria, por operação (erros e data do último erro): alternar operações
+  // durante a espera não volta a encher a auditoria.
+  const throttleAudited = new Map<SecretCheckOp, string>();
 
   async function exclusive<T>(busyResult: T, run: () => Promise<T>): Promise<T> {
     if (busy) return busyResult;
@@ -133,9 +134,9 @@ export function createAuthService(ports: AuthPorts): AuthService {
     }
     const wait = remainingWaitMs(record.failedAttempts, lastFailedAt, now, throttle);
     if (wait > 0) {
-      const key = `${op}:${String(record.failedAttempts)}:${String(lastFailedAt)}`;
-      if (key !== lastThrottleAudit) {
-        lastThrottleAudit = key;
+      const key = `${String(record.failedAttempts)}:${String(lastFailedAt)}`;
+      if (throttleAudited.get(op) !== key) {
+        throttleAudited.set(op, key);
         audit({ type: 'auth.throttled', at: now, op, waitMs: wait });
       }
       return { ok: false, reason: 'throttled', retryAfterMs: wait };

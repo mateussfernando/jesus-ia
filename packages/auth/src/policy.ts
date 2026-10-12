@@ -69,6 +69,11 @@ function isRepetitive(chars: readonly string[]): boolean {
   return false;
 }
 
+/** Uma letra ou dígito só, repetido 3 vezes ou mais entre símbolos ("x!@#x$%^x&*(" vira "xxx"). */
+function isOneCharRepeated(chars: readonly string[]): boolean {
+  return chars.length >= 3 && new Set(chars).size === 1;
+}
+
 /** Poucos caracteres diferentes na senha inteira ("a!!!!!!!!!!!", "-_-_-_-_-_-_"). */
 function hasFewDistinct(chars: readonly string[]): boolean {
   return chars.length >= MIN_PATTERN_CHARS && new Set(chars).size <= 3;
@@ -109,7 +114,7 @@ export function checkNewPassword(password: string): PasswordCheck {
   const canonical = Array.from(canonicalForBlocklist(password));
   const forms = [compact, canonical].filter((form) => form.length > 0);
   if (forms.some((form) => COMMON_PASSWORDS.has(form.join('')))) problems.push('common');
-  else if (hasFewDistinct(compact) || forms.some(isRepetitive)) problems.push('repetitive');
+  else if (hasFewDistinct(compact) || isOneCharRepeated(canonical) || forms.some(isRepetitive)) problems.push('repetitive');
   else if (forms.some(isSequence)) problems.push('sequence');
 
   if (problems.length > 0) return { ok: false, problems, chars, bytes };

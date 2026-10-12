@@ -57,6 +57,11 @@ describe('checkNewPassword', () => {
       '😀'.repeat(12),
       '🇧🇷'.repeat(6),
       '👍🏽'.repeat(6),
+      // Uma letra ou dígito repetido entre os símbolos da fileira de cima do teclado.
+      'x!@#x$%^x&*(',
+      'a!@#a$%^a&*(a',
+      '1!!1@@1##1$$',
+      '&__A_AA!A&__',
     ]) {
       expect(checkNewPassword(pw), pw).toMatchObject({ ok: false, problems: ['repetitive'] });
     }

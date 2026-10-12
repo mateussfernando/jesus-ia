@@ -89,6 +89,19 @@ describe('controle de transação dentro do arquivo', () => {
     expect(findTransactionControl(roles)).toBeNull();
   });
 
+  it('lê como o PostgreSQL: comentário até \\r, identificador com acento e tag de dollar quote com acento', () => {
+    // Comentário termina em \r sozinho (arquivo com quebras de linha do Mac antigo).
+    expect(findTransactionControl('-- AlterEnum\rBEGIN;\rCREATE TABLE cr_a (id int);\rCOMMIT;\r')).toBe('BEGIN');
+    // `café$x$` é um identificador só (o $ continua o identificador), não um dollar quote.
+    expect(findTransactionControl('CREATE TABLE café$x$ (id int);\nCOMMIT;\nCREATE TABLE b$x$ (id int);')).toBe('COMMIT');
+    // `ñE'x\'` é o identificador `ñe` seguido de uma string comum, não uma E-string.
+    expect(findTransactionControl("SELECT ñE'x\\';\nCOMMIT;\nSELECT 1;")).toBe('COMMIT');
+    // Tag com acento é válida no PostgreSQL: o END do corpo não conta.
+    expect(
+      findTransactionControl('CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql AS $função$ BEGIN RETURN 1; END; $função$;'),
+    ).toBeNull();
+  });
+
   it('separa os comandos sem os trechos citados', () => {
     expect(sqlStatements("SELECT 'a;b'; -- c;\nSELECT 2;")).toEqual(["SELECT ''", 'SELECT 2']);
     expect(sqlStatements('DO $x$ BEGIN END $x$; SELECT 1')).toEqual(['DO  $$', 'SELECT 1']);
