@@ -46,6 +46,68 @@ describe('checkNewPassword', () => {
     expect(checkNewPassword('3456789012345')).toMatchObject({ ok: false, problems: ['sequence'] });
   });
 
+  it('recusa senhas só de símbolos, pontuação ou emoji repetidos', () => {
+    for (const pw of [
+      '!!!!!!!!!!!!',
+      '************',
+      '............',
+      '$$$$$$$$$$$$',
+      '-_-_-_-_-_-_',
+      'a!!!!!!!!!!!',
+      '😀'.repeat(12),
+      '🇧🇷'.repeat(6),
+      '👍🏽'.repeat(6),
+    ]) {
+      expect(checkNewPassword(pw), pw).toMatchObject({ ok: false, problems: ['repetitive'] });
+    }
+    expect(checkNewPassword('!@#$%^&*()_+')).toMatchObject({ ok: false, problems: ['common'] });
+    expect(checkNewPassword('!@#$%¨&*()_+')).toMatchObject({ ok: false, problems: ['common'] });
+  });
+
+  it('recusa palavra ou número repetido inteiro, de qualquer tamanho', () => {
+    for (const pw of [
+      '1234 1234 1234',
+      '123412341234',
+      'casa casa casa',
+      'amor amor amor',
+      'abcdabcdabcd',
+      'qwerqwerqwer',
+      'senha senha senha',
+      'Jesus-Jesus-Jesus',
+      '12341234123412341234',
+      'minhasenha minhasenha',
+    ]) {
+      expect(checkNewPassword(pw), pw).toMatchObject({ ok: false, problems: ['repetitive'] });
+    }
+  });
+
+  it('recusa sequência decrescente de dígitos que dá a volta', () => {
+    expect(checkNewPassword('3210987654321')).toMatchObject({ ok: false, problems: ['sequence'] });
+    expect(checkNewPassword('0987654321098')).toMatchObject({ ok: false, problems: ['sequence'] });
+    expect(checkNewPassword('9012345678901')).toMatchObject({ ok: false, problems: ['sequence'] });
+  });
+
+  it('recusa caracteres de controle e surrogate sozinho', () => {
+    for (const pw of ['frase longa\u0000com nulo', 'frase longa\tcom tab', 'frase longa\ncom linha', 'frase longa \uD83D']) {
+      const r = checkNewPassword(pw);
+      expect(r.ok, JSON.stringify(pw)).toBe(false);
+      if (!r.ok) expect(r.problems).toContain('invalid_char');
+    }
+  });
+
+  it('não recusa frases boas por engano', () => {
+    for (const pw of [
+      'cavalo correto bateria grampo',
+      'Girassol azul na janela!',
+      'meu café 42 é forte',
+      'trem-bala às 7h e 15',
+      '🐱 gato 🐶 cachorro 🐦 pássaro',
+      'Água mole em pedra dura',
+    ]) {
+      expect(checkNewPassword(pw).ok, pw).toBe(true);
+    }
+  });
+
   it('tem texto em pt-BR para cada problema', () => {
     for (const text of Object.values(passwordProblemText)) expect(text.length).toBeGreaterThan(10);
   });

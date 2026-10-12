@@ -32,9 +32,13 @@ export function delayAfterFailures(failures: number, policy: ThrottlePolicy = de
 }
 
 /**
- * Quanto falta para a próxima tentativa ser aceita (0 = pode tentar agora).
- * Se o relógio voltou para antes do último erro, a espera nunca passa da exigida (o relógio errado não tranca
- * ninguém por mais tempo); sem data do último erro, mas com erros contados, vale a espera inteira.
+ * Quanto falta para a próxima tentativa ser aceita (0 = pode tentar agora). Sem data do último erro, mas com
+ * erros contados, vale a espera inteira.
+ *
+ * Se o relógio voltou para antes do último erro, o valor devolvido nunca passa da espera exigida, mas também
+ * não diminui enquanto o relógio não alcança a data gravada. Por isso quem chama precisa reancorar o último erro
+ * no instante atual antes de calcular (`needsFailureAnchor`; o serviço faz isso com `anchorFailureClock`): aí a
+ * espera termina em no máximo `delay`, e o relógio errado não tranca ninguém por mais tempo.
  */
 export function remainingWaitMs(
   failures: number,
@@ -48,6 +52,12 @@ export function remainingWaitMs(
   const remaining = lastFailedAt + delay - now;
   if (remaining <= 0) return 0;
   return Math.min(remaining, delay);
+}
+
+/** Há erros contados e a data do último erro falta ou está no futuro (o relógio voltou): é preciso reancorar. */
+export function needsFailureAnchor(failures: number, lastFailedAt: number | null, now: number): boolean {
+  if (!(failures > 0)) return false;
+  return lastFailedAt === null || !Number.isFinite(lastFailedAt) || lastFailedAt > now;
 }
 
 /** Tentativas que ainda não geram espera (para a tela dizer "restam 2 antes de esperar"). */

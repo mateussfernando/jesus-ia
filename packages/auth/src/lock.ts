@@ -16,8 +16,13 @@ export type LockEvent =
   | { readonly e: 'CREDENTIAL_LOADED'; readonly now: number; readonly exists: boolean }
   /** Senha criada na primeira vez: já entra desbloqueado. */
   | { readonly e: 'PASSWORD_SET'; readonly now: number }
-  /** O serviço conferiu a senha (ou o código de recuperação). */
-  | { readonly e: 'UNLOCKED'; readonly now: number }
+  /**
+   * O serviço conferiu a senha (ou o código de recuperação). `lockedSince` é o `since` do estado bloqueado que
+   * quem chamou viu quando a conferência começou: se outro bloqueio (do Windows, da suspensão ou pedido) chegou
+   * no meio, o `since` mudou e o resultado atrasado não abre o app. É uma marca de identidade, não uma
+   * comparação de horários, então o relógio que volta não atrapalha.
+   */
+  | { readonly e: 'UNLOCKED'; readonly now: number; readonly lockedSince: number }
   /** Teclado, mouse ou voz do usuário com a janela em foco. */
   | { readonly e: 'ACTIVITY'; readonly now: number }
   | { readonly e: 'TICK'; readonly now: number }
@@ -88,27 +93,38 @@ export function lockTransition(state: LockState, event: LockEvent, policy: LockP
       return state.kind === 'setup_required' ? unlocked(event.now, policy) : unchanged(state);
 
     case 'UNLOCKED':
-      return state.kind === 'locked' ? unlocked(event.now, policy) : unchanged(state);
+      if (state.kind !== 'locked') return unchanged(state);
+      // Houve outro bloqueio depois que a conferência começou: o resultado é de antes dele e não abre o app.
+      if (event.lockedSince !== state.since) return unchanged(state);
+      return unlocked(event.now, policy);
 
     case 'ACTIVITY':
-      if (state.kind !== 'unlocked') return unchanged(state);
-      // Relógio que volta não "rejuvenesce" a sessão para antes da última atividade.
-      if (event.now <= state.lastActivityAt) return unchanged(state);
+      if (state.kind !== 'unlocked' || event.now === state.lastActivityAt) return unchanged(state);
+      // Também quando o relógio voltou: a atividade é de agora, e o prazo nunca fica além de agora + idleMs.
       return { state: { ...state, lastActivityAt: event.now }, effects: [] };
 
     case 'TICK': {
       if (state.kind !== 'unlocked') return unchanged(state);
-      const deadline = state.lastActivityAt + idleMs;
+      // Relógio que voltou para antes da última atividade: o prazo passa a contar de agora. Sem isso, o Jesus
+      // ficaria aberto sem uso pelo tamanho do salto mais o tempo de inatividade.
+      const current = event.now < state.lastActivityAt ? { ...state, lastActivityAt: event.now } : state;
+      const deadline = current.lastActivityAt + idleMs;
       if (event.now >= deadline) return lock('idle', event.now);
-      return { state, effects: [{ fx: 'schedule_tick', at: deadline }] };
+      return { state: current, effects: [{ fx: 'schedule_tick', at: deadline }] };
     }
 
     case 'OS_LOCKED':
     case 'SUSPEND':
     case 'LOCK_REQUESTED': {
-      if (state.kind !== 'unlocked') return unchanged(state);
       const reason: LockReason = event.e === 'OS_LOCKED' ? 'os_locked' : event.e === 'SUSPEND' ? 'suspend' : 'manual';
-      return lock(reason, event.now);
+      if (state.kind === 'unlocked') return lock(reason, event.now);
+      // Já bloqueado: um `since` novo invalida a senha que estava sendo conferida (veja `UNLOCKED`). Se o
+      // relógio der o mesmo instante, soma 1 ms: o `since` precisa mudar.
+      if (state.kind === 'locked') {
+        const since = event.now === state.since ? event.now + 1 : event.now;
+        return { state: { kind: 'locked', reason, since }, effects: [] };
+      }
+      return unchanged(state);
     }
   }
 }

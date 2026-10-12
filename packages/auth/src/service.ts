@@ -3,7 +3,7 @@ import { generateRecoveryCode, normalizeRecoveryCode } from '@jesus/crypto/rando
 import type { CredentialRepo } from './credentials';
 import { checkNewPassword } from './policy';
 import type { PasswordProblem } from './policy';
-import { defaultThrottlePolicy, delayAfterFailures, freeAttemptsLeft, remainingWaitMs } from './throttle';
+import { defaultThrottlePolicy, delayAfterFailures, freeAttemptsLeft, needsFailureAnchor, remainingWaitMs } from './throttle';
 import type { ThrottlePolicy } from './throttle';
 
 /**
@@ -26,11 +26,16 @@ export function bcryptHasher(cost: number = DEFAULT_PASSWORD_COST): PasswordHash
   };
 }
 
+/** Operação que conferiu a senha ou o código: a auditoria separa um erro de digitação de um chute no código. */
+export type SecretCheckOp = 'unlock' | 'change_password' | 'recover';
+
 export type AuthAuditEvent =
   | { readonly type: 'auth.setup'; readonly at: number }
   | { readonly type: 'auth.unlock_ok'; readonly at: number; readonly rehashed: boolean }
-  | { readonly type: 'auth.unlock_failed'; readonly at: number; readonly failures: number }
-  | { readonly type: 'auth.throttled'; readonly at: number; readonly waitMs: number }
+  /** Senha (em `unlock` e `change_password`) ou código de recuperação (em `recover`) errado. */
+  | { readonly type: 'auth.check_failed'; readonly at: number; readonly op: SecretCheckOp; readonly failures: number }
+  /** Tentativa barrada pela espera. Uma vez por espera e operação: repetir a tentativa não enche a auditoria. */
+  | { readonly type: 'auth.throttled'; readonly at: number; readonly op: SecretCheckOp; readonly waitMs: number }
   | { readonly type: 'auth.password_changed'; readonly at: number }
   | { readonly type: 'auth.recovery_used'; readonly at: number };
 
@@ -48,7 +53,9 @@ export interface AuthPorts {
 export type SetupResult =
   | { readonly ok: true; readonly recoveryCode: string }
   | { readonly ok: false; readonly reason: 'weak_password'; readonly problems: readonly PasswordProblem[] }
-  | { readonly ok: false; readonly reason: 'already_set' };
+  | { readonly ok: false; readonly reason: 'already_set' }
+  /** Outra operação (por exemplo, o primeiro clique de um duplo clique) ainda está em andamento. */
+  | { readonly ok: false; readonly reason: 'busy' };
 
 export type UnlockResult =
   | { readonly ok: true }
@@ -86,6 +93,8 @@ export function createAuthService(ports: AuthPorts): AuthService {
   const audit = ports.audit ?? (() => undefined);
   // Uma conferência por vez: duas tentativas simultâneas não podem passar juntas pela checagem de espera.
   let busy = false;
+  // Última espera já registrada na auditoria (operação, erros e data do último erro).
+  let lastThrottleAudit: string | null = null;
 
   async function exclusive<T>(busyResult: T, run: () => Promise<T>): Promise<T> {
     if (busy) return busyResult;
@@ -105,6 +114,7 @@ export function createAuthService(ports: AuthPorts): AuthService {
 
   /** Confere um segredo (senha ou código) respeitando a espera progressiva, que é a mesma para os dois. */
   async function checkSecret(
+    op: SecretCheckOp,
     verify: (record: { passwordHash: string; recoveryHash: string }) => Promise<boolean>,
   ): Promise<
     | { ok: true; passwordHash: string }
@@ -115,9 +125,19 @@ export function createAuthService(ports: AuthPorts): AuthService {
     const record = await ports.repo.load();
     if (record === null) return { ok: false, reason: 'not_set' };
     const now = ports.clock.now();
-    const wait = remainingWaitMs(record.failedAttempts, record.lastFailedAt, now, throttle);
+    let lastFailedAt = record.lastFailedAt;
+    if (needsFailureAnchor(record.failedAttempts, lastFailedAt, now)) {
+      // O relógio voltou para antes do último erro: a espera passa a contar de agora (no máximo a exigida).
+      await ports.repo.anchorFailureClock(now);
+      lastFailedAt = now;
+    }
+    const wait = remainingWaitMs(record.failedAttempts, lastFailedAt, now, throttle);
     if (wait > 0) {
-      audit({ type: 'auth.throttled', at: now, waitMs: wait });
+      const key = `${op}:${String(record.failedAttempts)}:${String(lastFailedAt)}`;
+      if (key !== lastThrottleAudit) {
+        lastThrottleAudit = key;
+        audit({ type: 'auth.throttled', at: now, op, waitMs: wait });
+      }
       return { ok: false, reason: 'throttled', retryAfterMs: wait };
     }
     if (await verify(record)) {
@@ -125,7 +145,7 @@ export function createAuthService(ports: AuthPorts): AuthService {
       return { ok: true, passwordHash: record.passwordHash };
     }
     const failures = await ports.repo.recordFailure(ports.clock.now());
-    audit({ type: 'auth.unlock_failed', at: now, failures });
+    audit({ type: 'auth.check_failed', at: now, op, failures });
     return {
       ok: false,
       reason: 'wrong',
@@ -140,7 +160,7 @@ export function createAuthService(ports: AuthPorts): AuthService {
     },
 
     setup(password) {
-      return exclusive<SetupResult>({ ok: false, reason: 'already_set' }, async () => {
+      return exclusive<SetupResult>({ ok: false, reason: 'busy' }, async () => {
         if ((await ports.repo.load()) !== null) return { ok: false, reason: 'already_set' };
         const check = checkNewPassword(password);
         if (!check.ok) return { ok: false, reason: 'weak_password', problems: check.problems };
@@ -159,7 +179,7 @@ export function createAuthService(ports: AuthPorts): AuthService {
 
     unlock(password) {
       return exclusive<UnlockResult>({ ok: false, reason: 'busy' }, async () => {
-        const result = await checkSecret((r) => ports.hasher.verify(password, r.passwordHash));
+        const result = await checkSecret('unlock', (r) => ports.hasher.verify(password, r.passwordHash));
         if (!result.ok) {
           if (result.reason === 'wrong') {
             return { ok: false, reason: 'wrong_password', retryAfterMs: result.retryAfterMs, freeAttemptsLeft: result.freeAttemptsLeft };
@@ -180,7 +200,7 @@ export function createAuthService(ports: AuthPorts): AuthService {
       return exclusive<ChangePasswordResult>({ ok: false, reason: 'busy' }, async () => {
         const check = checkNewPassword(next);
         if (!check.ok) return { ok: false, reason: 'weak_password', problems: check.problems };
-        const result = await checkSecret((r) => ports.hasher.verify(current, r.passwordHash));
+        const result = await checkSecret('change_password', (r) => ports.hasher.verify(current, r.passwordHash));
         if (!result.ok) {
           if (result.reason === 'wrong') {
             return { ok: false, reason: 'wrong_password', retryAfterMs: result.retryAfterMs, freeAttemptsLeft: result.freeAttemptsLeft };
@@ -200,7 +220,7 @@ export function createAuthService(ports: AuthPorts): AuthService {
         if (!check.ok) return { ok: false, reason: 'weak_password', problems: check.problems };
         const compact = normalizeRecoveryCode(recoveryCode);
         // Código malformado conta como erro (mesma espera), sem gastar um bcrypt.
-        const result = await checkSecret((r) =>
+        const result = await checkSecret('recover', (r) =>
           compact === null ? Promise.resolve(false) : ports.hasher.verify(compact, r.recoveryHash),
         );
         if (!result.ok) {

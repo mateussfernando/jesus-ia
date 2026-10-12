@@ -48,6 +48,14 @@ describe('primeira configuração', () => {
     expect((await service.setup(GOOD)).ok).toBe(true);
     expect(await service.setup(OTHER)).toEqual({ ok: false, reason: 'already_set' });
   });
+
+  it('duplo clique: a segunda chamada é recusada como ocupada, não como "já existe senha"', async () => {
+    const { service } = setupHarness();
+    const [weak, second] = await Promise.all([service.setup('123456789012'), service.setup(GOOD)]);
+    expect(weak).toMatchObject({ ok: false, reason: 'weak_password' });
+    expect(second).toEqual({ ok: false, reason: 'busy' });
+    expect(await service.status()).toBe('setup_required');
+  });
 });
 
 describe('desbloquear', () => {
@@ -107,6 +115,56 @@ describe('desbloquear', () => {
     const [a, b] = await Promise.all([service.unlock('errada'), service.unlock('errada 2')]);
     expect(a).toMatchObject({ reason: 'wrong_password' });
     expect(b).toEqual({ ok: false, reason: 'busy' });
+  });
+
+  it('relógio que volta não prende a senha nem o código pelo tamanho do salto', async () => {
+    const { service, advance } = setupHarness();
+    await service.setup(GOOD);
+    // Relógio 3 h adiantado durante os 5 erros; depois o Windows corrige a hora.
+    advance(180 * MIN);
+    for (let i = 0; i < 5; i++) await service.unlock('errada');
+    advance(-180 * MIN);
+    expect(await service.unlock(GOOD)).toEqual({ ok: false, reason: 'throttled', retryAfterMs: 30_000 });
+    advance(10_000);
+    expect(await service.recover('ABCDE-FGHJK-MNPQR-STVWX', OTHER)).toEqual({
+      ok: false,
+      reason: 'throttled',
+      retryAfterMs: 20_000,
+    });
+    advance(20_000);
+    expect(await service.unlock(GOOD)).toEqual({ ok: true });
+  });
+
+  it('erros contados sem data (arquivo ou banco mexido) não prendem para sempre', async () => {
+    const original = setupHarness();
+    await original.service.setup(GOOD);
+    const stored = original.repo.snapshot();
+    if (stored === null) throw new Error('sem credencial');
+    const tampered = createMemoryCredentialRepo({ ...stored, failedAttempts: 7, lastFailedAt: null });
+    const { service, advance } = setupHarness({ repo: tampered });
+    expect(await service.unlock(GOOD)).toEqual({ ok: false, reason: 'throttled', retryAfterMs: 2 * MIN });
+    advance(2 * MIN);
+    expect(await service.unlock(GOOD)).toEqual({ ok: true });
+  });
+
+  it('a auditoria diz qual operação errou e registra a espera uma vez só', async () => {
+    const { service, events } = setupHarness();
+    await service.setup(GOOD);
+    await service.recover('ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ', OTHER);
+    await service.changePassword('errada errada', OTHER);
+    for (let i = 0; i < 3; i++) await service.unlock('errada');
+    for (let i = 0; i < 50; i++) await service.unlock(GOOD);
+    await service.recover('ABCDE-FGHJK-MNPQR-STVWX', OTHER);
+    expect(events.map((e) => (e.type === 'auth.setup' ? e.type : `${e.type}:${'op' in e ? e.op : ''}`))).toEqual([
+      'auth.setup',
+      'auth.check_failed:recover',
+      'auth.check_failed:change_password',
+      'auth.check_failed:unlock',
+      'auth.check_failed:unlock',
+      'auth.check_failed:unlock',
+      'auth.throttled:unlock',
+      'auth.throttled:recover',
+    ]);
   });
 
   it('a auditoria nunca leva senha, hash nem código', async () => {

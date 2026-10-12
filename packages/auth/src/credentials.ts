@@ -26,6 +26,12 @@ export interface CredentialRepo {
   recordFailure(at: number): Promise<number>;
   /** Zera a contagem de erros. */
   recordSuccess(): Promise<void>;
+  /**
+   * O relógio voltou para antes do último erro (ou o erro ficou sem data): passa a data do último erro para `at`,
+   * de forma atômica e só se ainda houver erros contados e a data gravada for nula ou maior que `at`. Assim a
+   * espera progressiva volta a correr a partir de agora, em vez de esperar o relógio alcançar a data antiga.
+   */
+  anchorFailureClock(at: number): Promise<void>;
   /** Troca os hashes (senha, código de recuperação ou os dois) e zera a contagem de erros. */
   replaceSecrets(change: { passwordHash?: string; recoveryHash?: string; at: number }): Promise<void>;
 }
@@ -49,6 +55,12 @@ export function createMemoryCredentialRepo(initial: CredentialRecord | null = nu
     },
     recordSuccess: () => {
       if (record !== null) record = { ...record, failedAttempts: 0, lastFailedAt: null };
+      return Promise.resolve();
+    },
+    anchorFailureClock: (at) => {
+      if (record !== null && record.failedAttempts > 0 && (record.lastFailedAt === null || record.lastFailedAt > at)) {
+        record = { ...record, lastFailedAt: at };
+      }
       return Promise.resolve();
     },
     replaceSecrets: ({ passwordHash, recoveryHash, at }) => {
