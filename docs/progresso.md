@@ -2,13 +2,13 @@
 
 > **Leia isto antes de qualquer tarefa** e atualize ao terminar cada etapa (o que foi feito, o que falta, onde parou). Serve para continuar o trabalho em outra sessão sem perder contexto. O resumo fixo do projeto está no [`CLAUDE.md`](../CLAUDE.md); aqui fica o **andamento**.
 
-**Última atualização:** 12/10/2026, sessão na nuvem (branch `ccr-d2d5ac72-nmmks6`, criada a partir da `main-7zybuc` no commit `d940e18`; veja "Branch" abaixo).
+**Última atualização:** 12/10/2026, sessão na nuvem (trabalho feito na `ccr-d2d5ac72-nmmks6` e levado para a `main-7zybuc` com o aval do dono; veja "Branch" abaixo).
 
 ## Onde estamos
 
 - **Fase 0 (holograma): concluída e aprovada** pelo dono do projeto. Ele mediu 75 fps (o máximo da tela) num PC de 8 GB com placa de vídeo dedicada; em GPU integrada ainda não foi medido.
 - **Branch de trabalho: `main-7zybuc`** (PR #1: https://github.com/mateussfernando/jesus-ia/pull/1, CI verde). **Decisão do dono:** todo o trabalho fica nessa branch até o projeto ficar pronto; ele mesmo leva para a `main` no fim. Sessões novas devem partir dela e fazer commit e push nela; não fazer merge.
-  - **Branch desta sessão (10/10/2026):** a sessão na nuvem só podia enviar para a `ccr-d2d5ac72-nmmks6`, que saiu da `main-7zybuc` no `d940e18`. Os commits desta sessão estão lá, numa linha reta sobre a `main-7zybuc` (dá para avançar a `main-7zybuc` sem merge). **Próxima sessão:** confira se o dono já levou esses commits para a `main-7zybuc`; se não, pergunte antes de enviar para lá.
+  - **Sessão de 10 a 12/10/2026:** a sessão na nuvem trabalhou na `ccr-d2d5ac72-nmmks6`, que saiu da `main-7zybuc` no `d940e18`. Em 12/10/2026, com o aval do dono, a `main-7zybuc` foi avançada até o fim dessa branch (avanço direto, sem merge e sem push forçado). **Próxima sessão:** parta da `main-7zybuc`; se a sessão só puder enviar para outra branch, trabalhe nela em linha reta sobre a `main-7zybuc` e pergunte ao dono antes de avançá-la.
 - **Stack nova (10/10/2026, pedido do dono):** interface em **React + Next.js + TypeScript** dentro do Electron, **Prisma** no PostgreSQL e **senha local com bcrypt** (dados cifrados com AES-256-GCM, porque bcrypt é hash e não tem volta). Decisões [0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md), [0014](decisoes/0014-prisma-como-orm.md) e [0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md). O dono escolheu, entre as opções: Next.js **dentro do Electron** (não só no navegador) e **senha local com bcrypt** para abrir o Jesus.
 - **Próxima fase do roadmap:** terminar a fase 1 (Electron abrindo a janela com a interface em Next.js e a tela de entrada, chat por texto, 1 provedor, ferramentas só de leitura, registro) e, logo depois, a nova **fase 1.5: conversa por voz, só perguntas e respostas** (decisão 0012, pedido do dono). Ver `docs/10-roadmap.md`.
 
