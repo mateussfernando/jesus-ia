@@ -119,6 +119,7 @@ Duas revisões com verificação adversarial (cada achado reproduzido por um seg
 - Tela **"Permissões"**: tudo que ele liberou, com remoção a qualquer hora (seção 3.4.7). Inclui as capacidades de contas conectadas (rascunho de login, seção 4.2).
 - **Stack:** React + Next.js + TypeScript, Prisma, bcrypt na senha local (decisões 0013 a 0015).
 - Recomendar o ultracode só quando valer (regra no `CLAUDE.md`); preferir sessão nova por etapa.
+- **Autonomia (12/10/2026):** seguir trabalhando sozinho e só parar quando ele precisar decidir algo ou fazer algo à mão (testar no Windows, criar conta, colar chave). O limite de uso às vezes acaba no meio; ele retoma a sessão depois. Por isso: commit e push a cada passo que passa nos testes, e o diário sempre em dia.
 
 ## Pendências do dono do projeto
 
