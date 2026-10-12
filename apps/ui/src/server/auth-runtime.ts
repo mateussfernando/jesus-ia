@@ -1,9 +1,17 @@
 import 'server-only';
-import { join } from 'node:path';
 import { bcryptHasher, createAuthService } from '@jesus/auth';
-import type { AuthService, CredentialRepo, LockPolicy } from '@jesus/auth';
-import { accessTransition, checkAccess, idlePolicyFromEnv, initialAccessState, openSession } from './access';
-import type { AccessState } from './access';
+import type { AuthAuditEvent, AuthService, CredentialRepo, LockPolicy } from '@jesus/auth';
+import {
+  accessTransition,
+  checkAccess,
+  createAccessClock,
+  idlePolicyFromEnv,
+  initialAccessState,
+  lockedSinceOf,
+  openSession,
+} from './access';
+import type { AccessState, SessionOpening } from './access';
+import { credentialStoreFromEnv } from './credential-store';
 import { createFileCredentialRepo } from './file-credential-repo';
 import { newSessionToken } from './session';
 
@@ -12,7 +20,9 @@ import { newSessionToken } from './session';
  * servidor só atende a janela do próprio Jesus (sem porta aberta), então "desbloqueado" vale para o app.
  *
  * Configuração por ambiente (o processo principal do Electron preenche na fase 1):
- * - `JESUS_DATA_DIR`: pasta do arquivo da credencial (padrão: `.jesus-dev`, só para desenvolvimento).
+ * - `JESUS_DATABASE_URL`: PostgreSQL da senha (tabela `app_credentials`, migrada com `npm run db:apply -w @jesus/db`).
+ *   Sai do ambiente do processo assim que é lida: nenhum processo filho a herda.
+ * - `JESUS_DATA_DIR`: sem banco, pasta do arquivo da credencial (padrão: `.jesus-dev`, só para desenvolvimento).
  * - `JESUS_IDLE_MINUTES`: tempo sem uso até bloquear (1 a 120; padrão 15).
  * - `JESUS_HTTPS=1`: o app roda em https (cookie com `Secure`).
  */
@@ -21,15 +31,30 @@ export interface AuthRuntime {
   readonly service: AuthService;
   readonly policy: LockPolicy;
   readonly secureCookies: boolean;
+  /** Relógio do estado de acesso (nunca volta; veja `createAccessClock`). A espera da senha usa o de parede. */
+  readonly now: () => number;
   state: AccessState;
 }
 
 const RUNTIME_KEY = Symbol.for('jesus.ui.auth-runtime');
-type RuntimeHolder = typeof globalThis & { [RUNTIME_KEY]?: Promise<AuthRuntime> };
+type RuntimeHolder = typeof globalThis & { [RUNTIME_KEY]?: Promise<AuthRuntime> | undefined };
 
 async function createRepo(): Promise<CredentialRepo> {
-  const dir = process.env['JESUS_DATA_DIR'] ?? join(process.cwd(), '.jesus-dev');
-  return Promise.resolve(createFileCredentialRepo(join(dir, 'credentials.json')));
+  const store = credentialStoreFromEnv(process.env, process.cwd());
+  // A URL traz a senha do banco (invariante 5): fica só na memória deste módulo.
+  delete process.env['JESUS_DATABASE_URL'];
+  if (store.kind === 'file') return createFileCredentialRepo(store.path);
+  // Carregado só quando há banco: sem `JESUS_DATABASE_URL`, o driver do PostgreSQL nem entra no processo.
+  const [{ createDbClient }, { createCredentialRepo }] = await Promise.all([
+    import('@jesus/db/client'),
+    import('@jesus/db/credentials'),
+  ]);
+  return createCredentialRepo(createDbClient(store.url));
+}
+
+/** Só o tipo do evento e a operação: nada de senha, hash ou código (a auditoria de verdade chega na fase 2). */
+function auditLine(event: AuthAuditEvent): string {
+  return 'op' in event ? `[auth] ${event.type} (${event.op})` : `[auth] ${event.type}`;
 }
 
 async function buildRuntime(): Promise<AuthRuntime> {
@@ -37,40 +62,53 @@ async function buildRuntime(): Promise<AuthRuntime> {
     repo: await createRepo(),
     clock: { now: () => Date.now() },
     hasher: bcryptHasher(),
-    // Auditoria de verdade (tabela encadeada por hash) chega na fase 2; aqui, só o tipo do evento, sem dados.
-    audit: (event) => console.info(`[auth] ${event.type}`),
+    audit: (event) => console.info(auditLine(event)),
   });
   const policy = idlePolicyFromEnv(process.env['JESUS_IDLE_MINUTES']);
+  const now = createAccessClock();
   const exists = (await service.status()) === 'ready';
-  const { state } = accessTransition(initialAccessState, { e: 'CREDENTIAL_LOADED', now: Date.now(), exists }, policy);
-  return { service, policy, secureCookies: process.env['JESUS_HTTPS'] === '1', state };
+  const { state } = accessTransition(initialAccessState, { e: 'CREDENTIAL_LOADED', now: now(), exists }, policy);
+  return { service, policy, secureCookies: process.env['JESUS_HTTPS'] === '1', now, state };
 }
 
 /**
  * O mesmo estado para páginas, Server Actions e rotas, mesmo que o Next carregue este módulo mais de uma vez
- * (camadas diferentes do build): por isso o estado mora num símbolo global do processo.
+ * (camadas diferentes do build): por isso o estado mora num símbolo global do processo. Se a montagem falhar
+ * (arquivo ilegível, banco fora do ar), o pedido falha fechado e o próximo tenta de novo.
  */
 export function getAuthRuntime(): Promise<AuthRuntime> {
   const holder = globalThis as RuntimeHolder;
-  holder[RUNTIME_KEY] ??= buildRuntime();
+  holder[RUNTIME_KEY] ??= buildRuntime().catch((error: unknown) => {
+    holder[RUNTIME_KEY] = undefined;
+    throw error;
+  });
   return holder[RUNTIME_KEY];
 }
 
 /** Acesso do pedido atual; com `activity`, conta como uso (adia o bloqueio por tempo sem uso). */
 export function readAccess(runtime: AuthRuntime, token: string | undefined, activity: boolean): boolean {
-  const result = checkAccess(runtime.state, token, Date.now(), runtime.policy, { activity });
+  const result = checkAccess(runtime.state, token, runtime.now(), runtime.policy, { activity });
   runtime.state = result.state;
   return result.unlocked;
 }
 
-/** Abre a sessão depois de um desbloqueio certo e devolve o token para o cookie. */
-export function beginSession(runtime: AuthRuntime): string {
+/** Marca do estado bloqueado no começo de uma conferência de senha (veja `openSession`). */
+export function beginCheck(runtime: AuthRuntime): SessionOpening {
+  readAccess(runtime, undefined, false);
+  return { via: 'unlock', lockedSince: lockedSinceOf(runtime.state) };
+}
+
+/**
+ * Abre a sessão depois de criar a senha ou de uma conferência certa e devolve o token para o cookie; `null` se a
+ * máquina de estados não desbloqueou (por exemplo, um bloqueio chegou durante a conferência).
+ */
+export function beginSession(runtime: AuthRuntime, opening: SessionOpening): string | null {
   const { token, tokenHash } = newSessionToken();
-  runtime.state = openSession(runtime.state, tokenHash, Date.now(), runtime.policy).state;
-  return token;
+  runtime.state = openSession(runtime.state, tokenHash, runtime.now(), runtime.policy, opening).state;
+  return runtime.state.sessionHash === tokenHash ? token : null;
 }
 
 /** Bloqueia agora (pedido seu). */
 export function lockRuntime(runtime: AuthRuntime): void {
-  runtime.state = accessTransition(runtime.state, { e: 'LOCK_REQUESTED', now: Date.now() }, runtime.policy).state;
+  runtime.state = accessTransition(runtime.state, { e: 'LOCK_REQUESTED', now: runtime.now() }, runtime.policy).state;
 }

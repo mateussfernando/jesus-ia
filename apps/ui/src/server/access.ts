@@ -28,13 +28,46 @@ export function accessTransition(state: AccessState, event: LockEvent, policy: L
   };
 }
 
+/** Como a sessão está sendo aberta. */
+export type SessionOpening =
+  /** Senha criada na primeira vez: só vale com o estado ainda em `setup_required`. */
+  | { readonly via: 'setup' }
+  /**
+   * Senha (ou código de recuperação) conferida. `lockedSince` é o `since` do estado bloqueado quando a
+   * conferência começou (`null` se não estava bloqueado): um bloqueio que chegou no meio vence (`@jesus/auth`).
+   */
+  | { readonly via: 'unlock'; readonly lockedSince: number | null };
+
+/** O estado bloqueado que uma conferência de senha começando agora precisa citar ao terminar. */
+export function lockedSinceOf(state: AccessState): number | null {
+  return state.lock.kind === 'locked' ? state.lock.since : null;
+}
+
 /**
- * Senha conferida (ou criada, ou recuperada): desbloqueia e troca a sessão. Uma sessão antiga, de outra
- * janela, deixa de valer.
+ * Abre a sessão: a máquina de estados decide, e a sessão só existe se ela chegar a `unlocked`. Criar a senha com
+ * o app bloqueado, ou um desbloqueio atrasado por um bloqueio no meio, não abre nada. Um desbloqueio novo troca a
+ * sessão: a antiga, de outra janela, deixa de valer.
  */
-export function openSession(state: AccessState, tokenHash: string, now: number, policy: LockPolicy): AccessTransition {
-  const event: LockEvent = state.lock.kind === 'setup_required' ? { e: 'PASSWORD_SET', now } : { e: 'UNLOCKED', now };
-  const t = accessTransition(state, event, policy);
+export function openSession(
+  state: AccessState,
+  tokenHash: string,
+  now: number,
+  policy: LockPolicy,
+  opening: SessionOpening,
+): AccessTransition {
+  const none: AccessTransition = { state, effects: [] };
+  let t: AccessTransition;
+  if (opening.via === 'setup') {
+    if (state.lock.kind !== 'setup_required') return none;
+    t = accessTransition(state, { e: 'PASSWORD_SET', now }, policy);
+  } else if (state.lock.kind === 'locked') {
+    if (opening.lockedSince === null) return none;
+    t = accessTransition(state, { e: 'UNLOCKED', now, lockedSince: opening.lockedSince }, policy);
+  } else if (state.lock.kind === 'unlocked') {
+    t = none;
+  } else {
+    return none;
+  }
   if (t.state.lock.kind !== 'unlocked') return t;
   const touched = accessTransition({ ...t.state, sessionHash: tokenHash }, { e: 'ACTIVITY', now }, policy);
   return { state: touched.state, effects: [...t.effects, ...touched.effects] };
@@ -55,6 +88,29 @@ export function checkAccess(
     t = { state: touched.state, effects: [...t.effects, ...touched.effects] };
   }
   return { ...t, unlocked };
+}
+
+/**
+ * Relógio do estado de acesso, em ms desde que foi criado. Anda o maior entre o relógio monotônico e o de
+ * parede, e nunca para trás: o relógio de parede que volta (correção de hora, dual boot) não adia o bloqueio,
+ * e a suspensão do PC (que o monotônico pode não contar) continua contando. Erra para o lado de bloquear.
+ */
+export function createAccessClock(
+  wall: () => number = () => Date.now(),
+  mono: () => number = () => performance.now(),
+): () => number {
+  let lastWall = wall();
+  let lastMono = mono();
+  let elapsed = 0;
+  return () => {
+    const w = wall();
+    const m = mono();
+    const step = Math.max(0, w - lastWall, m - lastMono);
+    if (Number.isFinite(step)) elapsed += step;
+    lastWall = w;
+    lastMono = m;
+    return Math.floor(elapsed);
+  };
 }
 
 /** Tempo sem uso vindo da configuração (minutos, de 1 a 120); valor ausente ou inválido vale o padrão de 15. */

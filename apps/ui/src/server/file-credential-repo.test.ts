@@ -22,8 +22,15 @@ describe('credencial em arquivo', () => {
     const counts = await Promise.all([repo.recordFailure(10), repo.recordFailure(11), repo.recordFailure(12)]);
     expect([...counts].sort()).toEqual([1, 2, 3]);
     expect(await repo.load()).toMatchObject({ failedAttempts: 3, lastFailedAt: 12 });
+    // Relógio que voltou: a data do último erro vem para agora, só se estiver no futuro.
+    await repo.anchorFailureClock(15);
+    expect(await repo.load()).toMatchObject({ failedAttempts: 3, lastFailedAt: 12 });
+    await repo.anchorFailureClock(5);
+    expect(await repo.load()).toMatchObject({ failedAttempts: 3, lastFailedAt: 5 });
     const other = await hashPassword('outra senha comprida', { cost: 4 });
     await repo.replaceSecrets({ passwordHash: other, at: 20 });
+    await repo.anchorFailureClock(1);
+    expect(await repo.load()).toMatchObject({ failedAttempts: 0, lastFailedAt: null });
     expect(await repo.load()).toMatchObject({ passwordHash: other, failedAttempts: 0, lastFailedAt: null, passwordChangedAt: 20 });
     // Nenhum temporário sobrando na pasta.
     expect(await readdir(join(path, '..'))).toEqual(['credentials.json']);

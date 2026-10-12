@@ -2,46 +2,55 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
-import { lockNow, touch } from '../app/(app)/actions';
+import { checkSession, lockNow, touch } from '../app/(app)/actions';
+import { sessionTimings } from './session-timing';
 import './session.css';
 
-/** Intervalo mínimo entre sinais de uso (o bloqueio por tempo sem uso conta em minutos). */
-const TOUCH_EVERY_MS = 60_000;
-
 /**
- * Mantém a sessão viva enquanto você usa a tela e volta para a tela de entrada quando o servidor bloqueia
- * (tempo sem uso, bloqueio do Windows, suspensão). Também oferece o botão "Bloquear".
+ * Volta para a tela de entrada quando o servidor bloqueia (tempo sem uso, botão, Windows, suspensão) e avisa o
+ * servidor quando você usa a tela. Duas coisas separadas:
+ * - a conferência periódica (e ao voltar a ficar visível) só pergunta se a sessão vale: não conta como uso, senão
+ *   a janela aberta e parada nunca bloquearia;
+ * - o sinal de uso sai só de tecla, clique ou rolagem de verdade, no máximo uma vez a cada `activityEveryMs`.
  */
-export function SessionKeeper() {
+export function SessionKeeper({ idleMs }: { idleMs: number }) {
   const router = useRouter();
-  const lastTouch = useRef(0);
+  const lastActivity = useRef(0);
 
   useEffect(() => {
+    const { checkEveryMs, activityEveryMs } = sessionTimings(idleMs);
     let alive = true;
-    const ping = async () => {
-      lastTouch.current = Date.now();
+    const follow = async (call: () => Promise<{ unlocked: boolean }>) => {
       try {
-        const { unlocked } = await touch();
+        const { unlocked } = await call();
         if (alive && !unlocked) router.replace('/entrar/');
       } catch {
         if (alive) router.replace('/entrar/');
       }
     };
-    const onActivity = () => {
-      if (Date.now() - lastTouch.current >= TOUCH_EVERY_MS) void ping();
+    const check = () => {
+      if (document.visibilityState === 'visible') void follow(checkSession);
     };
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') void ping();
-    }, TOUCH_EVERY_MS);
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastActivity.current < activityEveryMs) return;
+      lastActivity.current = now;
+      void follow(touch);
+    };
+    const interval = setInterval(check, checkEveryMs);
+    document.addEventListener('visibilitychange', check);
     window.addEventListener('keydown', onActivity);
     window.addEventListener('pointerdown', onActivity);
+    window.addEventListener('wheel', onActivity, { passive: true });
     return () => {
       alive = false;
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', check);
       window.removeEventListener('keydown', onActivity);
       window.removeEventListener('pointerdown', onActivity);
+      window.removeEventListener('wheel', onActivity);
     };
-  }, [router]);
+  }, [router, idleMs]);
 
   return (
     <button

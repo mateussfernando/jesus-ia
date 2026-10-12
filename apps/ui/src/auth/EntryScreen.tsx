@@ -44,11 +44,14 @@ function unlockMessage(result: Exclude<UnlockResult, { ok: true }>): string {
     case 'throttled':
       return `Muitas tentativas erradas. Espere ${formatWait(result.retryAfterMs)}.`;
     case 'not_set':
-      return 'Ainda não existe senha. Crie uma primeiro.';
+      return NOT_SET_MESSAGE;
     case 'busy':
       return 'Conferindo a tentativa anterior…';
   }
 }
+
+/** A senha sumiu com o app bloqueado: criar outra só depois de fechar e abrir (o estado é lido ao abrir). */
+const NOT_SET_MESSAGE = 'Não há senha guardada. Feche e abra o Jesus de novo para criar uma.';
 
 function recoveryMessage(result: Exclude<RecoveryResult, { ok: true }>): string | null {
   switch (result.reason) {
@@ -59,7 +62,7 @@ function recoveryMessage(result: Exclude<RecoveryResult, { ok: true }>): string 
     case 'throttled':
       return `Muitas tentativas erradas. Espere ${formatWait(result.retryAfterMs)}.`;
     case 'not_set':
-      return 'Ainda não existe senha. Crie uma primeiro.';
+      return NOT_SET_MESSAGE;
     case 'busy':
       return 'Conferindo a tentativa anterior…';
     case 'weak_password':
@@ -68,7 +71,14 @@ function recoveryMessage(result: Exclude<RecoveryResult, { ok: true }>): string 
 }
 
 function setupMessage(result: Exclude<SetupResult, { ok: true }>): string | null {
-  return result.reason === 'already_set' ? 'A senha já foi criada. Use a tela de desbloqueio.' : null;
+  switch (result.reason) {
+    case 'already_set':
+      return 'A senha já foi criada. Feche e abra o Jesus de novo para desbloquear.';
+    case 'busy':
+      return 'Criando a senha (pedido anterior ainda em andamento)…';
+    case 'weak_password':
+      return null;
+  }
 }
 
 /** Campo de senha nova com as regras ao vivo e o contador de bytes do bcrypt. */

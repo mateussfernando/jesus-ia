@@ -37,3 +37,6 @@ Thumbs.db
 # Configurações locais de ferramentas
 .claude/settings.local.json
 CLAUDE.local.md
+
+# Senha local do Jesus em desenvolvimento (hashes bcrypt), em qualquer pasta (decisão 0016)
+.jesus-dev/
