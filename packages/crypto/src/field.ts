@@ -92,11 +92,21 @@ export function createKeyRing(keys: readonly DataKey[], currentId: number): KeyR
   return { current, get: (id) => byId.get(id) };
 }
 
-/** Cifra um valor (texto em UTF-8 ou bytes) com a chave atual do chaveiro ou com a chave dada. */
+/** Surrogate sem par: com a flag `u`, os pares válidos contam como um caractere só e não casam. */
+const LONE_SURROGATE = /[\uD800-\uDFFF]/u;
+
+/**
+ * Cifra um valor (texto em UTF-8 ou bytes) com a chave atual do chaveiro ou com a chave dada. Texto com
+ * surrogate sozinho lança `RangeError`: o `openFieldText` sempre devolve exatamente o texto cifrado.
+ */
 export function sealField(plain: string | Uint8Array, key: DataKey | KeyRing, ctx: FieldContext): Uint8Array {
   const dataKey = 'current' in key ? key.current : key;
   assertKey(dataKey);
   const aad = fieldAad(ctx);
+  if (typeof plain === 'string' && LONE_SURROGATE.test(plain)) {
+    // O TextEncoder trocaria o surrogate por U+FFFD sem avisar, e o texto aberto não seria o mesmo.
+    throw new RangeError('texto com surrogate sozinho (cortado no meio de um caractere)');
+  }
   const plainBytes = typeof plain === 'string' ? new TextEncoder().encode(plain) : plain;
   const nonce = randomBytes(NONCE_BYTES);
   const cipher = createCipheriv('aes-256-gcm', dataKey.bytes, nonce, { authTagLength: TAG_BYTES });
@@ -149,7 +159,8 @@ export function openField(sealed: Uint8Array, ring: KeyRing, ctx: FieldContext):
 export function openFieldText(sealed: Uint8Array, ring: KeyRing, ctx: FieldContext): string {
   const bytes = openField(sealed, ring, ctx);
   try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    // ignoreBOM: um U+FEFF no começo (comum em arquivos do Windows) é parte do texto e volta como entrou.
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   } catch {
     throw new FieldDecryptError();
   }

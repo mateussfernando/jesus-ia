@@ -84,6 +84,20 @@ describe('sealField e openField', () => {
     }
   });
 
+  it('devolve exatamente o texto cifrado, com o U+FEFF (BOM) do começo', () => {
+    const ring = createKeyRing([generateDataKey(1)], 1);
+    for (const text of ['\uFEFFconteúdo importado do Bloco de Notas', '\uFEFF', 'meio \uFEFF fim', '']) {
+      expect(openFieldText(sealField(text, ring, ctx), ring, ctx)).toBe(text);
+    }
+  });
+
+  it('recusa texto com surrogate sozinho em vez de trocar por U+FFFD', () => {
+    const ring = createKeyRing([generateDataKey(1)], 1);
+    expect(() => sealField('abc\uD83D', ring, ctx)).toThrow(RangeError);
+    expect(() => sealField('\uDE00abc', ring, ctx)).toThrow(RangeError);
+    expect(openFieldText(sealField('abc 😀', ring, ctx), ring, ctx)).toBe('abc 😀');
+  });
+
   it('texto inválido em UTF-8 não vira texto com caracteres trocados', () => {
     const ring = createKeyRing([generateDataKey(1)], 1);
     const sealed = sealField(new Uint8Array([0xff, 0xfe]), ring, ctx);

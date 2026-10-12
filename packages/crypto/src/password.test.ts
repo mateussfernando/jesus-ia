@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   BCRYPT_MAX_BYTES,
   DEFAULT_PASSWORD_COST,
+  PasswordCharError,
   PasswordLengthError,
+  hasUnsafePasswordChar,
   hashCost,
   hashPassword,
   isBcryptHash,
@@ -60,6 +62,29 @@ describe('hashPassword e verifyPassword', () => {
     expect(await verifyPassword(exact, hash)).toBe(true);
     // O bcrypt puro aceitaria (ele ignora o que passa de 72 bytes); o Jesus não.
     expect(await verifyPassword(`${exact}a mais`, hash)).toBe(false);
+  });
+
+  it('recusa U+0000: o bcrypt repete a chave em ciclo e "senha\\0senha" passaria', async () => {
+    const password = 'cavalo correto bateria grampo';
+    const hash = await hashPassword(password, FAST);
+    expect(await verifyPassword(`${password}\u0000${password}`, hash)).toBe(false);
+    expect(await verifyPassword(`${password}\u0000`, hash)).toBe(false);
+    // 71 bytes + U+0000 = 72 bytes: dentro do limite, mas a mesma chave da senha de 71 bytes.
+    const p71 = 'y'.repeat(BCRYPT_MAX_BYTES - 1);
+    const h71 = await hashPassword(p71, FAST);
+    expect(await verifyPassword(`${p71}\u0000`, h71)).toBe(false);
+    expect(await verifyPassword(p71, h71)).toBe(true);
+    await expect(hashPassword('abc\u0000def', FAST)).rejects.toBeInstanceOf(PasswordCharError);
+  });
+
+  it('recusa surrogate sozinho e aceita emoji inteiro', async () => {
+    expect(hasUnsafePasswordChar('senha \uD83D')).toBe(true);
+    expect(hasUnsafePasswordChar('senha \uDE00 fim')).toBe(true);
+    expect(hasUnsafePasswordChar('senha 😀 inteira')).toBe(false);
+    await expect(hashPassword('senha \uD83D', FAST)).rejects.toBeInstanceOf(PasswordCharError);
+    const hash = await hashPassword('senha 😀 inteira', FAST);
+    expect(await verifyPassword('senha 😀 inteira', hash)).toBe(true);
+    expect(await verifyPassword('senha \uD83D', hash)).toBe(false);
   });
 
   it('falha fechada com hash malformado', async () => {
