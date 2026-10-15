@@ -40,3 +40,9 @@ CLAUDE.local.md
 
 # Senha local do Jesus em desenvolvimento (hashes bcrypt), em qualquer pasta (decisão 0016)
 .jesus-dev/
+
+# App de desktop (decisão 0016): bundles, montagem da interface e pacotes gerados
+apps/desktop/stage/
+apps/desktop/release/
+apps/desktop/release-test/
+apps/desktop/test-results/
