@@ -2,7 +2,7 @@
 
 > **Leia isto antes de qualquer tarefa** e atualize ao terminar cada etapa (o que foi feito, o que falta, onde parou). Serve para continuar o trabalho em outra sessão sem perder contexto. O resumo fixo do projeto está no [`CLAUDE.md`](../CLAUDE.md); aqui fica o **andamento**.
 
-**Última atualização:** 15/10/2026, sessão na nuvem (trabalho feito na `ccr-d2d5ac72-nmmks6` e levado para a `main-7zybuc` com o aval do dono; veja "Branch" abaixo). **Fase 1 em andamento: etapas 0, 1 e 2 feitas; a próxima é a etapa 3** (seção "Fase 1: andamento").
+**Última atualização:** 15/10/2026, sessão na nuvem (trabalho feito na `ccr-d2d5ac72-nmmks6` e levado para a `main-7zybuc` com o aval do dono; veja "Branch" abaixo). **Fase 1 em andamento: etapas 0 a 3 feitas; a próxima é a etapa 4** (seção "Fase 1: andamento").
 
 ## Onde estamos
 
@@ -122,9 +122,18 @@ Roteiro: [plano da fase 1](rascunhos/plano-fase-1.md). Cada etapa é um commit c
   - `scripts/stage-ui.mjs`: monta `apps/desktop/stage/ui` (1.267 arquivos, 28 MB), sem links, sem sharp e sem `server.js`; recusa `.env*`, `.jesus-dev`, credenciais, chaves, bancos e módulos nativos (conferido: com um `.env.production`, a pasta `.jesus-dev` e um link para fora, a montagem falha e lista os três).
   - Testes: 53 novos de unidade no `apps/desktop` (91 no pacote) e 2 no `apps/ui` (ponte inteira com processo falso que cai e reinicia, servidor que foge do protocolo, contrapressão de ponta a ponta) e 10 de integração com o servidor do Next de verdade do build montado (no CI, depois do build).
   - Ficou para depois: a ponte congelada em `globalThis` (o `apps/ui` falando com o principal) passou para a etapa 7; o Electron em si (janela, `protocol.handle`, pote de cookies ligado) é a etapa 3.
+- **Etapa 3 (15/10/2026):** processo principal e janela com a seção 3.12 (`apps/desktop/src/main/index.ts`, `app-session.ts`, `app-window.ts`, `app-protocol.ts`).
+  - Dependências novas (versões exatas, todas com mais de 3 dias): `electron` 44.7.0 (sem script de instalação; o binário vem de `node node_modules/electron/install.js`, conferido pelo `checksums.json`), `rolldown` 1.2.12 (já estava no lockfile, pelo Vite) e `playwright-core` 1.64.0 (a 1.64.1 tinha 1 dia).
+  - `scripts/build.mjs` empacota com o rolldown: `dist/` (produção) e `dist-test/` (teste). A constante `__JESUS_TEST_BUILD__` é de compilação; o build de produção falha se sobrar código de teste (a trava achou na primeira vez o nome da variável dos testes numa mensagem de erro).
+  - O que roda: `setPath('userData')` antes da trava de instância única; sandbox; partição em memória `jesus` com `protocol.handle` (https do app → servidor da interface; o resto, `http:` e `file:` → 403); sessão padrão trancada igual; proxy morto; permissões, dispositivos, captura, downloads e corretor negados; guardas de navegação, `window.open` e `webview`; vigia de quadros; sem DevTools e sem menu; recusa abrir como administrador no Windows (`whoami`); CSP com `frame-src`, `child-src` e `worker-src 'none'`; tira a CSP das respostas 3xx no handler.
+  - 11 testes de ponta a ponta (`src/e2e/`) com o Electron de verdade sob xvfb, passando aqui (como root, com `--no-sandbox`) e no CI com a sandbox ligada. Achados dos testes:
+    - um `iframe` `srcdoc` com sandbox passa pela CSP (`frame-src 'none'` não se aplica: nada é buscado) e pela guarda de navegação; quem pega é o vigia de quadros, que derruba a sessão (conferido);
+    - sem GPU, o WebGL do holograma só sobe com `--enable-unsafe-swiftshader` (só nos testes);
+    - o `_electron.launch` do Playwright não serve: conecta antes da troca inicial de processo da janela (que usa uma partição própria), recebe `Inspector.targetCrashed` e nunca entrega a página. O harness abre o Electron, conecta pelo CDP depois que a página carregou (`connectOverCDP`) e pelo inspetor do Node no processo principal.
+  - 14 testes de unidade novos (102 no `apps/desktop`): `app-protocol` (pote de cookies, 403, CSP no 3xx), `paths`, `elevation`.
 
 **Falta (nesta ordem):**
-1. **Fase 1, conforme o [plano da fase 1](rascunhos/plano-fase-1.md)** (14 etapas, montado em 13/10/2026 por pesquisa, planejador e crítico): Electron (`apps/desktop`) com o servidor do Next num utilityProcess, sem porta; empacotamento e `.exe` no `windows-latest`; registro; eventos do Windows; cofre da chave; Cérebro e saída para a API; chat com o Claude Haiku 5.5; Porteiro mínimo para leituras; ferramentas de leitura; tela do registro. **Feito:** etapas 0, 1 e 2 (veja "Fase 1: andamento"). **Próxima:** etapa 3 (processo principal e janela com a seção 3.12, e2e no Linux com xvfb). Depois dela, recomendar ao dono uma revisão independente (sessão, ponte e pote de cookies).
+1. **Fase 1, conforme o [plano da fase 1](rascunhos/plano-fase-1.md)** (14 etapas, montado em 13/10/2026 por pesquisa, planejador e crítico): Electron (`apps/desktop`) com o servidor do Next num utilityProcess, sem porta; empacotamento e `.exe` no `windows-latest`; registro; eventos do Windows; cofre da chave; Cérebro e saída para a API; chat com o Claude Haiku 5.5; Porteiro mínimo para leituras; ferramentas de leitura; tela do registro. **Feito:** etapas 0 a 3 (veja "Fase 1: andamento"). **Próxima:** revisão independente das etapas 1 a 3 (sessão, ponte e pote de cookies; o dono ligou o ultracode nesta sessão) e depois a etapa 4 (empacotamento com electron-builder 26.17.0 e decisão 0018).
 2. Depois da fase 1: memória (com `detectSensitive` em `packages/shared`) → login automático de contas → subagentes. Ligar cada um ao holograma e trocar os controles manuais correspondentes do laboratório por simulação automática.
 3. Promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.
 
@@ -161,5 +170,7 @@ Roteiro: [plano da fase 1](rascunhos/plano-fase-1.md). Cada etapa é um commit c
 - **Testar o `Host`:** o `fetch` do Node ignora o cabeçalho `Host`; use `curl -H Host:…`.
 - **Matar o `node server.js` do standalone:** até `grep "[n]ode server.js"` acha o próprio shell quando o texto está na linha de comando (código 144). Use `ps -eo pid,args | awk '$2=="node" && $3=="server.js" {print $1}'`.
 - **Build standalone do Next:** ele copia o `.env` do `apps/ui` para dentro do build. O `stage-ui.mjs` recusa a montagem nesse caso; apague o arquivo do build (ou do `apps/ui`) e monte de novo.
+- **Electron na nuvem:** roda como root, então precisa de `--no-sandbox` (o harness dos testes põe sozinho); `xvfb-run -a` para ter um X. Avisos de `dbus` no stderr são normais.
+- **Playwright com o Electron:** use o harness de `apps/desktop/src/e2e/harness.ts` (CDP + inspetor do Node), não o `_electron.launch` (veja a etapa 3).
 - **Teste de integração do desktop:** precisa do build montado (`JESUS_DESKTOP_BUILD=1 npm run build -w @jesus/ui && npm run stage:ui -w @jesus/desktop`); sem ele, falha de propósito (não é pulado). Ele roda o Next no próprio processo do teste: o `fetch` global e o `process.env` desse processo mudam.
 - **Servidor estático para testar a exportação:** depois de um novo `next build`, a pasta `out` é recriada; um servidor que já estava servindo a pasta antiga devolve 404. Reinicie o servidor (e cuidado com `pkill -f`, que pode matar o próprio shell).

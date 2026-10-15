@@ -29,6 +29,11 @@ export function buildCsp(nonce: string, options: { dev: boolean }): string {
     // Em desenvolvimento, o recarregamento automático usa WebSocket no próprio servidor local.
     `connect-src 'self'${options.dev ? ' ws://127.0.0.1:* ws://localhost:*' : ''}`,
     "object-src 'none'",
+    // Nenhum quadro, worker ou service worker (seção 3.12): o app não usa, e um quadro de fora é o caminho clássico
+    // de conteúdo que não é do app. No desktop, o vigia de quadros do processo principal é a segunda barreira.
+    "frame-src 'none'",
+    "child-src 'none'",
+    "worker-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",
     "frame-ancestors 'none'",

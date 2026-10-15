@@ -57,3 +57,12 @@ jobs:
           JESUS_DESKTOP_BUILD: '1'
       - run: npm run stage:ui -w @jesus/desktop
       - run: npm run test:integration -w @jesus/desktop
+
+      # Ponta a ponta com o Electron de verdade (etapa 3 da fase 1). O binário é baixado e conferido pelo
+      # checksums.json do pacote electron, fixado no package-lock.json (o npm não roda o script de instalação).
+      - run: node node_modules/electron/install.js
+      - run: npm run build:test -w @jesus/desktop
+      # Sandbox do Chromium ligada: o Ubuntu 24.04 restringe os namespaces de usuário sem privilégio (AppArmor), e
+      # sem eles a sandbox não sobe. O teste confere que a página roda com o filtro seccomp.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: xvfb-run -a npm run test:e2e -w @jesus/desktop

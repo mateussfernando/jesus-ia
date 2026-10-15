@@ -43,6 +43,7 @@ CLAUDE.local.md
 
 # App de desktop (decisão 0016): bundles, montagem da interface e pacotes gerados
 apps/desktop/stage/
+apps/desktop/dist-test/
 apps/desktop/release/
 apps/desktop/release-test/
 apps/desktop/test-results/

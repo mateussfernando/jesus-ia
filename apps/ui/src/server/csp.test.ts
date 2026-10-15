@@ -16,6 +16,9 @@ describe('CSP com nonce', () => {
     expect(csp).not.toContain('unsafe');
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("frame-src 'none'");
+    expect(csp).toContain("child-src 'none'");
+    expect(csp).toContain("worker-src 'none'");
     expect(csp).toContain("connect-src 'self';");
   });
 

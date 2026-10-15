@@ -16,6 +16,7 @@ export default tseslint.config(
       'apps/desktop/stage/**',
       'apps/desktop/release/**',
       'apps/desktop/release-test/**',
+      'apps/desktop/dist-test/**',
       'jesus-ia-ideacao.md',
     ],
   },
