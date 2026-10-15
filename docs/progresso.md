@@ -2,7 +2,7 @@
 
 > **Leia isto antes de qualquer tarefa** e atualize ao terminar cada etapa (o que foi feito, o que falta, onde parou). Serve para continuar o trabalho em outra sessão sem perder contexto. O resumo fixo do projeto está no [`CLAUDE.md`](../CLAUDE.md); aqui fica o **andamento**.
 
-**Última atualização:** 12/10/2026, sessão na nuvem (trabalho feito na `ccr-d2d5ac72-nmmks6` e levado para a `main-7zybuc` com o aval do dono; veja "Branch" abaixo).
+**Última atualização:** 15/10/2026, sessão na nuvem (trabalho feito na `ccr-d2d5ac72-nmmks6` e levado para a `main-7zybuc` com o aval do dono; veja "Branch" abaixo). **Fase 1 em andamento: etapas 0, 1 e 2 feitas; a próxima é a etapa 3** (seção "Fase 1: andamento").
 
 ## Onde estamos
 
@@ -107,8 +107,24 @@ Duas revisões com verificação adversarial (cada achado reproduzido por um seg
   - Página aberta: o sinal de uso mede o tempo com o relógio monotônico (com o relógio voltando 1 h, o usuário ativo não é mais bloqueado); bloqueado, a tela de entrada abre com carga completa. "Tentar de novo" na tela de erro recarrega de verdade.
 - O verificador da área "Server Actions" não terminou (limite de uso). Os 6 achados dela foram conferidos à mão contra o código: 3 repetiam achados confirmados, 2 foram corrigidos (`lockNow` sem sessão e a cadência do sinal de uso) e 1 é a decisão de desenho acima.
 
+## Fase 1: andamento
+
+Roteiro: [plano da fase 1](rascunhos/plano-fase-1.md). Cada etapa é um commit com testes; a `main-7zybuc` avança junto.
+
+- **Etapa 0 (13/10/2026):** o `next dev` parou de imprimir os argumentos das Server Actions (a senha aparecia no terminal); `logging.serverFunctions: false`, com teste.
+- **Etapa 1 (15/10/2026):** `apps/desktop` com o núcleo puro, testado em Node: adaptador em memória `Request` → Node → `Response` (streaming e contrapressão), pote de cookies (o `protocol.handle` não guarda cookies), políticas de URL e permissões, linha de comando por lista branca em produção, ambiente dos filhos por lista (nomes sem diferenciar maiúsculas, como no Windows).
+- **Etapa 2 (15/10/2026):** servidor do Next no utilityProcess `jesus-next`, sem porta ([decisão 0017](decisoes/0017-servidor-do-next-num-utilityprocess.md)).
+  - Prova antes do código (13/10): app empacotado (asar + fusíveis de produção) carregando o build standalone de dentro do `app.asar` num utilityProcess; entrada, criação da senha, pote de cookies e início funcionaram.
+  - `src/bridge/`: protocolo com Zod estrito (configuração uma vez só; pedido só para `https://jesus.invalid`, GET/HEAD/POST, corpo até 2 MB; resposta em pedaços de até 64 KiB com janela de 8 créditos) e falsos do IPC do Electron para os testes.
+  - `src/next-host/`: o lado do servidor (configuração por mensagem, `fetch` que falha fechado menos o repasse interno de Server Action com a barra final) e a entrada do utilityProcess.
+  - `src/main/ui-server.ts`: o lado do principal (sobe, reinicia com espera de 250 ms a 10 s, desiste depois de 5 quedas seguidas; páginas próprias de 503/502/504 sem script; pedido em andamento é interrompido se o processo cair; tira `x-action-forwarded` da página).
+  - `apps/ui`: `JESUS_DESKTOP_BUILD=1` liga o build standalone; com `JESUS_HTTPS=1`, o proxy aceita só `jesus.invalid` (conferido no build: 127.0.0.1 e localhost recebem 421, e sem a variável a máquina local continua aceita).
+  - `scripts/stage-ui.mjs`: monta `apps/desktop/stage/ui` (1.267 arquivos, 28 MB), sem links, sem sharp e sem `server.js`; recusa `.env*`, `.jesus-dev`, credenciais, chaves, bancos e módulos nativos (conferido: com um `.env.production`, a pasta `.jesus-dev` e um link para fora, a montagem falha e lista os três).
+  - Testes: 53 novos de unidade no `apps/desktop` (91 no pacote) e 2 no `apps/ui` (ponte inteira com processo falso que cai e reinicia, servidor que foge do protocolo, contrapressão de ponta a ponta) e 10 de integração com o servidor do Next de verdade do build montado (no CI, depois do build).
+  - Ficou para depois: a ponte congelada em `globalThis` (o `apps/ui` falando com o principal) passou para a etapa 7; o Electron em si (janela, `protocol.handle`, pote de cookies ligado) é a etapa 3.
+
 **Falta (nesta ordem):**
-1. **Fase 1, conforme o [plano da fase 1](rascunhos/plano-fase-1.md)** (14 etapas, montado em 13/10/2026 por pesquisa, planejador e crítico): Electron (`apps/desktop`) com o servidor do Next num utilityProcess, sem porta; empacotamento e `.exe` no `windows-latest`; registro; eventos do Windows; cofre da chave; Cérebro e saída para a API; chat com o Claude Haiku 5.5; Porteiro mínimo para leituras; ferramentas de leitura; tela do registro. **Feito:** etapa 0 (13/10/2026) e etapa 1 (15/10/2026: `apps/desktop` com adaptador em memória, pote de cookies, políticas de URL, permissões e linha de comando, ambiente dos filhos; 38 testes). **Próxima:** etapa 2 (servidor do Next num utilityProcess, começando pela prova do standalone dentro do `app.asar`).
+1. **Fase 1, conforme o [plano da fase 1](rascunhos/plano-fase-1.md)** (14 etapas, montado em 13/10/2026 por pesquisa, planejador e crítico): Electron (`apps/desktop`) com o servidor do Next num utilityProcess, sem porta; empacotamento e `.exe` no `windows-latest`; registro; eventos do Windows; cofre da chave; Cérebro e saída para a API; chat com o Claude Haiku 5.5; Porteiro mínimo para leituras; ferramentas de leitura; tela do registro. **Feito:** etapas 0, 1 e 2 (veja "Fase 1: andamento"). **Próxima:** etapa 3 (processo principal e janela com a seção 3.12, e2e no Linux com xvfb). Depois dela, recomendar ao dono uma revisão independente (sessão, ponte e pote de cookies).
 2. Depois da fase 1: memória (com `detectSensitive` em `packages/shared`) → login automático de contas → subagentes. Ligar cada um ao holograma e trocar os controles manuais correspondentes do laboratório por simulação automática.
 3. Promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.
 
@@ -143,4 +159,7 @@ Duas revisões com verificação adversarial (cada achado reproduzido por um seg
 - **`apps/ui/AGENTS.md`:** o `next dev` escreve esse arquivo sozinho quando percebe um agente de IA (`next/dist/server/lib/generate-agent-files.js`). Ele está no git de propósito, para não reaparecer como mudança a cada sessão.
 - **Matar o servidor do Next:** `pgrep -f "next start"` e `pkill -f` acham o próprio shell (o texto do comando contém o padrão) e derrubam a chamada com código 144. Liste com `ps -eo pid,args | grep -E "next-server|next start"` e mate pelos números.
 - **Testar o `Host`:** o `fetch` do Node ignora o cabeçalho `Host`; use `curl -H Host:…`.
+- **Matar o `node server.js` do standalone:** até `grep "[n]ode server.js"` acha o próprio shell quando o texto está na linha de comando (código 144). Use `ps -eo pid,args | awk '$2=="node" && $3=="server.js" {print $1}'`.
+- **Build standalone do Next:** ele copia o `.env` do `apps/ui` para dentro do build. O `stage-ui.mjs` recusa a montagem nesse caso; apague o arquivo do build (ou do `apps/ui`) e monte de novo.
+- **Teste de integração do desktop:** precisa do build montado (`JESUS_DESKTOP_BUILD=1 npm run build -w @jesus/ui && npm run stage:ui -w @jesus/desktop`); sem ele, falha de propósito (não é pulado). Ele roda o Next no próprio processo do teste: o `fetch` global e o `process.env` desse processo mudam.
 - **Servidor estático para testar a exportação:** depois de um novo `next build`, a pasta `out` é recriada; um servidor que já estava servindo a pasta antiga devolve 404. Reinicie o servidor (e cuidado com `pkill -f`, que pode matar o próprio shell).

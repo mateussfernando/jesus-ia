@@ -7,7 +7,12 @@
   "description": "App de desktop do Jesus (fase 1): processo principal do Electron, janela sem porta e servidor do Next num utilityProcess (decisões 0002 e 0016).",
   "scripts": {
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "stage:ui": "node scripts/stage-ui.mjs",
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.19.1",

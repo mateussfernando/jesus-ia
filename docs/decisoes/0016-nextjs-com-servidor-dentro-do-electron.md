@@ -1,6 +1,6 @@
 # 0016 — Next.js com servidor dentro do Electron: rotas e Server Actions como back-end
 
-- Status: aceita
+- Status: aceita (onde o servidor roda: decidido na [0017](0017-servidor-do-next-num-utilityprocess.md))
 - Data: 11/10/2026
 - Substitui: a parte da [0013](0013-interface-em-nextjs-dentro-do-electron.md) que usava exportação estática (sem servidor)
 

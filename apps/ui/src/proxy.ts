@@ -9,7 +9,9 @@ import { isAllowedRequestHost } from './server/host';
  * aos próprios scripts e estilos, e a mesma política vai na resposta.
  */
 export function proxy(request: NextRequest) {
-  if (!isAllowedRequestHost(request.headers.get('host'), request.headers.get('x-forwarded-host'))) {
+  // No app instalado (`JESUS_HTTPS=1`, posto pelo apps/desktop), só `jesus.invalid`.
+  const appMode = process.env['JESUS_HTTPS'] === '1';
+  if (!isAllowedRequestHost(request.headers.get('host'), request.headers.get('x-forwarded-host'), appMode)) {
     return new NextResponse('Endereço não atendido.', {
       status: 421,
       headers: { 'Content-Type': 'text/plain; charset=utf-8', ...securityHeaders },

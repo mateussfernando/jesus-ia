@@ -4,7 +4,21 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/out/**', '**/.next/**', '**/node_modules/**', '**/coverage/**', '**/src/generated/**', 'jesus-ia-ideacao.md'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/out/**',
+      '**/.next/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      '**/src/generated/**',
+      // Interface montada para o app (cópia do build do Next) e saídas do empacotamento.
+      'apps/desktop/stage/**',
+      'apps/desktop/release/**',
+      'apps/desktop/release-test/**',
+      'jesus-ia-ideacao.md',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.strict,
   {

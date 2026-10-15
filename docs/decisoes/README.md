@@ -19,7 +19,8 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0013](0013-interface-em-nextjs-dentro-do-electron.md) | Interface em Next.js dentro do Electron (laboratório vira a aba Cenários) | aceita (exportação estática substituída pela 0016) |
 | [0014](0014-prisma-como-orm.md) | Prisma como ORM do PostgreSQL (substitui o Drizzle da seção 4.3) | aceita |
 | [0015](0015-senha-local-com-bcrypt-e-dados-cifrados.md) | Senha local com bcrypt e dados cifrados com AES-256-GCM | aceita |
-| [0016](0016-nextjs-com-servidor-dentro-do-electron.md) | Next.js com servidor dentro do Electron: rotas e Server Actions como back-end, sem porta | aceita |
+| [0016](0016-nextjs-com-servidor-dentro-do-electron.md) | Next.js com servidor dentro do Electron: rotas e Server Actions como back-end, sem porta | aceita (onde o servidor roda: 0017) |
+| [0017](0017-servidor-do-next-num-utilityprocess.md) | Servidor do Next num utilityProcess, falando com o principal por uma ponte | aceita |
 
 ## Modelo
 

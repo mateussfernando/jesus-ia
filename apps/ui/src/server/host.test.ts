@@ -36,3 +36,14 @@ describe('hosts atendidos pelo servidor da interface', () => {
     expect(hostnameOf('a b')).toBeNull();
   });
 });
+
+describe('hosts atendidos no app instalado', () => {
+  it('só o endereço interno: a própria máquina passa a receber 421', () => {
+    expect(isAllowedRequestHost('jesus.invalid', null, true)).toBe(true);
+    expect(isAllowedRequestHost('JESUS.INVALID', 'jesus.invalid', true)).toBe(true);
+    for (const host of ['127.0.0.1:5173', 'localhost', '[::1]:5173', 'jesus.invalid.example']) {
+      expect(isAllowedRequestHost(host, null, true), host).toBe(false);
+    }
+    expect(isAllowedRequestHost('jesus.invalid', '127.0.0.1', true)).toBe(false);
+  });
+});

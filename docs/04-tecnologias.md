@@ -103,8 +103,8 @@
 - **PostgreSQL** como processo filho gerenciado pelo processo principal (sobe e desce junto com o app).
 - **Empacotamento:** electron-builder (NSIS). Binários (PostgreSQL, modelos de voz) ficam fora do `asar` (`extraResources`/`asarUnpack`).
 - **Atualização:** electron-updater (GitHub Releases privado ou pasta local). Assinatura de código é opcional para uso pessoal; sem ela, o SmartScreen mostra um aviso.
-- **Interface (decisões 0013 e 0016):** a janela carrega `https://jesus.invalid/`, um endereço que não existe na internet. O Electron intercepta esses pedidos só na sessão da janela do Jesus (`protocol.handle`), recusa qualquer outro endereço e entrega cada pedido ao servidor do Next carregado no próprio app (`next({ dir }).getRequestHandler()` com um adaptador em memória): nenhuma porta é aberta. Páginas, Server Actions e rotas do `apps/ui` são o back-end da interface; o Cérebro, o Porteiro + Executor e a voz continuam em `utilityProcess` próprios, falando com o Next por IPC. Rodar o Next no processo principal ou num `utilityProcess` só dele é decidido na fase 1, medindo.
-- **Senha local (decisão 0015):** o processo principal guarda o estado de bloqueio (`@jesus/auth`), confere a senha (hash bcrypt na tabela `app_credentials`) e decide o que a janela mostra; a interface só exibe a tela de entrada.
+- **Interface (decisões 0013 e 0016):** a janela carrega `https://jesus.invalid/`, um endereço que não existe na internet. O Electron intercepta esses pedidos só na sessão da janela do Jesus (`protocol.handle`), recusa qualquer outro endereço e entrega cada pedido ao servidor do Next carregado no próprio app (`next({ dir }).getRequestHandler()` com um adaptador em memória): nenhuma porta é aberta. Páginas, Server Actions e rotas do `apps/ui` são o back-end da interface; o Cérebro, o Porteiro + Executor e a voz continuam em `utilityProcess` próprios, falando com o Next por IPC. O servidor do Next roda num `utilityProcess` só dele (`jesus-next`, [decisão 0017](decisoes/0017-servidor-do-next-num-utilityprocess.md)): com ele no processo principal, a janela travava 92 ms a cada tecla durante a conferência da senha; separado, o atraso foi de 1 ms, ao custo de 40 a 60 MB.
+- **Senha local (decisões 0015 a 0017):** o servidor da interface (`jesus-next`) guarda o estado de bloqueio (`@jesus/auth`), confere a senha (hash bcrypt num arquivo da pasta de dados até o PostgreSQL embutido chegar; depois, na tabela `app_credentials`) e decide o que a janela mostra. O processo principal encaminha os pedidos da janela e, na etapa 7 da fase 1, avisa os eventos do Windows (bloqueio de tela, suspensão).
 
 ### Núcleo do agente (AI SDK) e o encaixe do Porteiro
 
@@ -186,7 +186,7 @@ jesus-ia/
 ├─ docs/                     # documentação do projeto
 ├─ apps/
 │  ├─ ui/                    # interface e back-end da interface em Next.js: Cenários, tela de entrada… (existe)
-│  └─ desktop/               # Electron: main, preload, janelas, protocolo app:// (carrega o apps/ui)
+│  └─ desktop/               # Electron: processo principal, janela sem porta (https://jesus.invalid), ponte com o servidor do Next (existe)
 ├─ packages/
 │  ├─ hologram/              # holograma: componente React Three Fiber + lógica visual pura (existe)
 │  ├─ core/                  # loop do agente, contexto, compactação, subagentes
