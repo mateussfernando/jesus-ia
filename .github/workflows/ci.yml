@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, tipos, testes e build (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # PostgreSQL com pgvector para os testes de integração do @jesus/db (decisão 0014). Só existe durante o job.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      # O Node 24.18+ traz o npm 11.16+ exigido pelo package.json (engines e devEngines).
+      # Hoje o toolcache do runner tem o Node 24.21.0, com o npm 11.19.
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Instala exatamente o package-lock.json, sem rodar scripts de dependências (docs/03-seguranca.md, seção 3.14).
+      - run: npm ci
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+        env:
+          JESUS_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # O build da interface sai também no formato do app de desktop (standalone; decisão 0017), que os testes de
+      # integração abaixo usam: o servidor do Next de verdade atrás da ponte, sem porta.
+      - run: npm run build
+        env:
+          JESUS_DESKTOP_BUILD: '1'
+      - run: npm run stage:ui -w @jesus/desktop
+      - run: npm run test:integration -w @jesus/desktop
+
+      # Ponta a ponta com o Electron de verdade (etapa 3 da fase 1). O binário é baixado e conferido pelo
+      # checksums.json do pacote electron, fixado no package-lock.json (o npm não roda o script de instalação).
+      - run: node node_modules/electron/install.js
+      - run: npm run build:test -w @jesus/desktop
+      # Sandbox do Chromium ligada: o Ubuntu 24.04 restringe os namespaces de usuário sem privilégio (AppArmor), e
+      # sem eles a sandbox não sobe. O teste confere que a página roda com o filtro seccomp.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: xvfb-run -a npm run test:e2e -w @jesus/desktop

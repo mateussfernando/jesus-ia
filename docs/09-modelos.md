@@ -8,6 +8,9 @@
 - **Provedores:** Anthropic, OpenAI, Google, Mistral, Groq, DeepSeek, xAI, OpenRouter (uma chave para centenas de modelos) e modelos locais (Ollama, LM Studio) via API compatível com a da OpenAI.
 - Tudo passa pelo AI SDK, que padroniza mensagens, ferramentas e streaming.
 - Prefira conexão **direta** com cada provedor, ou o OpenRouter se quiser uma chave só, mantendo o princípio de local primeiro.
+- **Escolha atual (08/10/2026):** cérebro = **Claude Haiku 5.5** (`claude-haiku-5-5`, provedor da Anthropic no AI SDK), ~US$ 2 por mês no uso típico ([decisão 0011](decisoes/0011-primeiro-modelo-claude-haiku.md)). Alternativa configurável: DeepSeek V4.1-Flash num host fora da China (Fireworks ou DeepInfra). A API direta do DeepSeek guarda os dados na China e pode usá-los para treinar, por isso não é usada com dados pessoais ([decisão 0010](decisoes/0010-primeiro-modelo-deepseek-via-deepinfra.md)).
+- A **janela de contexto depende do par provedor + modelo**, não só do modelo (o mesmo DeepSeek tem 1 milhão de tokens na DeepInfra e cerca de 164 mil em outros provedores). O registro de capacidades (9.3) guarda a janela por provedor, e é ela que define o limite automático do holograma.
+- **Preço por faixa de tamanho:** alguns modelos mudam de preço conforme o tamanho do pedido (o Claude Haiku 5.5 custa 5 vezes mais acima de 100 mil tokens). O registro guarda essas faixas, e o limite automático de contexto mira abaixo do degrau de preço, não só da janela.
 
 ## 9.2 Papéis
 
@@ -26,6 +29,8 @@ Cada papel pode usar um provedor diferente.
 ## 9.3 Registro de capacidades
 
 Para cada modelo, o Jesus guarda: provedor, nome, janela de contexto, se usa ferramentas, se entende imagem, preço por milhão de tokens (entrada e saída), se tem cache de prompt e a latência média medida. O tamanho do contexto alimenta o contorno do holograma; o preço alimenta o anel de gasto.
+
+**Implementado (08/10/2026):** o registro (`packages/models`) e o limite automático de contexto (`packages/core/src/context/budget.ts`). O limite efetivo é o menor entre o teto técnico (janela − reserva de saída, com margem), o de qualidade (modo), o de custo (pressão do orçamento do dia, degrau de preço e ponto ótimo de compactação) e o do usuário. Especificação em [rascunhos/algoritmo-contexto.md](rascunhos/algoritmo-contexto.md).
 
 ## 9.4 Custos
 

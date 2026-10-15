@@ -1,0 +1,47 @@
+.home {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 64px 24px;
+}
+
+.home h1 {
+  margin: 0 0 8px;
+  font-size: 32px;
+  font-weight: 600;
+  color: var(--core);
+  letter-spacing: 0.04em;
+}
+
+.home-lead {
+  margin: 0 0 32px;
+  color: var(--silver-dark);
+}
+
+.home-links {
+  display: grid;
+  gap: 12px;
+}
+
+.home-card {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--silver);
+  text-decoration: none;
+}
+
+.home-card:hover {
+  border-color: var(--line-strong);
+}
+
+.home-card strong {
+  color: var(--core);
+  font-weight: 600;
+}
+
+.home-card span {
+  color: var(--silver-dark);
+}

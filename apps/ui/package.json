@@ -1,0 +1,33 @@
+{
+  "name": "@jesus/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Interface e back-end da interface do Jesus em Next.js (decisões 0013 e 0016): páginas, Server Actions e rotas no mesmo app; dentro do Electron, sem porta aberta. Inclui a aba Cenários e a tela de entrada.",
+  "scripts": {
+    "dev": "node ../../packages/db/scripts/generate.mjs && node scripts/next.mjs dev --hostname 127.0.0.1 --port 5173",
+    "build": "node ../../packages/db/scripts/generate.mjs && node scripts/next.mjs build",
+    "start": "node scripts/next.mjs start --hostname 127.0.0.1 --port 5173",
+    "test": "vitest run",
+    "typecheck": "node ../../packages/db/scripts/generate.mjs && node scripts/next.mjs typegen && tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@jesus/auth": "*",
+    "@jesus/core": "*",
+    "@jesus/crypto": "*",
+    "@jesus/db": "*",
+    "@jesus/hologram": "*",
+    "@jesus/models": "*",
+    "next": "16.4.0",
+    "react": "~19.3.0",
+    "react-dom": "~19.3.0",
+    "zod": "^4.1.0",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "vitest": "^5.0.0"
+  }
+}

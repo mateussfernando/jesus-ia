@@ -1,0 +1,27 @@
+{
+  "name": "@jesus/desktop",
+  "productName": "Jesus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "App de desktop do Jesus (fase 1): processo principal do Electron, janela sem porta e servidor do Next num utilityProcess (decisões 0002 e 0016).",
+  "scripts": {
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "build": "node scripts/build.mjs",
+    "build:test": "node scripts/build.mjs --test",
+    "stage:ui": "node scripts/stage-ui.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "electron": "44.7.0",
+    "playwright-core": "1.64.0",
+    "rolldown": "1.2.12",
+    "vitest": "^5.0.0"
+  }
+}

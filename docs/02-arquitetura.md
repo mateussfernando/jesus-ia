@@ -30,7 +30,7 @@
 ```mermaid
 flowchart LR
   subgraph PC["Seu PC (Windows 11)"]
-    UI["Interface<br/>(renderer Chromium em sandbox)<br/>holograma · chat · cartões"]
+    UI["Interface em Next.js<br/>(páginas no renderer em sandbox + back-end da interface, sem porta)<br/>holograma · chat · cartões · tela de entrada"]
     MAIN["Processo principal<br/>(janelas, atalhos, IPC)"]
     BRAIN["Cérebro<br/>(loop do agente, contexto)"]
     GATE["Porteiro + Executor<br/>(regras, classificador,<br/>confirmações, cofre de tokens)"]
@@ -57,7 +57,7 @@ flowchart LR
 
 | Processo | Em quem confia | O que pode | O que não pode |
 |---|---|---|---|
-| **Interface** | em ninguém (ela exibe conteúdo externo) | mostrar, coletar cliques e voz | chamar ferramentas, ver tokens |
+| **Interface** (Next.js: páginas no renderer + back-end da interface; decisão 0016) | as páginas, em ninguém (exibem conteúdo externo); o back-end do Next, no usuário (sessão aberta pela senha local) | mostrar, coletar cliques, voz e a senha local; o back-end confere a senha, guarda a sessão e conversa com os outros processos por IPC | chamar ferramentas, ver tokens, mandar o hash da senha para a página, ser alcançado por outros programas (não há porta) |
 | **Cérebro** | nas instruções do usuário | conversar com modelos, propor ações, ler e gravar memória via API de dados | executar ações, ver tokens |
 | **Porteiro + Executor** | nas regras e no usuário | decidir, executar, usar tokens | ser alterado pelo cérebro |
 | **Execução contida** | em nada | rodar comandos na pasta do projeto | ver tokens ou a pasta do Jesus (no modo padrão, a rede depende do Porteiro) |

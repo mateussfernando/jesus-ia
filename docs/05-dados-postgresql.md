@@ -12,9 +12,21 @@
 
 ### No desenvolvimento
 
-- **Docker**, o jeito mais simples: imagem `pgvector/pgvector:pg18`, que já vem com o pgvector. Também funciona nas sessões do Claude Code na nuvem.
+- **Docker**, o jeito mais simples: imagem `pgvector/pgvector:pg18`, que já vem com o pgvector. É a mesma imagem que o CI usa como serviço nos testes do banco.
 - Ou PostgreSQL 18 nativo para Windows + pgvector compilado.
-- Testes automatizados podem usar o **PGlite** (PostgreSQL em WebAssembly, com pgvector via `@electric-sql/pglite-pgvector`) para subir um banco em memória rapidamente ([PGlite](https://pglite.dev/extensions/)).
+- Nas sessões na nuvem, o contêiner já traz um PostgreSQL 16 (sem pgvector e sem Docker rodando): `bash scripts/cloud-test-db.sh` sobe um servidor de teste e mostra a URL.
+- **Testes do banco:** o `packages/db` roda os testes de integração contra um PostgreSQL de verdade quando `JESUS_TEST_DATABASE_URL` existe; cada execução cria um banco próprio e apaga no fim. Sem a variável, esses testes são pulados e os de lógica pura rodam.
+- O **PGlite** (PostgreSQL em WebAssembly) continua sendo opção para testes rápidos ([PGlite](https://pglite.dev/extensions/)).
+
+### ORM: Prisma ([decisão 0014](decisoes/0014-prisma-como-orm.md))
+
+- Esquema em `packages/db/prisma/schema.prisma`, com nomes em inglês e `@@map`/`@map` para `snake_case`. O cliente é gerado em `packages/db/src/generated` (fora do git) pelo `npm run generate -w @jesus/db`, sem baixar binário.
+- Migrações em SQL (`packages/db/prisma/migrations/<data>_<nome>/migration.sql`), revisadas no PR. O que o Prisma não modela entra à mão nesse SQL: `CHECK`, papéis e `GRANT` (seção 5.3), gatilhos da auditoria, `vector` (como `Unsupported("vector(1024)")` no esquema) e colunas `tsvector` geradas. Para isso, o SQL é gerado sem aplicar (`npm run db:migrate:create -w @jesus/db`), completado à mão e só depois aplicado no banco de desenvolvimento (`npm run db:migrate:dev -w @jesus/db`); os dois scripts desligam a telemetria da CLI do Prisma.
+- No PC do usuário, quem aplica as migrações é o próprio Jesus (`applyMigrations` do `packages/db`): uma transação por arquivo, trava consultiva pega antes de tudo (até da criação da tabela de controle, para duas instâncias num banco novo não se atropelarem), soma SHA-256 de cada arquivo na tabela `jesus_migrations`, e recusa de abrir o banco se um arquivo já aplicado mudou ou se o banco tem uma migração que o app não conhece.
+- **Arquivo de migração não controla transação.** O migrador já abre a transação de cada arquivo; um `BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT` (ou parente) no arquivo gravaria metade da migração sem registrá-la. O `prisma migrate dev` gera `BEGIN;`/`COMMIT;` ao mudar um `enum`: tire essas linhas. O migrador recusa o arquivo antes de aplicar qualquer coisa (checagem do texto, lendo como o analisador do PostgreSQL: sem contar comentários, strings, identificadores e corpos `$$`; o `standard_conforming_strings` fica ligado em cada arquivo, para o banco ler as strings do mesmo jeito). Como segunda barreira, põe uma marca `SET LOCAL` na transação e confere que ela continua lá depois do arquivo; se o arquivo fechou a transação, nada é registrado como aplicado (mas o que veio antes do `COMMIT` já foi gravado, por isso a primeira barreira importa). A marca não tira snapshot: um arquivo pode começar com `SET TRANSACTION`. Corpo de função com `BEGIN ATOMIC … END` também é recusado: use o corpo entre `$$`.
+- Para o servidor da interface usar o banco em desenvolvimento: `npm run db:apply -w @jesus/db` aplica as migrações (com o migrador do app) no banco de `JESUS_DATABASE_URL`, a mesma variável que liga o repositório Prisma da senha (decisão 0016).
+- Busca vetorial e textual (seção 5.6) ficam em SQL parametrizado (`$queryRaw` com *template* marcado), dentro dos repositórios.
+- **Tabelas já implementadas:** `app_credentials` (senha local do Jesus, decisão 0015). O resto do esquema da seção 5.5 entra fase a fase.
 
 ### No app instalado (opção recomendada: PostgreSQL embutido)
 
@@ -44,7 +56,8 @@ O Jesus traz os binários do PostgreSQL e cuida dele sozinho:
 - **Papéis (roles):**
   - `jesus_owner`: dono do esquema, usado **só** nas migrações.
   - `jesus_app`: leitura e escrita nas tabelas de uso; **sem** `UPDATE`, `DELETE` ou `TRUNCATE` na auditoria; sem criar extensões ou papéis.
-  - `jesus_config`: usado só pelo processo principal (interface) para gravar regras e configurações. O Executor não usa esse papel.
+  - `jesus_config`: usado só pelo processo principal (interface) para gravar regras e configurações, e para ler e gravar a senha local (`app_credentials`, sem `DELETE`). O Executor não usa esse papel.
+  - Os papéis são criados sem login pela primeira migração; o login, com senha aleatória guardada no cofre, é ligado na instalação (fase 4). O `jesus_app` não tem acesso nenhum a `app_credentials` (testado).
 - `log_statement = 'none'`, para não gravar dados pessoais nos logs do PostgreSQL.
 - O modelo de IA **nunca** escreve SQL; ele só usa ferramentas estruturadas.
 
@@ -52,6 +65,8 @@ O Jesus traz os binários do PostgreSQL e cuida dele sozinho:
 
 - **Disco:** ligue a criptografia do dispositivo/BitLocker do Windows (protege contra roubo do PC ou do disco).
 - **Campos sensíveis** (documentos pessoais, saúde, finanças, anotações marcadas como privadas): criptografados pela aplicação com AES-256-GCM antes de gravar, com a chave no cofre. A desvantagem é que não dá para buscar dentro deles no SQL, então isso vale só para os campos que precisam.
+  - Implementado em `packages/crypto` (`sealField`/`openField`, [decisão 0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)): formato versionado (versão, id da chave, *nonce* de 12 bytes, texto cifrado, *tag* de 16 bytes) e a tabela, a coluna e o id da linha como dado autenticado, para um valor cifrado não poder ser copiado para outra linha.
+  - **bcrypt não cifra.** Ele é hash de senha (só vai num sentido) e no Jesus serve só para a senha local e o código de recuperação. Dado que precisa ser lido de volta usa AES-256-GCM.
 - **Por que não usar `pgcrypto` com a chave na consulta?** A chave passaria no texto das consultas e poderia aparecer em logs.
 - **Backups:** `pg_dump` diário, criptografado (ex.: com `age`) antes de salvar numa pasta que você escolher. Pode ser um HD externo ou uma nuvem sua, porque o arquivo já sai criptografado. Teste a restauração uma vez por mês.
 

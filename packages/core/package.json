@@ -1,0 +1,20 @@
+{
+  "name": "@jesus/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Núcleo do Jesus. Por enquanto: orçamento automático de contexto por modelo (lógica pura).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@jesus/models": "*"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.0"
+  }
+}
