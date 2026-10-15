@@ -10,6 +10,9 @@ const config: NextConfig = {
   images: { unoptimized: true },
   poweredByHeader: false,
   reactStrictMode: true,
+  // O Next 16 imprime no terminal os argumentos de cada Server Action, e isso inclui a senha local, o código de
+  // recuperação e, depois, a chave da API (invariante 5). Também não repassa o console do navegador ao terminal.
+  logging: { serverFunctions: false, browserToTerminal: false },
   // Os pacotes do projeto exportam o código-fonte TypeScript.
   transpilePackages: ['@jesus/auth', '@jesus/core', '@jesus/crypto', '@jesus/db', '@jesus/hologram', '@jesus/models'],
 };

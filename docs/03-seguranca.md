@@ -566,7 +566,7 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
   - **Server Actions são pontos de entrada:** só aceitam POST com a mesma origem (o Next confere `Origin` contra `Host`; o teste com origem falsa foi recusado e não contou tentativa), e cada uma valida a entrada com Zod e confere a sessão sozinha (até o "Bloquear": sem sessão válida, só apaga o cookie de quem chamou). Cada página protegida também confere (o layout não roda de novo a cada navegação). Em desenvolvimento, qualquer programa do PC alcança a porta local; no app instalado, só a janela do Jesus.
   - **Sessão:** cookie `HttpOnly`, `SameSite=Strict` (e `Secure` no app em https), com 256 bits aleatórios; o servidor guarda só o SHA-256. Bloquear apaga a sessão. A página aberta confere a sessão a cada 30 s (ou um quarto do tempo sem uso, se for menor) e ao voltar a ficar visível, **sem contar como uso**; só tecla, clique ou rolagem de verdade contam. O tempo sem uso é medido por um relógio que nunca volta (o maior avanço entre o monotônico e o de parede).
   - O back-end do Next é a camada da interface: não executa ferramentas nem guarda tokens de contas (Cérebro, Porteiro e Executor seguem em processos próprios, seção 2.2).
-  - A telemetria do Next fica desligada e o servidor de desenvolvimento só escuta em `127.0.0.1`.
+  - A telemetria do Next fica desligada e o servidor de desenvolvimento só escuta em `127.0.0.1`. O Next 16 imprime no terminal os argumentos de cada Server Action (a senha, o código de recuperação e, depois, a chave da API): isso fica desligado no `next.config.ts` (`logging.serverFunctions: false`), com teste.
 - Cartões de confirmação num componente separado, que o conteúdo do modelo não consegue imitar.
 
 ## 3.13 Autoproteção
