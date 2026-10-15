@@ -97,8 +97,8 @@ describe('app de desktop: janela sem porta', () => {
     await page.waitForURL(`${APP}/cenarios/`);
     await page.locator('canvas').first().waitFor({ timeout: 30_000 });
     await page.waitForTimeout(500);
-    // O holograma desenhou: nenhum erro de WebGL no console.
-    expect((await hooks<string[]>('h.consoleMessages')).filter((line) => /WebGL/i.test(line))).toEqual([]);
+    // O holograma desenhou: nenhum erro de WebGL no console (avisos de desempenho do driver não contam).
+    expect((await hooks<string[]>('h.consoleMessages')).filter((line) => /^error:.*WebGL/i.test(line))).toEqual([]);
   });
 
   it('navegação e janela para fora do app são barradas', async () => {
