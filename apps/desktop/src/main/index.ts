@@ -84,7 +84,11 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   await app.whenReady();
   if (process.platform === 'win32') {
     const elevation = await checkElevation(process.env['SystemRoot'] ?? process.env['SYSTEMROOT']);
-    if (elevation !== 'not-elevated') {
+    if (elevation !== 'not-elevated' && TEST_BUILD) {
+      // Só no build de teste (nunca publicado): os runners Windows do GitHub rodam como administrador, e os testes de
+      // ponta a ponta precisam abrir o app. A regra fica no build de produção e nos testes de unidade.
+      log(`build de teste rodando com elevação "${elevation}"; o de produção recusaria abrir`);
+    } else if (elevation !== 'not-elevated') {
       dialog.showErrorBox(
         APP_NAME,
         elevation === 'elevated'

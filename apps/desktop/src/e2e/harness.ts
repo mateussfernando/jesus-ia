@@ -85,6 +85,26 @@ async function connectInspector(url: string): Promise<{ evaluate: (expression: s
   };
 }
 
+/** Variáveis do sistema que o app precisa para abrir (no Windows, sem `SystemRoot` nem a conferência de administrador roda). */
+const WINDOWS_ENV = ['SystemRoot', 'windir', 'SystemDrive', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'ProgramData', 'PATHEXT', 'HOMEDRIVE', 'HOMEPATH', 'USERNAME', 'COMPUTERNAME'];
+
+function baseEnv(userData: string): Record<string, string> {
+  if (process.platform === 'win32') {
+    const env: Record<string, string> = { PATH: process.env['PATH'] ?? '' };
+    for (const name of WINDOWS_ENV) {
+      const value = process.env[name];
+      if (value !== undefined) env[name] = value;
+    }
+    return env;
+  }
+  return {
+    PATH: process.env['PATH'] ?? '',
+    HOME: process.env['HOME'] ?? userData,
+    DISPLAY: process.env['DISPLAY'] ?? '',
+    XAUTHORITY: process.env['XAUTHORITY'] ?? '',
+  };
+}
+
 /** Espera a janela do app aparecer no CDP com uma página do app carregada. */
 async function waitForAppPage(devtoolsUrl: string, timeoutMs: number): Promise<void> {
   const { host } = new URL(devtoolsUrl);
@@ -119,13 +139,7 @@ export async function launchApp(options: { mainEntry: string; userData: string; 
       ...(packaged ? [] : [options.mainEntry]),
     ],
     {
-      env: {
-        PATH: process.env['PATH'] ?? '',
-        HOME: process.env['HOME'] ?? options.userData,
-        DISPLAY: process.env['DISPLAY'] ?? '',
-        XAUTHORITY: process.env['XAUTHORITY'] ?? '',
-        JESUS_E2E_USER_DATA: options.userData,
-      },
+      env: { ...baseEnv(options.userData), JESUS_E2E_USER_DATA: options.userData },
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   );

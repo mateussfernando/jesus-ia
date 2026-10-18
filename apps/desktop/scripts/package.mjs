@@ -1,8 +1,9 @@
 // Empacota o app de desktop (fase 1, etapa 4; decisão 0018).
-//   node scripts/package.mjs [--test] [--win | --linux]
+//   node scripts/package.mjs [--test] [--win | --linux] [--dir]
 // Gera o bundle (dist/ ou dist-test/), confere que a interface montada existe (npm run stage:ui), chama o
 // electron-builder e confere o pacote (check-package.mjs). Sem --win/--linux, empacota para o sistema atual: o
-// instalador NSIS (.exe) só sai no Windows (no Linux o electron-builder precisaria do wine).
+// instalador NSIS (.exe) só sai no Windows (no Linux o electron-builder precisaria do wine). Com --dir, só a pasta
+// *-unpacked, sem instalador (o pacote de teste do CI).
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -13,6 +14,7 @@ const desktopDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const testBuild = args.includes('--test');
 const platform = args.includes('--win') ? 'win' : args.includes('--linux') ? 'linux' : process.platform === 'win32' ? 'win' : 'linux';
+const dirOnly = args.includes('--dir');
 
 function run(script, scriptArgs) {
   const result = spawnSync(process.execPath, [join(desktopDir, 'scripts', script), ...scriptArgs], { stdio: 'inherit' });
@@ -31,7 +33,9 @@ const require = createRequire(import.meta.url);
 const config = require('../electron-builder.config.cjs');
 const { Arch, Platform, build } = require('electron-builder');
 const targets =
-  platform === 'win' ? Platform.WINDOWS.createTarget(['nsis'], Arch.x64) : Platform.LINUX.createTarget(['dir'], Arch.x64);
+  platform === 'win'
+    ? Platform.WINDOWS.createTarget([dirOnly ? 'dir' : 'nsis'], Arch.x64)
+    : Platform.LINUX.createTarget(['dir'], Arch.x64);
 await build({ projectDir: desktopDir, config, targets, publish: 'never' });
 
 const outDir = join(desktopDir, testBuild ? 'release-test' : 'release');

@@ -14,7 +14,7 @@
     "stage:ui": "node scripts/stage-ui.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "package": "node scripts/package.mjs",
-    "package:test": "node scripts/package.mjs --test"
+    "package:test": "node scripts/package.mjs --test --dir"
   },
   "devDependencies": {
     "@electron/asar": "3.4.1",

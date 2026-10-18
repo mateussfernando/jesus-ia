@@ -28,7 +28,7 @@ A prova de 13/10/2026 mostrou que funciona o app empacotado com asar, fusíveis 
 
 - **Dois builds, decididos na compilação:**
   - **Produção:** `dist/`, fusíveis travados.
-  - **Teste:** `dist-test/` e fusíveis padrão, porque os testes de ponta a ponta usam o inspetor do Node e o CDP. Sai em `release-test/` e nunca é publicado.
+  - **Teste:** `dist-test/` e fusíveis padrão, porque os testes de ponta a ponta usam o inspetor do Node e o CDP. Sai em `release-test/` e nunca é publicado. Ele também não recusa rodar como administrador, só registra (os runners Windows do GitHub rodam elevados). A produção recusa.
   - O build de produção falha se sobrar código de teste no bundle, e o pacote é conferido de novo.
 
 - **Conferência do pacote** (`scripts/check-package.mjs`, em todo empacotamento e no CI):

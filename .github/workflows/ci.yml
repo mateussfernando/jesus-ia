@@ -75,3 +75,56 @@ jobs:
       - run: xvfb-run -a npm run test:e2e -w @jesus/desktop
         env:
           JESUS_E2E_EXECUTABLE: ${{ github.workspace }}/apps/desktop/release-test/linux-unpacked/Jesus
+
+  windows:
+    # Etapa 5 da fase 1: o app no Windows de verdade e o instalador .exe (decisão 0018). Um gatilho só (o mesmo do
+    # job acima): cada envio para a branch do PR roda os dois jobs uma vez. O repositório é público, então os minutos
+    # do Windows não pesam no limite do Actions.
+    name: Testes, pacote e instalador (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      # Os testes de unidade também no Windows (caminhos, nomes de variáveis sem maiúsculas, arquivos). Os do banco
+      # são pulados (sem PostgreSQL neste job).
+      - run: npm test
+      - run: npm run build
+        env:
+          JESUS_DESKTOP_BUILD: '1'
+      - run: npm run stage:ui -w @jesus/desktop
+      - run: npm run test:integration -w @jesus/desktop
+
+      # O runner do Windows roda como administrador: o build de teste só registra isso e segue (o de produção recusaria
+      # abrir). Os testes de ponta a ponta rodam no pacote de teste, com a interface de dentro do app.asar.
+      - run: node node_modules/electron/install.js
+      - run: npm run package:test -w @jesus/desktop
+      - run: npm run test:e2e -w @jesus/desktop
+        env:
+          JESUS_E2E_EXECUTABLE: ${{ github.workspace }}/apps/desktop/release-test/win-unpacked/Jesus.exe
+
+      # Instalador de produção (NSIS por usuário, sem elevação), conferido: fusíveis, app.asar, recusa de argumentos e
+      # do ELECTRON_RUN_AS_NODE. Depois, o teste de adulteração do app.asar (a integridade é conferida no Windows).
+      - run: npm run package -w @jesus/desktop
+      - run: node apps/desktop/scripts/tamper-check.mjs apps/desktop/release/win-unpacked
+
+      - name: Hash do instalador no resumo
+        run: node apps/desktop/scripts/installer-summary.mjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jesus-windows-x64
+          path: apps/desktop/release/Jesus-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14
