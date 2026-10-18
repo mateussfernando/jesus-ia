@@ -33,7 +33,8 @@ try {
   // Troca um byte do conteúdo do dist/main.mjs dentro do app.asar (não do cabeçalho).
   const archive = join(tampered, 'resources', 'app.asar');
   const { headerSize } = asar.getRawHeader(archive);
-  const file = asar.statFile(archive, 'dist/main.mjs');
+  // O @electron/asar usa o separador do sistema (no Windows, "\\").
+  const file = asar.statFile(archive, join('dist', 'main.mjs'));
   const position = 8 + headerSize + Number(file.offset) + 16;
   const fd = openSync(archive, 'r+');
   const byte = Buffer.alloc(1);

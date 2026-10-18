@@ -7,7 +7,7 @@
 //   argumento (sai com 2) e ignora ELECTRON_RUN_AS_NODE.
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import asar from '@electron/asar';
 import fuses from '@electron/fuses';
 import { classifyStagePath } from './stage-policy.mjs';
@@ -23,6 +23,8 @@ if (target === undefined) {
 const testBuild = flags.includes('--test');
 const dir = resolve(target);
 const problems = [];
+/** Caminho de dentro do asar ("/dist/main.mjs") no formato que o @electron/asar espera (no Windows, com "\\"). */
+const archivePath = (path) => path.slice(1).split('/').join(sep);
 
 const executable = ['Jesus.exe', 'Jesus', 'jesus'].map((name) => join(dir, name)).find((path) => existsSync(path));
 if (executable === undefined) {
@@ -70,7 +72,7 @@ else {
   if (manifest.main !== `${bundle}/main.mjs`) problems.push(`package.json do app aponta para ${String(manifest.main)}`);
   if (!testBuild) {
     for (const path of files.filter((file) => file.startsWith('/dist/') && file.endsWith('.mjs'))) {
-      const text = asar.extractFile(asarPath, path.slice(1)).toString('utf8');
+      const text = asar.extractFile(asarPath, archivePath(path)).toString('utf8');
       for (const marker of ['__jesusTest', 'JESUS_E2E_USER_DATA']) if (text.includes(marker)) problems.push(`código de teste em ${path}: ${marker}`);
     }
   }
