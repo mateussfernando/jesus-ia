@@ -14,6 +14,7 @@ import type { Browser, Page } from 'playwright-core';
  */
 
 const electronPath = createRequire(import.meta.url)('electron') as string;
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 export const APP = 'https://jesus.invalid';
 
 export interface RunningApp {
@@ -164,11 +165,18 @@ export async function launchApp(options: { mainEntry: string; userData: string; 
     mainEval: async <T>(expression: string) => (await inspector.evaluate(expression)) as T,
     async close() {
       await browser.close().catch(() => undefined);
-      inspector.close();
       if (child.exitCode === null) {
         const exited = new Promise((resolve) => child.once('exit', resolve));
-        child.kill();
+        // Saída normal: o Chromium fecha os processos auxiliares e solta os arquivos da pasta de dados (no Windows, um
+        // kill derruba só o principal, e os auxiliares ainda seguram arquivos por um instante). Com o inspetor
+        // conectado, o Node espera o depurador sair antes de encerrar: o inspetor fecha logo depois do pedido.
+        await Promise.race([inspector.evaluate("require('electron').app.quit()"), sleep(2_000)]).catch(() => undefined);
+        inspector.close();
+        const fallback = setTimeout(() => child.kill(), 10_000);
         await exited;
+        clearTimeout(fallback);
+      } else {
+        inspector.close();
       }
     },
   };

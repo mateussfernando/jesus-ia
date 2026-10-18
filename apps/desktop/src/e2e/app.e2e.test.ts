@@ -57,7 +57,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
-  await rm(userData, { recursive: true, force: true });
+  // No Windows, arquivos recém-soltos ainda podem estar presos por um instante.
+  await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 });
 
 describe('app de desktop: janela sem porta', () => {
