@@ -101,17 +101,22 @@ async function waitForAppPage(devtoolsUrl: string, timeoutMs: number): Promise<v
   throw new Error('a janela do app não carregou a tempo');
 }
 
-export async function launchApp(options: { mainEntry: string; userData: string }): Promise<RunningApp> {
+/**
+ * Abre o app. Com `executable` (o build de teste empacotado, `release-test/*-unpacked`), roda o pacote de verdade, com
+ * a interface de dentro do `app.asar`; sem ele, o Electron de desenvolvimento com o bundle `dist-test/main.mjs`.
+ */
+export async function launchApp(options: { mainEntry: string; userData: string; executable?: string | undefined }): Promise<RunningApp> {
   const asRoot = process.getuid?.() === 0;
+  const packaged = options.executable !== undefined && options.executable !== '';
   const child = spawn(
-    electronPath,
+    packaged ? (options.executable ?? '') : electronPath,
     [
       ...(asRoot ? ['--no-sandbox'] : []),
       // Sem GPU (contêiner, CI), o WebGL do holograma só sobe com o renderizador por software.
       '--enable-unsafe-swiftshader',
       '--inspect=0',
       '--remote-debugging-port=0',
-      options.mainEntry,
+      ...(packaged ? [] : [options.mainEntry]),
     ],
     {
       env: {

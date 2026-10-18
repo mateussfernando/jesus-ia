@@ -66,3 +66,12 @@ jobs:
       # sem eles a sandbox não sobe. O teste confere que a página roda com o filtro seccomp.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: xvfb-run -a npm run test:e2e -w @jesus/desktop
+
+      # Empacotamento (etapa 4, decisão 0018): o pacote de produção é conferido (fusíveis, app.asar e, abrindo o app,
+      # a recusa de argumentos e do ELECTRON_RUN_AS_NODE); os testes de ponta a ponta rodam de novo no pacote de teste,
+      # com a interface de dentro do app.asar.
+      - run: xvfb-run -a npm run package -w @jesus/desktop
+      - run: npm run package:test -w @jesus/desktop
+      - run: xvfb-run -a npm run test:e2e -w @jesus/desktop
+        env:
+          JESUS_E2E_EXECUTABLE: ${{ github.workspace }}/apps/desktop/release-test/linux-unpacked/Jesus

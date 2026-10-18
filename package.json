@@ -25,7 +25,8 @@
   "allowScripts": {
     "fsevents": false,
     "@prisma/engines": false,
-    "prisma": false
+    "prisma": false,
+    "electron-winstaller": false
   },
   "scripts": {
     "dev:ui": "npm run dev --workspace=@jesus/ui",

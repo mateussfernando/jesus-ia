@@ -11,11 +11,15 @@ import type { RunningApp } from './harness';
 /**
  * O app de verdade (build de teste do processo principal + servidor do Next montado), aberto pelo Electron (seção
  * 3.12). Roda com `npm run test:e2e -w @jesus/desktop` sob um X (no Linux, `xvfb-run -a`). No CI a sandbox do Chromium
- * fica ligada; como root (contêiner da nuvem), o Chromium exige `--no-sandbox`.
+ * fica ligada; como root (contêiner da nuvem), o Chromium exige `--no-sandbox`. Com `JESUS_E2E_EXECUTABLE` apontando
+ * para o executável do build de teste empacotado (`npm run package:test -w @jesus/desktop`), os mesmos testes rodam no
+ * pacote de verdade, com a interface de dentro do `app.asar`.
  */
 
 const desktopDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const mainEntry = join(desktopDir, 'dist-test', 'main.mjs');
+const executable = process.env['JESUS_E2E_EXECUTABLE'];
+const packaged = executable !== undefined && executable !== '';
 const uiDir = join(desktopDir, 'stage', 'ui', 'apps', 'ui');
 const PASSWORD = 'cavalo bateria grampo correto 42';
 
@@ -37,14 +41,17 @@ async function unlock(): Promise<void> {
 }
 
 beforeAll(async () => {
-  for (const [path, how] of [
-    [mainEntry, 'npm run build:test -w @jesus/desktop'],
-    [join(uiDir, '.next', 'required-server-files.json'), 'JESUS_DESKTOP_BUILD=1 npm run build -w @jesus/ui && npm run stage:ui -w @jesus/desktop'],
-  ] as const) {
+  const needed: (readonly [string, string])[] = packaged
+    ? [[executable ?? '', 'npm run package:test -w @jesus/desktop']]
+    : [
+        [mainEntry, 'npm run build:test -w @jesus/desktop'],
+        [join(uiDir, '.next', 'required-server-files.json'), 'JESUS_DESKTOP_BUILD=1 npm run build -w @jesus/ui && npm run stage:ui -w @jesus/desktop'],
+      ];
+  for (const [path, how] of needed) {
     if (!existsSync(path)) throw new Error(`Falta ${path}. Rode: ${how}`);
   }
   userData = await mkdtemp(join(tmpdir(), 'jesus-e2e-'));
-  app = await launchApp({ mainEntry, userData });
+  app = await launchApp({ mainEntry, userData, executable });
   page = app.page;
 });
 

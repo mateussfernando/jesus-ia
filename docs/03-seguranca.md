@@ -592,7 +592,8 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 - O registro de auditoria é **só de acréscimo** e encadeado por hash (cada linha guarda o hash da anterior). O usuário de banco do app não tem `UPDATE`, `DELETE` nem `TRUNCATE` nessa tabela.
 - Mudar o modo de permissão, liberar pasta, ampliar escopo ou editar regras: só pela interface, com confirmação física, e tudo fica registrado.
 - Atualizações do Jesus são assinadas e verificadas; o agente nunca se atualiza sozinho.
-- O Jesus não tem flag de linha de comando do tipo "pular permissões" (lição do caso Nx).
+- O Jesus não tem flag de linha de comando do tipo "pular permissões" (lição do caso Nx). O app de produção não aceita **nenhum** argumento, porque os fusíveis não cobrem `--remote-debugging-port`.
+- **Fusíveis do Electron ([decisão 0018](decisoes/0018-empacotamento-com-electron-builder.md)):** o `.exe` de produção não roda como Node (`ELECTRON_RUN_AS_NODE`), ignora `NODE_OPTIONS` e `--inspect`, só carrega o app de dentro do `app.asar` e, no Windows, confere a integridade do asar. O empacotamento confere os fusíveis e abre o app para ver a recusa (`scripts/check-package.mjs`).
 
 ## 3.14 Cadeia de suprimentos
 
@@ -605,6 +606,7 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 - **Prisma ([decisão 0014](decisoes/0014-prisma-como-orm.md)):** a CLI baixa sozinha um binário nativo (o *schema engine*) de `binaries.prisma.sh`, por fora do lockfile. O projeto evita isso no `prisma generate` (que não precisa dele) e no CI; só o `prisma migrate dev`, na máquina de quem desenvolve, usa o binário. O app instalado não leva a CLI: aplica as migrações em SQL com o migrador próprio. Os scripts de instalação do `prisma` e do `@prisma/engines` estão recusados em `allowScripts`.
 - **Next.js:** traz como dependência opcional o `sharp` (binários de imagem já compilados, sem script de instalação). O Jesus não usa otimização de imagem (`images.unoptimized`), então esses binários ficam instalados e parados.
 - Servidores MCP: versão fixada e hash das definições (seção 3.8).
+- **Empacotamento ([decisão 0018](decisoes/0018-empacotamento-com-electron-builder.md)):** o zip do Electron é conferido com o `checksums.json` do pacote `electron` (fixado no lockfile). Exceção registrada: no Windows, o electron-builder baixa o NSIS, os recursos do NSIS, o 7zip e o winCodeSign por fora do lockfile, cada um conferido por um SHA-256 fixo no código do `app-builder-lib`. O `electron-winstaller` (Squirrel, não usado) tem o script recusado em `allowScripts`. O `npm audit` acusa alertas moderados do `sprintf-js` na cadeia de download do electron-builder (ferramenta só de build).
 - Build reproduzível no GitHub Actions; instalador assinado quando for distribuir.
 
 ## 3.15 Custos e limites (OWASP LLM10)

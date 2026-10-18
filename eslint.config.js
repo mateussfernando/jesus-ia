@@ -38,6 +38,12 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // Configurações em CommonJS (o electron-builder carrega com require).
+    files: ['**/*.config.cjs'],
+    languageOptions: { sourceType: 'commonjs', globals: { ...globals.node, ...globals.commonjs } },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
     // Cena 3D: o padrão do React Three Fiber é mudar objetos do Three.js (materiais, uniforms, posições)
     // dentro de useFrame, a cada quadro, sem passar pelo React. A regra de imutabilidade do React Compiler
     // não se aplica a esse código (o projeto não usa o React Compiler).
