@@ -30,15 +30,20 @@ try {
   cpSync(resolve(source), intact, { recursive: true });
   cpSync(resolve(source), tampered, { recursive: true });
 
-  // Troca um byte do conteúdo do dist/main.mjs dentro do app.asar (não do cabeçalho).
+  // Troca um byte do conteúdo do dist/main.mjs dentro do app.asar (não do cabeçalho), num comentário: sem a
+  // conferência de integridade, o app rodaria igual e sairia com 2. Assim, só a integridade explica a recusa.
   const archive = join(tampered, 'resources', 'app.asar');
   const { headerSize } = asar.getRawHeader(archive);
   // O @electron/asar usa o separador do sistema (no Windows, "\\").
-  const file = asar.statFile(archive, join('dist', 'main.mjs'));
-  const position = 8 + headerSize + Number(file.offset) + 16;
+  const entry = join('dist', 'main.mjs');
+  const file = asar.statFile(archive, entry);
+  const comment = asar.extractFile(archive, entry).indexOf('//#region ');
+  if (comment < 0) throw new Error('não achei um comentário //#region no dist/main.mjs para adulterar');
+  const position = 8 + headerSize + Number(file.offset) + comment + 4;
   const fd = openSync(archive, 'r+');
   const byte = Buffer.alloc(1);
   readSync(fd, byte, 0, 1, position);
+  // Troca a caixa de uma letra ("region" → "rEgion"): continua sendo comentário.
   byte[0] = byte[0] ^ 0x20;
   writeSync(fd, byte, 0, 1, position);
   closeSync(fd);

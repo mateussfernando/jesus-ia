@@ -53,7 +53,7 @@ A prova de 13/10/2026 mostrou que funciona o app empacotado com asar, fusíveis 
 
 ## Consequências
 
-- O `.exe` não serve de Node genérico, não abre com depurador e não carrega app de fora do asar. Mexer no `app.asar` quebra a integridade no Windows (o teste de adulteração entra na etapa 5, no `windows-latest`).
+- O `.exe` não serve de Node genérico, não abre com depurador e não carrega app de fora do asar. Mexer no `app.asar` quebra a integridade no Windows: o teste de adulteração do CI (`windows-latest`, `scripts/tamper-check.mjs`) troca um byte de um comentário do `dist/main.mjs` dentro do asar, e o Electron recusa abrir (a cópia intacta roda e recusa o argumento de teste).
 - O instalador por usuário não pede administrador, condizente com a invariante 6 (o Jesus também recusa abrir elevado). Em compensação, o app fica na pasta do usuário, que outro programa do mesmo usuário consegue alterar. A integridade do asar e a recusa de argumentos reduzem esse risco, mas não o eliminam.
 - O empacotamento do Windows (NSIS) só roda no Windows. No Linux, o CI gera e confere a pasta `linux-unpacked` (produção e teste) e roda os testes de ponta a ponta no pacote de teste.
 - Os ~250 pacotes do electron-builder são só de desenvolvimento e não vão para o app.

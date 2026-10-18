@@ -2,7 +2,7 @@
 
 > **Leia isto antes de qualquer tarefa** e atualize ao terminar cada etapa (o que foi feito, o que falta, onde parou). Serve para continuar o trabalho em outra sessão sem perder contexto. O resumo fixo do projeto está no [`CLAUDE.md`](../CLAUDE.md); aqui fica o **andamento**.
 
-**Última atualização:** 18/10/2026, sessão na nuvem (trabalho feito na `ccr-d2d5ac72-nmmks6` e levado para a `main-7zybuc` com o aval do dono; veja "Branch" abaixo). **Fase 1 em andamento: etapas 0 a 4 feitas; a próxima é a etapa 5** (seção "Fase 1: andamento").
+**Última atualização:** 18/10/2026, sessão na nuvem (trabalho feito na `ccr-d2d5ac72-nmmks6` e levado para a `main-7zybuc` com o aval do dono; veja "Branch" abaixo). **Fase 1 em andamento: etapas 0 a 5 feitas; a próxima é a etapa 6** (seção "Fase 1: andamento"). O `.exe` do CI espera o teste do dono no PC dele.
 
 ## Onde estamos
 
@@ -146,7 +146,7 @@ Roteiro: [plano da fase 1](rascunhos/plano-fase-1.md). Cada etapa é um commit c
   - Dependências: 248 pacotes novos, todos de desenvolvimento e com 3 dias ou mais (o `min-release-age` garante); só o `electron-winstaller` tem script de instalação, recusado em `allowScripts`. `@electron/fuses` 1.8.0 e `@electron/asar` 3.4.1 explícitos (já estavam na árvore). O `npm audit` passou a acusar 8 alertas moderados do `sprintf-js` (cadeia de download do electron-builder; ferramenta de build) além dos 4 altos da CLI do Prisma.
   - CI: o job do Linux empacota e confere a produção e roda os testes de ponta a ponta no pacote de teste. O instalador `.exe` (NSIS) e o teste de adulteração do asar ficam para o job `windows-latest` da etapa 5.
   - CI verde no `4e1473c`: no runner (usuário comum), a conferência abriu o app de produção e viu a recusa; os 12 testes de ponta a ponta passaram no pacote de teste, com a sandbox ligada.
-- **Etapa 5 (em andamento, 18/10/2026):** job `windows` no `.github/workflows/ci.yml` (mesmo gatilho do job do Linux: cada envio para a branch do PR roda os dois uma vez; o repositório é **público**, então os minutos do Windows não pesam no limite do Actions, e a pergunta 7 do plano fica com a proposta). O job:
+- **Etapa 5 (18/10/2026, CI verde no `75b8901`):** job `windows` no `.github/workflows/ci.yml` (mesmo gatilho do job do Linux: cada envio para a branch do PR roda os dois uma vez; o repositório é **público**, então os minutos do Windows não pesam no limite do Actions, e a pergunta 7 do plano fica com a proposta). O job:
   1. roda os testes de unidade e de integração;
   2. gera o pacote de teste (`--dir`) e roda nele os testes de ponta a ponta;
   3. gera o instalador NSIS de produção e o confere;
@@ -154,9 +154,12 @@ Roteiro: [plano da fase 1](rascunhos/plano-fase-1.md). Cada etapa é um commit c
   5. põe o SHA-256 do instalador no resumo (`scripts/installer-summary.mjs`) e publica o artefato `jesus-windows-x64`.
   - Os runners Windows do GitHub rodam como administrador: o build de teste só registra a elevação e segue (o de produção recusa abrir). O harness passa no Windows as variáveis do sistema (`SystemRoot` e afins), sem elas nem a conferência de administrador roda.
   - O `.exe` do artefato fica baixável por qualquer conta do GitHub (repositório público). Ele não leva segredo nenhum.
+  - Ajustes até ficar verde: caminhos de dentro do `app.asar` com o separador do Windows (`\`) no `@electron/asar`; no fim dos testes de ponta a ponta, o app sai por `app.quit()` (no Windows, o `kill` deixava os auxiliares do Chromium segurando a pasta de dados, e apagá-la dava `EBUSY`; e, com o inspetor do Node conectado, o processo espera o depurador sair, então o inspetor fecha logo depois do pedido).
+  - Resultado no `windows-latest`: 12 testes de ponta a ponta no pacote de teste; pacote de produção conferido abrindo o app (recusa de argumentos e do `ELECTRON_RUN_AS_NODE`); adulteração do `app.asar` barrada (intacto: saída 2; adulterado: saída 1, sem rodar o código do app). O teste de adulteração troca um byte de um **comentário** do `dist/main.mjs` (sem a integridade, o app rodaria igual e sairia com 2).
+  - Primeiro instalador: `Jesus-Setup-0.1.0.exe`, SHA-256 `65b933af08cb1028293f25808619bf58f27bcae7a77fb4ee968792f44914e369` (run 39165456027; cada envio gera um novo, guardado por 14 dias).
 
 **Falta (nesta ordem):**
-1. **Fase 1, conforme o [plano da fase 1](rascunhos/plano-fase-1.md)** (14 etapas, montado em 13/10/2026 por pesquisa, planejador e crítico): Electron (`apps/desktop`) com o servidor do Next num utilityProcess, sem porta; empacotamento e `.exe` no `windows-latest`; registro; eventos do Windows; cofre da chave; Cérebro e saída para a API; chat com o Claude Haiku 5.5; Porteiro mínimo para leituras; ferramentas de leitura; tela do registro. **Feito:** etapas 0 a 3 (veja "Fase 1: andamento"). **Em andamento:** etapa 5 (o primeiro job `windows-latest` roda depois deste envio; ajustar até ficar verde). **Depois:** o dono testa o `.exe` do artefato no PC dele; etapa 6 (`packages/shared`, logger com redação e registro de auditoria). A revisão independente das etapas 1 a 3 ficou incompleta (limite de uso): recomendar ao dono rodar de novo com o ultracode.
+1. **Fase 1, conforme o [plano da fase 1](rascunhos/plano-fase-1.md)** (14 etapas, montado em 13/10/2026 por pesquisa, planejador e crítico): Electron (`apps/desktop`) com o servidor do Next num utilityProcess, sem porta; empacotamento e `.exe` no `windows-latest`; registro; eventos do Windows; cofre da chave; Cérebro e saída para a API; chat com o Claude Haiku 5.5; Porteiro mínimo para leituras; ferramentas de leitura; tela do registro. **Feito:** etapas 0 a 3 (veja "Fase 1: andamento"). **Próxima:** etapa 6 (`packages/shared` com `maskSecrets`, `wrapUntrusted` e `canonicalJson`; logger com redação; registro de auditoria encadeado com âncora fora do arquivo; decisão 0022). **Pendente do dono:** testar o `.exe` do artefato `jesus-windows-x64` no PC dele. A revisão independente das etapas 1 a 3 ficou incompleta (limite de uso): recomendar ao dono rodar de novo com o ultracode.
 2. Depois da fase 1: memória (com `detectSensitive` em `packages/shared`) → login automático de contas → subagentes. Ligar cada um ao holograma e trocar os controles manuais correspondentes do laboratório por simulação automática.
 3. Promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.
 
@@ -170,6 +173,8 @@ Roteiro: [plano da fase 1](rascunhos/plano-fase-1.md). Cada etapa é um commit c
 - **Autonomia (12/10/2026):** seguir trabalhando sozinho e só parar quando ele precisar decidir algo ou fazer algo à mão (testar no Windows, criar conta, colar chave). O limite de uso às vezes acaba no meio; ele retoma a sessão depois. Por isso: commit e push a cada passo que passa nos testes, e o diário sempre em dia.
 
 ## Pendências do dono do projeto
+
+- **Testar o instalador do CI no PC (fase 1, etapa 5):** no PR #1, aba *Checks* (ou *Actions*), abrir a execução mais recente do CI, baixar o artefato `jesus-windows-x64` e descompactar. Conferir o hash no PowerShell (`Get-FileHash .\Jesus-Setup-0.1.0.exe`, comparando com o resumo da execução) e instalar. O SmartScreen avisa porque não há assinatura: "Mais informações" → "Executar assim mesmo". Conferir: instala sem pedir administrador; abre na tela "Crie a senha do Jesus"; criar a senha e anotar o código; a aba Cenários com o holograma (fps); "Bloquear"; fechar e abrir de novo pede a senha; abrir "como administrador" é recusado.
 
 - No fim do projeto, levar a `main-7zybuc` para a `main` (ele mesmo faz).
 - Criar a conta no Console da Anthropic (platform.claude.com), cadastrar cartão internacional, pôr um limite de gasto e criar a chave de API (guardar num gerenciador de senhas; ela só entra no Jesus pelo cofre, na fase 1).
