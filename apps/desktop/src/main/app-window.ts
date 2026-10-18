@@ -1,6 +1,6 @@
 import { BrowserWindow, webFrameMain } from 'electron';
 import type { Session, WebContents } from 'electron';
-import { isAllowedNavigation, isAppOrigin } from './policy/url';
+import { isAllowedCommittedFrame, isAllowedNavigation } from './policy/url';
 
 /**
  * Janela do Jesus e as guardas de cada `webContents` (seção 3.12). Sem preload, sem Node, sandbox ligada, sem
@@ -37,11 +37,11 @@ export function guardWebContents(contents: WebContents, onViolation: (violation:
     event.preventDefault();
     callback('');
   });
-  // Vigia de quadros: depois de cada navegação que se completa, a origem do quadro tem que ser a do app.
-  contents.on('did-frame-navigate', (_event, url, _code, _status, _isMainFrame, processId, routingId) => {
+  // Vigia de quadros: depois de cada navegação que se completa, o quadro tem que ser do app (policy/url.ts).
+  contents.on('did-frame-navigate', (_event, url, _code, _status, isMainFrame, processId, routingId) => {
     const frame = webFrameMain.fromId(processId, routingId);
     const origin = frame?.origin ?? 'null';
-    if (!isAppOrigin(origin)) onViolation({ kind: 'frame-origin', url });
+    if (!isAllowedCommittedFrame({ url, origin, isMainFrame })) onViolation({ kind: 'frame-origin', url });
   });
 }
 

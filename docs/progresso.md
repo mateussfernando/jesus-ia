@@ -2,7 +2,7 @@
 
 > **Leia isto antes de qualquer tarefa** e atualize ao terminar cada etapa (o que foi feito, o que falta, onde parou). Serve para continuar o trabalho em outra sessão sem perder contexto. O resumo fixo do projeto está no [`CLAUDE.md`](../CLAUDE.md); aqui fica o **andamento**.
 
-**Última atualização:** 15/10/2026, sessão na nuvem (trabalho feito na `ccr-d2d5ac72-nmmks6` e levado para a `main-7zybuc` com o aval do dono; veja "Branch" abaixo). **Fase 1 em andamento: etapas 0 a 3 feitas; a próxima é a etapa 4** (seção "Fase 1: andamento").
+**Última atualização:** 18/10/2026, sessão na nuvem (trabalho feito na `ccr-d2d5ac72-nmmks6` e levado para a `main-7zybuc` com o aval do dono; veja "Branch" abaixo). **Fase 1 em andamento: etapas 0 a 3 feitas; a próxima é a etapa 4** (seção "Fase 1: andamento").
 
 ## Onde estamos
 
@@ -131,9 +131,17 @@ Roteiro: [plano da fase 1](rascunhos/plano-fase-1.md). Cada etapa é um commit c
     - sem GPU, o WebGL do holograma só sobe com `--enable-unsafe-swiftshader` (só nos testes);
     - o `_electron.launch` do Playwright não serve: conecta antes da troca inicial de processo da janela (que usa uma partição própria), recebe `Inspector.targetCrashed` e nunca entrega a página. O harness abre o Electron, conecta pelo CDP depois que a página carregou (`connectOverCDP`) e pelo inspetor do Node no processo principal.
   - 14 testes de unidade novos (102 no `apps/desktop`): `app-protocol` (pote de cookies, 403, CSP no 3xx), `paths`, `elevation`.
+  - CI verde no `2c170cb` (com a sandbox do Chromium ligada; o primeiro envio falhou só porque o teste do holograma contava avisos de desempenho do WebGL como erro).
+- **Revisão independente das etapas 1 a 3 (15 a 18/10/2026): incompleta.** O ultracode estava ligado e a revisão rodou com 4 revisores e verificação adversarial, mas todos pararam no limite de uso: dois ("processos e build" e "testes") mal começaram, e o da "ponte" pesquisou sem concluir. O revisor da "janela" deixou uma sonda com o app de verdade, cujas saídas foram aproveitadas dos registros:
+  - barrados (conferido): `mailto:` com dados na URL, `ms-settings:`, `meta refresh` para fora, navegação para `blob:`, download, iframe sem `src` com sandbox (pego pelo vigia);
+  - **corrigido:** a página principal levada para `about:blank` (por script ou `meta refresh`) não era pega por nada (herda a origem do app). O vigia agora exige endereço do app no quadro principal (`isAllowedCommittedFrame`);
+  - **corrigido:** o vigia pulava uma violação que viesse menos de 2 s depois da anterior (o teste novo mostrou a página parada em `about:blank`). Agora toda violação age, e um disjuntor fecha o app com mais de 8 em 10 s;
+  - **corrigido:** `loadURL` rejeitado ficava sem tratamento, e uma abertura interrompida fechava o app (`app.exit(1)`). No Electron 44, rejeição sem tratamento no principal só gera aviso (conferido);
+  - defesa a mais: cabeçalhos `x-prerender-*` (revalidação sob demanda do Next) não vêm da página.
+  - **Recomendação ao dono:** rodar de novo a revisão independente das etapas 1 a 3 (ponte, processos e build, testes) quando ele ligar o ultracode; ela gasta bastante do limite.
 
 **Falta (nesta ordem):**
-1. **Fase 1, conforme o [plano da fase 1](rascunhos/plano-fase-1.md)** (14 etapas, montado em 13/10/2026 por pesquisa, planejador e crítico): Electron (`apps/desktop`) com o servidor do Next num utilityProcess, sem porta; empacotamento e `.exe` no `windows-latest`; registro; eventos do Windows; cofre da chave; Cérebro e saída para a API; chat com o Claude Haiku 5.5; Porteiro mínimo para leituras; ferramentas de leitura; tela do registro. **Feito:** etapas 0 a 3 (veja "Fase 1: andamento"). **Próxima:** revisão independente das etapas 1 a 3 (sessão, ponte e pote de cookies; o dono ligou o ultracode nesta sessão) e depois a etapa 4 (empacotamento com electron-builder 26.17.0 e decisão 0018).
+1. **Fase 1, conforme o [plano da fase 1](rascunhos/plano-fase-1.md)** (14 etapas, montado em 13/10/2026 por pesquisa, planejador e crítico): Electron (`apps/desktop`) com o servidor do Next num utilityProcess, sem porta; empacotamento e `.exe` no `windows-latest`; registro; eventos do Windows; cofre da chave; Cérebro e saída para a API; chat com o Claude Haiku 5.5; Porteiro mínimo para leituras; ferramentas de leitura; tela do registro. **Feito:** etapas 0 a 3 (veja "Fase 1: andamento"). **Próxima:** etapa 4 (empacotamento com electron-builder 26.17.0 e decisão 0018). A revisão independente das etapas 1 a 3 ficou incompleta (limite de uso): recomendar ao dono rodar de novo com o ultracode.
 2. Depois da fase 1: memória (com `detectSensitive` em `packages/shared`) → login automático de contas → subagentes. Ligar cada um ao holograma e trocar os controles manuais correspondentes do laboratório por simulação automática.
 3. Promover as quatro especificações a documentação oficial (seções em `docs/02`, `05`, `06`, `09`), com decisão registrada se mudar algo já decidido.
 

@@ -166,6 +166,24 @@ describe('app de desktop: janela sem porta', () => {
     await unlock();
   });
 
+  it('página principal levada para about:blank (por script ou meta refresh): o vigia derruba a sessão', async () => {
+    // about:blank herda a origem do app e não passa pela guarda de navegação: só o vigia pega.
+    const blanks = () => hooks<number>("h.violations.filter((v) => v.kind === 'frame-origin' && v.url === 'about:blank').length");
+    await page.evaluate(() => {
+      location.href = 'about:blank';
+    });
+    await expect.poll(blanks).toBe(1);
+    await unlock();
+    await page.evaluate(() => {
+      const meta = document.createElement('meta');
+      meta.httpEquiv = 'refresh';
+      meta.content = '0;url=about:blank';
+      document.head.append(meta);
+    });
+    await expect.poll(blanks).toBe(2);
+    await unlock();
+  });
+
   it('bloquear apaga a sessão e volta para a entrada', async () => {
     await page.goto(`${APP}/`);
     await page.getByRole('button', { name: 'Bloquear', exact: true }).click();

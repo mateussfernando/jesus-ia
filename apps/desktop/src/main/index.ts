@@ -12,6 +12,7 @@ import { buildChildEnv } from './child-env';
 import { CookieJar } from './cookie-jar';
 import { checkElevation } from './elevation';
 import { APP_NAME, appPaths } from './paths';
+import { ViolationBreaker } from './policy/breaker';
 import { phase1PermissionPolicy } from './policy/permissions';
 import { APP_DISABLED_FEATURES, mergeFeatureList, unexpectedArguments } from './policy/switches';
 import { APP_ORIGIN } from './policy/url';
@@ -33,23 +34,39 @@ function log(message: string): void {
 
 let window: BrowserWindow | null = null;
 let jar: CookieJar | null = null;
-let lastReset = 0;
+// Mais de 8 quadros de fora em 10 s: algo está muito errado (ou em laço), e o app fecha.
+const frameBreaker = new ViolationBreaker({ limit: 8, windowMs: 10_000 });
 const violations: Violation[] = [];
 const serverEvents: UiServerEvent[] = [];
 
 /**
- * Algo tentou sair do app. Navegação, janela nova e `webview` já foram barradas pela guarda; um quadro com outra
- * origem que chegou a carregar é tratado como invasão: a sessão cai e a janela volta para o início (bloqueada).
+ * Volta a janela para o início. O `loadURL` rejeita quando outra navegação interrompe esta (por exemplo, a página de
+ * 503 se recarregando sozinha): isso não é erro do app, só fica registrado.
+ */
+function goHome(win: BrowserWindow | null, reason: string): Promise<void> {
+  if (win === null || win.isDestroyed()) return Promise.resolve();
+  return win.loadURL(APP_HOME).catch((error: unknown) => {
+    log(`início não carregou (${reason}): ${error instanceof Error ? error.message : String(error)}`);
+  });
+}
+
+/**
+ * Algo tentou sair do app. Navegação, janela nova e `webview` já foram barradas pela guarda; um quadro de fora que
+ * chegou a carregar é tratado como invasão: a sessão cai e a janela volta para o início (bloqueada), sempre. O
+ * disjuntor fecha o app se isso se repetir demais (laço de recargas).
  */
 function onViolation(violation: Violation): void {
   violations.push(violation);
   log(`recusado (${violation.kind}): ${violation.url.slice(0, 200)}`);
   if (violation.kind !== 'frame-origin') return;
-  const now = Date.now();
-  if (now - lastReset < 2_000) return;
-  lastReset = now;
   jar?.clear();
-  void window?.loadURL(APP_HOME);
+  if (frameBreaker.record()) {
+    log('quadros de fora demais em pouco tempo: o app vai fechar');
+    dialog.showErrorBox(APP_NAME, 'O Jesus encontrou várias vezes conteúdo que não é dele e fechou por segurança.');
+    app.exit(4);
+    return;
+  }
+  void goHome(window, 'quadro de fora');
 }
 
 /** Saída do servidor da interface: vai para o stderr do principal, marcada, cortada em linhas razoáveis. */
@@ -105,7 +122,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
       // O estado de acesso morreu com o processo: a sessão antiga não vale mais.
       if (event.type === 'exited') cookies.clear();
       // O servidor novo começa bloqueado: a janela volta para o início (que leva à tela de entrada).
-      if (event.type === 'ready' && event.attempt > 1) void window?.loadURL(APP_HOME);
+      if (event.type === 'ready' && event.attempt > 1) void goHome(window, 'servidor da interface reiniciado');
     },
   });
 
@@ -129,7 +146,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   });
   win.webContents.on('render-process-gone', (_event, details) => {
     log(`a página caiu (${details.reason}); recarregando o início`);
-    setTimeout(() => void window?.loadURL(APP_HOME), 1_000);
+    setTimeout(() => void goHome(window, 'página caiu'), 1_000);
   });
   app.on('second-instance', () => {
     if (window === null) return;
@@ -156,7 +173,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   }
 
   await uiServer.whenReady().catch(() => undefined);
-  await win.loadURL(APP_HOME);
+  await goHome(win, 'abertura');
 }
 
 function start(): void {

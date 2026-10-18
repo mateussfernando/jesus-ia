@@ -29,7 +29,18 @@ const HOP_BY_HOP: ReadonlySet<string> = new Set([
 
 /** Cabeçalhos que a página não pode ditar ao servidor: o endereço vem da URL, e os internos do Next nunca da página. */
 const FROM_PAGE_DENY: ReadonlySet<string> = new Set(['host', 'forwarded', 'x-real-ip', 'accept-encoding']);
-const FROM_PAGE_DENY_PREFIXES = ['x-forwarded-', 'x-middleware-', 'x-invoke-', 'x-next-', 'x-nextjs-', 'x-matched-path', 'x-now-', 'x-vercel-'];
+const FROM_PAGE_DENY_PREFIXES = [
+  'x-forwarded-',
+  'x-middleware-',
+  'x-invoke-',
+  'x-next-',
+  'x-nextjs-',
+  'x-matched-path',
+  'x-now-',
+  'x-vercel-',
+  // Revalidação sob demanda do Next (`x-prerender-revalidate`): nunca vem da página.
+  'x-prerender-',
+];
 
 /** Respostas que nunca têm corpo. */
 const NULL_BODY_STATUS: ReadonlySet<number> = new Set([101, 103, 204, 205, 304]);

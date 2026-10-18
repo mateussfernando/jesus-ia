@@ -122,6 +122,8 @@ describe('adaptador em memória Request → Node → Response', () => {
     expect(isHeaderFromPageAllowed('X-Forwarded-Proto')).toBe(false);
     expect(isHeaderFromPageAllowed('Transfer-Encoding')).toBe(false);
     expect(isHeaderFromPageAllowed('x-nextjs-data')).toBe(false);
+    expect(isHeaderFromPageAllowed('X-Prerender-Revalidate')).toBe(false);
+    expect(isHeaderFromPageAllowed('x-prerender-revalidate-if-generated')).toBe(false);
   });
 
   it('manda o corpo em streaming: o primeiro pedaço chega antes do fim', async () => {

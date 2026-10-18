@@ -36,3 +36,13 @@ export function isAllowedNavigation(raw: string): boolean {
 export function isAppOrigin(origin: string): boolean {
   return origin === APP_ORIGIN;
 }
+
+/**
+ * Um quadro que terminou de navegar pode ficar (vigia de quadros, seção 3.12). Todo quadro precisa da origem do app.
+ * O quadro principal precisa, além disso, estar num endereço do app: `about:blank` herda a origem de quem navegou e
+ * não passa pela guarda de navegação (o Electron não avisa antes), então só a origem não basta.
+ */
+export function isAllowedCommittedFrame(frame: { readonly url: string; readonly origin: string; readonly isMainFrame: boolean }): boolean {
+  if (!isAppOrigin(frame.origin)) return false;
+  return !frame.isMainFrame || isAppUrl(frame.url);
+}
