@@ -1,6 +1,6 @@
 import { BRIDGE_METHODS, CREDIT_WINDOW, MAX_HEADER_BYTES, MAX_HEADERS, MAX_REQUEST_BODY_BYTES, MAX_URL_LENGTH } from '../bridge/protocol';
 import { parseFromServer, parseRequestPortOut } from '../bridge/protocol';
-import type { BridgeMethod, ConfigMessage, HeaderList, RequestMeta } from '../bridge/protocol';
+import type { ActivityMessage, BridgeMethod, ConfigMessage, HeaderList, LockMessage, RequestMeta } from '../bridge/protocol';
 import { wrapPort } from '../bridge/ports';
 import type { ChannelLike, UtilityChildLike } from '../bridge/ports';
 import { isAppUrl } from './policy/url';
@@ -55,7 +55,7 @@ export type UiServerEvent =
   | { readonly type: 'ready'; readonly attempt: number; readonly pid: number | undefined; readonly prepareMs: number }
   | {
       readonly type: 'failed';
-      readonly reason: 'fork-error' | 'failed-message' | 'ready-timeout' | 'invalid-message' | 'unresponsive';
+      readonly reason: 'fork-error' | 'failed-message' | 'ready-timeout' | 'invalid-message' | 'unresponsive' | 'lock-unconfirmed';
       readonly message: string;
     }
   | { readonly type: 'exited'; readonly code: number; readonly inflight: number }
@@ -70,6 +70,8 @@ export interface UiServerOptions {
   readonly createChannel: () => ChannelLike;
   readonly config: Omit<ConfigMessage, 'type'>;
   readonly onEvent?: (event: UiServerEvent) => void;
+  /** O servidor confirmou um bloqueio mandado com `notify` (decisão 0019). */
+  readonly onLockAck?: (seq: number) => void;
   readonly timing?: Partial<UiServerTiming>;
   readonly now?: () => number;
 }
@@ -79,6 +81,10 @@ export interface UiServer {
   serve(request: Request): Promise<Response>;
   /** Resolve quando o servidor fica pronto pela primeira vez; rejeita se ele desistir de subir ou for parado antes. */
   whenReady(): Promise<void>;
+  /** Aviso do principal ao servidor pronto (bloqueio, uso). `false` se não há servidor pronto para receber. */
+  notify(message: LockMessage | ActivityMessage): boolean;
+  /** Derruba o servidor atual, que sobe de novo (bloqueado): um bloqueio sem confirmação no prazo. */
+  restartUnconfirmed(): void;
   stop(): void;
 }
 
@@ -289,6 +295,10 @@ export function startUiServer(options: UiServerOptions): UiServer {
         terminate(child);
         return;
       }
+      if (message.type === 'lock-ack') {
+        if (record.ready) options.onLockAck?.(message.seq);
+        return;
+      }
       if (message.type === 'pong') {
         // Só vale a resposta ao `ping` pendente; qualquer outra é fuga do protocolo.
         if (ping?.seq !== message.seq) {
@@ -319,7 +329,7 @@ export function startUiServer(options: UiServerOptions): UiServer {
     });
 
     try {
-      child.postMessage({ type: 'config', uiDir: options.config.uiDir, dataDir: options.config.dataDir });
+      child.postMessage({ type: 'config', ...options.config });
     } catch {
       terminate(child);
     }
@@ -495,6 +505,22 @@ export function startUiServer(options: UiServerOptions): UiServer {
       }
     },
     whenReady: () => firstReady,
+    notify(message) {
+      const record = current;
+      if (record?.ready !== true) return false;
+      try {
+        record.child.postMessage(message);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    restartUnconfirmed() {
+      const record = current;
+      if (record === null) return;
+      emit({ type: 'failed', reason: 'lock-unconfirmed', message: 'o servidor da interface não confirmou o bloqueio a tempo' });
+      terminate(record.child);
+    },
     stop() {
       if (stopped) return;
       stopped = true;

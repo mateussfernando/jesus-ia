@@ -79,6 +79,24 @@ describe('protocolo da ponte com o servidor da interface', () => {
     expect(parseFromServer({ type: 'ping', seq: 1 })).toBeNull();
   });
 
+  it('bloqueio e uso vindos do principal; confirmação do servidor', () => {
+    expect(parseToServer({ type: 'lock', reason: 'os_locked', seq: 3 })).toEqual({ type: 'lock', reason: 'os_locked', seq: 3 });
+    expect(parseToServer({ type: 'lock', reason: 'suspend', seq: 4 })?.type).toBe('lock');
+    expect(parseToServer({ type: 'lock', reason: 'manual', seq: 1 })).toBeNull();
+    expect(parseToServer({ type: 'lock', reason: 'os_locked' })).toBeNull();
+    expect(parseToServer({ type: 'activity' })).toEqual({ type: 'activity' });
+    expect(parseToServer({ type: 'activity', at: 1 })).toBeNull();
+    expect(parseFromServer({ type: 'lock-ack', seq: 3 })).toEqual({ type: 'lock-ack', seq: 3 });
+    expect(parseFromServer({ type: 'lock-ack', seq: 0 })).toBeNull();
+  });
+
+  it('configuração: tempo sem uso só dentro da faixa', () => {
+    const config = { type: 'config', uiDir: '/app/ui', dataDir: '/dados' };
+    expect(parseToServer({ ...config, idleMs: 3_000 })).toEqual({ ...config, idleMs: 3_000 });
+    expect(parseToServer({ ...config, idleMs: 999 })).toBeNull();
+    expect(parseToServer({ ...config, idleMs: 121 * 60_000 })).toBeNull();
+  });
+
   it('mensagens do servidor: pronto, falha, e nada além disso', () => {
     expect(parseFromServer({ type: 'ready', prepareMs: 180 })).toEqual({ type: 'ready', prepareMs: 180 });
     expect(parseFromServer({ type: 'failed', message: 'erro' })?.type).toBe('failed');

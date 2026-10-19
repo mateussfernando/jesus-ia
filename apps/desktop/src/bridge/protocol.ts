@@ -74,6 +74,8 @@ export const ConfigMessageSchema = z.strictObject({
   uiDir: absolutePath,
   /** Pasta de dados do Jesus (credencial da senha local, enquanto o PostgreSQL embutido não chega). */
   dataDir: absolutePath,
+  /** Tempo sem uso até bloquear, em ms. Só o build de teste manda (para os testes não esperarem 15 min). */
+  idleMs: z.number().int().min(1_000).max(120 * 60_000).optional(),
 });
 export type ConfigMessage = z.infer<typeof ConfigMessageSchema>;
 
@@ -85,7 +87,25 @@ const pingSeq = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 /** Sinal de vida: o principal pergunta de tempos em tempos, e o servidor responde `pong` na hora. */
 export const PingMessageSchema = z.strictObject({ type: z.literal('ping'), seq: pingSeq });
 
-export const ToServerMessageSchema = z.discriminatedUnion('type', [ConfigMessageSchema, RequestMessageSchema, PingMessageSchema]);
+/** Bloqueios que vêm do Windows (sessão bloqueada, suspensão), vistos pelo principal (decisão 0019). */
+export const HOST_LOCK_REASONS = ['os_locked', 'suspend'] as const;
+export type HostLockReason = (typeof HOST_LOCK_REASONS)[number];
+
+/** Bloqueia agora. O servidor responde `lock-ack` com o mesmo número depois de aplicar; sem resposta, reinicia. */
+export const LockMessageSchema = z.strictObject({ type: z.literal('lock'), reason: z.enum(HOST_LOCK_REASONS), seq: pingSeq });
+/** Uso de verdade (tecla, clique, rolagem) na janela, visto pelo principal: a página não consegue fingir. */
+export const ActivityMessageSchema = z.strictObject({ type: z.literal('activity') });
+
+export type LockMessage = z.infer<typeof LockMessageSchema>;
+export type ActivityMessage = z.infer<typeof ActivityMessageSchema>;
+
+export const ToServerMessageSchema = z.discriminatedUnion('type', [
+  ConfigMessageSchema,
+  RequestMessageSchema,
+  PingMessageSchema,
+  LockMessageSchema,
+  ActivityMessageSchema,
+]);
 export type ToServerMessage = z.infer<typeof ToServerMessageSchema>;
 
 // Servidor da interface → processo principal (pelo parentPort).
@@ -99,7 +119,13 @@ export const FailedMessageSchema = z.strictObject({
   message: z.string().max(MAX_FAILURE_MESSAGE),
 });
 export const PongMessageSchema = z.strictObject({ type: z.literal('pong'), seq: pingSeq });
-export const FromServerMessageSchema = z.discriminatedUnion('type', [ReadyMessageSchema, FailedMessageSchema, PongMessageSchema]);
+export const LockAckMessageSchema = z.strictObject({ type: z.literal('lock-ack'), seq: pingSeq });
+export const FromServerMessageSchema = z.discriminatedUnion('type', [
+  ReadyMessageSchema,
+  FailedMessageSchema,
+  PongMessageSchema,
+  LockAckMessageSchema,
+]);
 export type FromServerMessage = z.infer<typeof FromServerMessageSchema>;
 
 // Port de cada pedido: principal → servidor.

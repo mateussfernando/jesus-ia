@@ -5,6 +5,8 @@ import {
   accessTransition,
   checkAccess,
   createAccessClock,
+  hostActivity,
+  hostLock,
   idlePolicyFromEnv,
   initialAccessState,
   lockedSinceOf,
@@ -12,6 +14,7 @@ import {
 } from './access';
 import type { AccessState, SessionOpening } from './access';
 import { credentialStoreFromEnv } from './credential-store';
+import { desktopBridge } from './desktop-bridge';
 import { createFileCredentialRepo } from './file-credential-repo';
 import { newSessionToken } from './session';
 
@@ -25,6 +28,9 @@ import { newSessionToken } from './session';
  * - `JESUS_DATA_DIR`: sem banco, pasta do arquivo da credencial (padrão: `.jesus-dev`, só para desenvolvimento).
  * - `JESUS_IDLE_MINUTES`: tempo sem uso até bloquear (1 a 120; padrão 15).
  * - `JESUS_HTTPS=1`: o app roda em https (cookie com `Secure`).
+ *
+ * Dentro do app de desktop, a ponte do processo principal (`desktop-bridge.ts`, decisão 0019) entrega os bloqueios do
+ * Windows e o uso de verdade; aí o sinal de uso da página não conta (a página poderia fingir).
  */
 
 export interface AuthRuntime {
@@ -33,6 +39,8 @@ export interface AuthRuntime {
   readonly secureCookies: boolean;
   /** Relógio do estado de acesso (nunca volta; veja `createAccessClock`). A espera da senha usa o de parede. */
   readonly now: () => number;
+  /** O uso vem do processo principal (app de desktop): o sinal da página não adia o bloqueio. */
+  readonly activityFromHost: boolean;
   state: AccessState;
 }
 
@@ -78,11 +86,24 @@ async function buildRuntime(): Promise<AuthRuntime> {
     hasher: bcryptHasher(),
     audit: (event) => console.info(auditLine(event)),
   });
-  const policy = idlePolicyFromEnv(process.env['JESUS_IDLE_MINUTES']);
+  const bridge = desktopBridge();
+  // O tempo sem uso pela ponte só chega no build de teste do app (e pode ficar abaixo de 1 min); fora dele, vale o do
+  // ambiente (ou o padrão).
+  const policy =
+    bridge?.idleMs !== undefined ? { idleMs: bridge.idleMs, minIdleMs: bridge.idleMs } : idlePolicyFromEnv(process.env['JESUS_IDLE_MINUTES']);
   const now = createAccessClock();
   const exists = (await service.status()) === 'ready';
   const { state } = accessTransition(initialAccessState, { e: 'CREDENTIAL_LOADED', now: now(), exists }, policy);
-  return { service, policy, secureCookies: process.env['JESUS_HTTPS'] === '1', now, state };
+  const runtime: AuthRuntime = { service, policy, secureCookies: process.env['JESUS_HTTPS'] === '1', now, activityFromHost: bridge !== null, state };
+  if (bridge !== null) {
+    bridge.onLock((reason) => {
+      runtime.state = hostLock(runtime.state, reason, runtime.now(), runtime.policy).state;
+    });
+    bridge.onActivity(() => {
+      runtime.state = hostActivity(runtime.state, runtime.now(), runtime.policy).state;
+    });
+  }
+  return runtime;
 }
 
 /**

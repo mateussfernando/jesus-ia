@@ -43,6 +43,12 @@ export type LockEffect =
 export interface LockPolicy {
   /** Tempo sem uso até bloquear. Ajustável de 1 a 120 min (decisão 0015). */
   readonly idleMs: number;
+  /**
+   * Piso do tempo sem uso (padrão: 1 min). Só os testes de ponta a ponta baixam: o build de teste do app de desktop
+   * manda um tempo curto pela ponte do processo principal, e o de produção nunca manda (decisão 0019). Nunca abaixo
+   * de 1 s.
+   */
+  readonly minIdleMs?: number;
 }
 
 export const MIN_IDLE_MS = 60_000;
@@ -50,9 +56,10 @@ export const MAX_IDLE_MS = 120 * 60_000;
 export const defaultLockPolicy: LockPolicy = { idleMs: 15 * 60_000 };
 
 /** Prende o tempo sem uso na faixa permitida; valor inválido vira o padrão. */
-export function clampIdleMs(idleMs: number): number {
+export function clampIdleMs(idleMs: number, minIdleMs: number = MIN_IDLE_MS): number {
   if (!Number.isFinite(idleMs)) return defaultLockPolicy.idleMs;
-  return Math.min(MAX_IDLE_MS, Math.max(MIN_IDLE_MS, Math.round(idleMs)));
+  const floor = Number.isFinite(minIdleMs) ? Math.min(MIN_IDLE_MS, Math.max(1_000, minIdleMs)) : MIN_IDLE_MS;
+  return Math.min(MAX_IDLE_MS, Math.max(floor, Math.round(idleMs)));
 }
 
 export const initialLockState: LockState = { kind: 'loading' };
@@ -73,14 +80,14 @@ function lock(reason: LockReason, now: number): Transition {
 function unlocked(now: number, policy: LockPolicy): Transition {
   return {
     state: { kind: 'unlocked', since: now, lastActivityAt: now },
-    effects: [{ fx: 'show_app' }, { fx: 'schedule_tick', at: now + clampIdleMs(policy.idleMs) }],
+    effects: [{ fx: 'show_app' }, { fx: 'schedule_tick', at: now + clampIdleMs(policy.idleMs, policy.minIdleMs) }],
   };
 }
 
 const unchanged = (state: LockState): Transition => ({ state, effects: [] });
 
 export function lockTransition(state: LockState, event: LockEvent, policy: LockPolicy = defaultLockPolicy): Transition {
-  const idleMs = clampIdleMs(policy.idleMs);
+  const idleMs = clampIdleMs(policy.idleMs, policy.minIdleMs);
   switch (event.e) {
     case 'CREDENTIAL_LOADED':
       if (state.kind !== 'loading') return unchanged(state);

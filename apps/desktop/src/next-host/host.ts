@@ -2,6 +2,8 @@ import { CREDIT_WINDOW, MAX_CHUNK_BYTES, parseRequestPortIn, parseToServer } fro
 import type { ConfigMessage, RequestMeta } from '../bridge/protocol';
 import { wrapPort } from '../bridge/ports';
 import type { BridgePort, MessagePortLike, ParentPortLike } from '../bridge/ports';
+import { createHostBridge } from './desktop-bridge';
+import type { HostBridge } from './desktop-bridge';
 
 /**
  * Lado do servidor da interface na ponte (roda no utilityProcess `jesus-next`; decisão 0017). Espera a configuração
@@ -41,7 +43,7 @@ function refuse(port: MessagePortLike): void {
   setTimeout(() => bridge.close(), CLOSE_FALLBACK_MS).unref();
 }
 
-export function runNextHost(parent: ParentPortLike, load: LoadServer, log: HostLog = writeToStderr): void {
+export function runNextHost(parent: ParentPortLike, load: LoadServer, log: HostLog = writeToStderr, host: HostBridge = createHostBridge()): void {
   let phase: 'waiting-config' | 'loading' | 'ready' | 'failed' = 'waiting-config';
   let serve: Serve | null = null;
 
@@ -61,6 +63,17 @@ export function runNextHost(parent: ParentPortLike, load: LoadServer, log: HostL
       parent.postMessage({ type: 'pong', seq: message.seq });
       return;
     }
+    if (message.type === 'lock') {
+      // A confirmação só sai depois de o bloqueio ser aplicado; sem ela, o principal reinicia este processo.
+      port?.close();
+      if (host.lock(message.reason)) parent.postMessage({ type: 'lock-ack', seq: message.seq });
+      return;
+    }
+    if (message.type === 'activity') {
+      port?.close();
+      host.activity();
+      return;
+    }
     if (message.type === 'config') {
       port?.close();
       // A configuração vale uma vez: trocar a pasta de dados com o servidor rodando nunca é aceito.
@@ -69,6 +82,7 @@ export function runNextHost(parent: ParentPortLike, load: LoadServer, log: HostL
         return;
       }
       phase = 'loading';
+      host.configure(message.idleMs);
       load(message).then(
         (loaded) => {
           serve = loaded.serve;

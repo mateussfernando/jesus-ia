@@ -73,6 +73,22 @@ export function openSession(
   return { state: touched.state, effects: [...t.effects, ...touched.effects] };
 }
 
+/** Bloqueio que vem do Windows pelo app de desktop (decisão 0019): sessão bloqueada ou suspensão. */
+export function hostLock(state: AccessState, reason: 'os_locked' | 'suspend', now: number, policy: LockPolicy): AccessTransition {
+  return accessTransition(state, { e: reason === 'suspend' ? 'SUSPEND' : 'OS_LOCKED', now }, policy);
+}
+
+/**
+ * Uso de verdade visto pelo processo principal (tecla, clique ou rolagem na janela; decisão 0019). Antes, aplica o
+ * tempo sem uso: um aviso que chega depois do prazo não reabre nada.
+ */
+export function hostActivity(state: AccessState, now: number, policy: LockPolicy): AccessTransition {
+  const ticked = accessTransition(state, { e: 'TICK', now }, policy);
+  if (ticked.state.lock.kind !== 'unlocked') return ticked;
+  const touched = accessTransition(ticked.state, { e: 'ACTIVITY', now }, policy);
+  return { state: touched.state, effects: [...ticked.effects, ...touched.effects] };
+}
+
 /** Confere o acesso de um pedido: aplica o tempo sem uso e compara o token do cookie com a sessão. */
 export function checkAccess(
   state: AccessState,

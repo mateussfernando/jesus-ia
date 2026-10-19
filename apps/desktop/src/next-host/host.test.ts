@@ -4,6 +4,7 @@ import type { FakeMessagePort } from '../bridge/fake-ipc';
 import { CREDIT_WINDOW, MAX_CHUNK_BYTES } from '../bridge/protocol';
 import type { RequestMeta } from '../bridge/protocol';
 import { wrapPort } from '../bridge/ports';
+import { createHostBridge } from './desktop-bridge';
 import { runNextHost, serveOverPort } from './host';
 import type { LoadServer, Serve } from './host';
 
@@ -85,6 +86,70 @@ describe('servidor da interface: configuração e pedidos pelo parentPort', () =
       { type: 'pong', seq: 1 },
       { type: 'pong', seq: 2 },
     ]);
+  });
+
+  it('bloqueio do principal: aplica pela ponte e só então confirma; sem quem aplique, confirma também', async () => {
+    const host = createHostBridge();
+    const logs: string[] = [];
+    const child = new FakeUtilityChild((parent) => runNextHost(parent, () => new Promise(() => undefined), (line) => logs.push(line), host));
+    const messages: unknown[] = [];
+    child.on('message', (message: unknown) => messages.push(message));
+    child.postMessage({ type: 'lock', reason: 'os_locked', seq: 1 });
+    await settle();
+    const applied: string[] = [];
+    host.bridge.onLock((reason) => applied.push(reason));
+    child.postMessage({ type: 'lock', reason: 'suspend', seq: 2 });
+    await settle();
+    expect(applied).toEqual(['suspend']);
+    expect(messages).toEqual([
+      { type: 'lock-ack', seq: 1 },
+      { type: 'lock-ack', seq: 2 },
+    ]);
+  });
+
+  it('bloqueio que falha ao aplicar não é confirmado (o principal reinicia o servidor)', async () => {
+    const host = createHostBridge();
+    host.bridge.onLock(() => {
+      throw new Error('estado quebrado');
+    });
+    const child = new FakeUtilityChild((parent) => runNextHost(parent, () => new Promise(() => undefined), () => undefined, host));
+    const messages: unknown[] = [];
+    child.on('message', (message: unknown) => messages.push(message));
+    child.postMessage({ type: 'lock', reason: 'os_locked', seq: 1 });
+    await settle();
+    expect(messages).toEqual([]);
+  });
+
+  it('uso de verdade chega pela ponte; a configuração entrega o tempo sem uso antes de carregar', async () => {
+    const host = createHostBridge();
+    let activity = 0;
+    host.bridge.onActivity(() => activity++);
+    let idleAtLoad: number | undefined = -1;
+    const child = new FakeUtilityChild((parent) =>
+      runNextHost(
+        parent,
+        () => {
+          idleAtLoad = host.bridge.idleMs;
+          return new Promise(() => undefined);
+        },
+        () => undefined,
+        host,
+      ),
+    );
+    child.postMessage({ type: 'activity' });
+    child.postMessage({ ...CONFIG, idleMs: 3_000 });
+    await settle();
+    expect(activity).toBe(1);
+    expect(idleAtLoad).toBe(3_000);
+  });
+
+  it('a ponte é congelada e aceita um só ouvinte de cada', () => {
+    const { bridge } = createHostBridge();
+    expect(Object.isFrozen(bridge)).toBe(true);
+    bridge.onLock(() => undefined);
+    expect(() => bridge.onLock(() => undefined)).toThrow();
+    bridge.onActivity(() => undefined);
+    expect(() => bridge.onActivity(() => undefined)).toThrow();
   });
 
   it('falha ao carregar vira mensagem `failed` com o motivo', async () => {

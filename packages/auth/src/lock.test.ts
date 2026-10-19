@@ -134,4 +134,16 @@ describe('lockTransition', () => {
     const unlocked: LockState = { kind: 'unlocked', since: 0, lastActivityAt: 0 };
     expect(lockTransition(unlocked, { e: 'TICK', now: MIN }, { idleMs: 0 }).state.kind).toBe('locked');
   });
+  it('piso do tempo sem uso: 1 min por padrão; só pode baixar até 1 s, quando a política pede', () => {
+    expect(clampIdleMs(5_000)).toBe(60_000);
+    expect(clampIdleMs(5_000, 2_000)).toBe(5_000);
+    expect(clampIdleMs(500, 100)).toBe(1_000);
+    expect(clampIdleMs(5_000, 10 * 60_000)).toBe(60_000);
+    expect(clampIdleMs(5_000, Number.NaN)).toBe(60_000);
+    const short = { idleMs: 4_000, minIdleMs: 4_000 };
+    const opened = lockTransition(lockTransition(initialLockState, { e: 'CREDENTIAL_LOADED', now: 0, exists: false }, short).state, { e: 'PASSWORD_SET', now: 0 }, short).state;
+    expect(lockTransition(opened, { e: 'TICK', now: 3_999 }, short).state.kind).toBe('unlocked');
+    expect(lockTransition(opened, { e: 'TICK', now: 4_000 }, short).state.kind).toBe('locked');
+    expect(lockTransition(opened, { e: 'TICK', now: 4_000 }, { idleMs: 4_000 }).state.kind).toBe('unlocked');
+  });
 });

@@ -248,6 +248,20 @@ describe('app de desktop: janela sem porta', () => {
     await unlock();
   });
 
+  it('Windows bloqueou a sessão, suspendeu ou voltou da suspensão: o Jesus volta para a entrada', async () => {
+    for (const event of ['lock-screen', 'suspend', 'resume']) {
+      await page.goto(`${APP}/`);
+      await page.waitForURL(`${APP}/`);
+      await hooks(`h.emitPower(${JSON.stringify(event)})`);
+      // O pote de cookies do principal já foi apagado; a página vai para a entrada.
+      expect(await hooks<number>('h.cookieCount()')).toBe(0);
+      await unlock();
+    }
+    // O servidor da interface confirmou cada bloqueio a tempo (sem confirmação em 2 s, ele seria reiniciado).
+    await page.waitForTimeout(2_500);
+    expect(await hooks<boolean>("h.serverEvents.some((e) => e.type === 'failed')")).toBe(false);
+  });
+
   it('se o servidor da interface cair, ele volta sozinho e o Jesus volta bloqueado', async () => {
     const before = await hooks<number>('h.uiServerPid()');
     await hooks('h.killUiServer()');
@@ -271,7 +285,7 @@ describe('app de desktop: janela sem porta', () => {
       .split('\n')
       .map((line) => (JSON.parse(line) as { event: { type: string; kind?: string } }).event);
     const types = events.map((event) => event.type);
-    for (const type of ['app.opened', 'ui_server.ready', 'window.violation', 'ui_server.exited']) expect(types).toContain(type);
+    for (const type of ['app.opened', 'ui_server.ready', 'window.violation', 'app.locked', 'ui_server.exited']) expect(types).toContain(type);
     expect(events.some((event) => event.type === 'window.violation' && event.kind === 'frame-origin')).toBe(true);
   });
 

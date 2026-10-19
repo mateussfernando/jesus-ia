@@ -92,7 +92,7 @@ else {
   if (!testBuild) {
     for (const path of files.filter((file) => file.startsWith('/dist/') && file.endsWith('.mjs'))) {
       const text = asar.extractFile(asarPath, archivePath(path)).toString('utf8');
-      for (const marker of ['__jesusTest', 'JESUS_E2E_USER_DATA']) if (text.includes(marker)) problems.push(`código de teste em ${path}: ${marker}`);
+      for (const marker of ['__jesusTest', 'JESUS_E2E_USER_DATA', 'JESUS_E2E_IDLE_MS']) if (text.includes(marker)) problems.push(`código de teste em ${path}: ${marker}`);
     }
   }
 }

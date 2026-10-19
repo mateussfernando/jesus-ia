@@ -38,9 +38,26 @@ const KEYS = ['JESUS_DATABASE_URL', 'JESUS_DATA_DIR', 'JESUS_HTTPS'] as const;
 const saved = new Map<string, string | undefined>();
 const URL = 'postgresql://jesus:segredo@127.0.0.1:5432/jesus';
 
+const BRIDGE_KEY = Symbol.for('jesus.desktop.bridge');
+
 function resetProcessState() {
   Reflect.deleteProperty(globalThis, Symbol.for('jesus.ui.auth-runtime'));
   Reflect.deleteProperty(globalThis, Symbol.for('jesus.ui.credential-repo'));
+  Reflect.deleteProperty(globalThis, BRIDGE_KEY);
+}
+
+/** Ponte falsa do app de desktop: guarda os ouvintes para o teste disparar bloqueio e uso. */
+function installFakeBridge(idleMs?: number) {
+  const listeners: { lock?: (reason: 'os_locked' | 'suspend') => void; activity?: () => void } = {};
+  Object.defineProperty(globalThis, BRIDGE_KEY, {
+    configurable: true,
+    value: Object.freeze({
+      idleMs,
+      onLock: (listener: (reason: 'os_locked' | 'suspend') => void) => (listeners.lock = listener),
+      onActivity: (listener: () => void) => (listeners.activity = listener),
+    }),
+  });
+  return listeners;
 }
 
 beforeEach(async () => {
@@ -84,6 +101,36 @@ describe('runtime do login no servidor', () => {
     db.failLoads = 1;
     await expect(getAuthRuntime()).rejects.toThrow('P1001');
     expect((await getAuthRuntime()).state.lock.kind).toBe('locked');
+  });
+
+  it('no app de desktop: o bloqueio do Windows chega pela ponte; o uso da página não conta, o do principal conta', async () => {
+    process.env['JESUS_DATA_DIR'] = await mkdtemp(join(tmpdir(), 'jesus-runtime-'));
+    const bridge = installFakeBridge(5_000);
+    const { beginCheck, beginSession, readAccess } = await import('./auth-runtime');
+    const runtime = await getAuthRuntime();
+    expect(runtime.policy).toEqual({ idleMs: 5_000, minIdleMs: 5_000 });
+    expect(runtime.activityFromHost).toBe(true);
+    // Pasta de dados vazia: a primeira sessão é a da criação da senha.
+    const token = beginSession(runtime, { via: 'setup' });
+    expect(token).not.toBeNull();
+    expect(readAccess(runtime, token ?? undefined, false)).toBe(true);
+    bridge.lock?.('os_locked');
+    expect(runtime.state.lock).toMatchObject({ kind: 'locked', reason: 'os_locked' });
+    expect(readAccess(runtime, token ?? undefined, false)).toBe(false);
+    // O uso do principal conta (adia o bloqueio), sem precisar do cookie.
+    const again = beginSession(runtime, beginCheck(runtime));
+    const before = runtime.state.lock.kind === 'unlocked' ? runtime.state.lock.lastActivityAt : -1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    bridge.activity?.();
+    expect(runtime.state.lock.kind === 'unlocked' ? runtime.state.lock.lastActivityAt : -1).toBeGreaterThan(before);
+    expect(readAccess(runtime, again ?? undefined, false)).toBe(true);
+  });
+
+  it('sem ponte (next dev): tempo sem uso do ambiente e o uso da página conta', async () => {
+    process.env['JESUS_DATA_DIR'] = await mkdtemp(join(tmpdir(), 'jesus-runtime-'));
+    const runtime = await getAuthRuntime();
+    expect(runtime.activityFromHost).toBe(false);
+    expect(runtime.policy).toEqual({ idleMs: 15 * 60_000 });
   });
 
   it('erro de configuração fica até reiniciar (falha fechada)', async () => {

@@ -126,7 +126,13 @@ async function waitForAppPage(devtoolsUrl: string, timeoutMs: number): Promise<v
  * Abre o app. Com `executable` (o build de teste empacotado, `release-test/*-unpacked`), roda o pacote de verdade, com
  * a interface de dentro do `app.asar`; sem ele, o Electron de desenvolvimento com o bundle `dist-test/main.mjs`.
  */
-export async function launchApp(options: { mainEntry: string; userData: string; executable?: string | undefined }): Promise<RunningApp> {
+export async function launchApp(options: {
+  mainEntry: string;
+  userData: string;
+  executable?: string | undefined;
+  /** Tempo sem uso até bloquear (só o build de teste aceita); sem ele, o padrão de 15 min. */
+  idleMs?: number;
+}): Promise<RunningApp> {
   const asRoot = process.getuid?.() === 0;
   const packaged = options.executable !== undefined && options.executable !== '';
   const child = spawn(
@@ -140,7 +146,11 @@ export async function launchApp(options: { mainEntry: string; userData: string; 
       ...(packaged ? [] : [options.mainEntry]),
     ],
     {
-      env: { ...baseEnv(options.userData), JESUS_E2E_USER_DATA: options.userData },
+      env: {
+        ...baseEnv(options.userData),
+        JESUS_E2E_USER_DATA: options.userData,
+        ...(options.idleMs === undefined ? {} : { JESUS_E2E_IDLE_MS: String(options.idleMs) }),
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   );

@@ -3,6 +3,8 @@ import {
   accessTransition,
   checkAccess,
   createAccessClock,
+  hostActivity,
+  hostLock,
   idlePolicyFromEnv,
   initialAccessState,
   lockedSinceOf,
@@ -87,6 +89,30 @@ describe('estado de acesso do servidor', () => {
     expect(t.state.sessionHash).toBeNull();
     // Sem estado bloqueado no começo (ex.: já estava aberto e bloqueou no meio), também não abre.
     expect(openSession(start, tokenHash, 10, policy, { via: 'unlock', lockedSince: null }).state.lock.kind).toBe('locked');
+  });
+
+  it('bloqueio do Windows (sessão ou suspensão) apaga a sessão e vence uma conferência no meio', () => {
+    const { token, tokenHash } = newSessionToken();
+    const opened = openSession(loaded(true), tokenHash, 0, policy, unlockFrom(loaded(true))).state;
+    const osLocked = hostLock(opened, 'os_locked', 1, policy).state;
+    expect(osLocked).toMatchObject({ lock: { kind: 'locked', reason: 'os_locked' }, sessionHash: null });
+    expect(checkAccess(osLocked, token, 2, policy, { activity: false }).unlocked).toBe(false);
+    expect(hostLock(opened, 'suspend', 1, policy).state.lock).toMatchObject({ reason: 'suspend' });
+    // Conferência começou bloqueada; o Windows bloqueou de novo no meio: a sessão não abre.
+    const start = loaded(true);
+    const opening = unlockFrom(start);
+    const relocked = hostLock(start, 'os_locked', 5, policy).state;
+    expect(openSession(relocked, tokenHash, 10, policy, opening).state.lock.kind).toBe('locked');
+  });
+
+  it('uso visto pelo processo principal adia o bloqueio, mas não reabre depois do prazo', () => {
+    const { token, tokenHash } = newSessionToken();
+    const opened = openSession(loaded(true), tokenHash, 0, policy, unlockFrom(loaded(true))).state;
+    const used = hostActivity(opened, 14 * MIN, policy).state;
+    expect(checkAccess(used, token, 28 * MIN, policy, { activity: false }).unlocked).toBe(true);
+    const late = hostActivity(used, 30 * MIN, policy).state;
+    expect(late.lock).toMatchObject({ kind: 'locked', reason: 'idle' });
+    expect(hostActivity(loaded(true), 1, policy).state.lock.kind).toBe('locked');
   });
 
   it('o relógio do acesso nunca volta e anda o maior dos dois relógios', () => {

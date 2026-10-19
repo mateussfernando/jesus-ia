@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ParentPortLike } from '../bridge/ports';
+import { createHostBridge, installDesktopBridge } from './desktop-bridge';
 import { runNextHost } from './host';
 import { confineModules } from './module-scope';
 import { loadNextServer } from './next-server';
@@ -16,5 +17,8 @@ if (parentPort === undefined) {
   process.exit(1);
 } else {
   confineModules(join(dirname(fileURLToPath(import.meta.url)), '..'));
-  runNextHost(parentPort, loadNextServer);
+  // A ponte fica no lugar antes de o Next carregar qualquer código do `apps/ui`.
+  const host = createHostBridge();
+  installDesktopBridge(host.bridge);
+  runNextHost(parentPort, loadNextServer, undefined, host);
 }

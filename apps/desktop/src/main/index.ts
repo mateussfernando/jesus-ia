@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createLogger, formatTextLine, maskSecrets } from '@jesus/shared';
 import { AuditWriter } from '@jesus/shared/audit';
 import type { AuditEvent } from '@jesus/shared/audit';
-import { app, dialog, Menu, MessageChannelMain, session, utilityProcess } from 'electron';
+import { app, dialog, Menu, MessageChannelMain, powerMonitor, session, utilityProcess } from 'electron';
 import type { BrowserWindow, UtilityProcess } from 'electron';
 import { handleAppRequest } from './app-protocol';
 import { APP_PARTITION, lockDownDefaultSession, setupAppSession } from './app-session';
@@ -13,8 +13,10 @@ import type { Violation } from './app-window';
 import { fileAnchorStore } from './audit-anchor';
 import { TEST_BUILD } from './build-flags';
 import { buildChildEnv } from './child-env';
+import type { HostLockReason } from '../bridge/protocol';
 import { CookieJar } from './cookie-jar';
 import { checkElevation, systemWhoamiPath } from './elevation';
+import { LockSignals } from './lock-signals';
 import { APP_ID, APP_NAME, appPaths, TEST_APP_ID } from './paths';
 import { ViolationBreaker } from './policy/breaker';
 import { phase1PermissionPolicy } from './policy/permissions';
@@ -84,6 +86,19 @@ function onViolation(violation: Violation): void {
   void goHome(window, 'quadro de fora');
 }
 
+/** Entrada de verdade na janela (do sistema, não de script da página) que conta como uso do Jesus (decisão 0019). */
+const USER_INPUT: ReadonlySet<string> = new Set(['rawKeyDown', 'keyDown', 'char', 'mouseDown', 'mouseWheel', 'touchStart', 'gestureTap']);
+
+/** De quanto em quanto tempo o principal pergunta ao sistema se a sessão está bloqueada (segunda barreira). */
+const IDLE_STATE_EVERY_MS = 15_000;
+
+/** Só no build de teste: tempo sem uso curto, para os testes de ponta a ponta não esperarem 15 min. */
+function testIdleMs(): number | undefined {
+  if (!TEST_BUILD) return undefined;
+  const value = Number(process.env['JESUS_E2E_IDLE_MS']);
+  return Number.isSafeInteger(value) && value >= 1_000 ? value : undefined;
+}
+
 /** Saída do servidor da interface: vai para o stderr do principal, marcada, com segredos mascarados, cortada. */
 function forwardOutput(child: UtilityProcess): void {
   for (const stream of [child.stdout, child.stderr]) {
@@ -140,6 +155,8 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   // Ambiente por lista (sem segredos); a configuração vai por mensagem (decisão 0017).
   const childEnv = buildChildEnv(process.env, { fixed: { NODE_ENV: 'production', NEXT_TELEMETRY_DISABLED: '1' } });
   let currentChild: UtilityProcess | null = null;
+  let lockSignals: LockSignals | null = null;
+  const idleMs = testIdleMs();
   const uiServer = startUiServer({
     fork: () => {
       const child = utilityProcess.fork(paths.nextHostEntry, [], { serviceName: 'jesus-next', stdio: 'pipe', env: childEnv });
@@ -148,7 +165,8 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
       return child;
     },
     createChannel: () => new MessageChannelMain(),
-    config: { uiDir: paths.uiDir, dataDir: paths.dataDir },
+    config: { uiDir: paths.uiDir, dataDir: paths.dataDir, ...(idleMs === undefined ? {} : { idleMs }) },
+    onLockAck: (seq) => lockSignals?.ack(seq),
     onEvent: (event) => {
       serverEvents.push(event);
       log.info('servidor_interface', event);
@@ -158,11 +176,63 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
       if (event.type === 'gave-up') record({ type: 'ui_server.gave_up', failures: event.failures });
       if (event.type === 'invalid-response') record({ type: 'ui_server.invalid_response' });
       // O estado de acesso morreu com o processo: a sessão antiga não vale mais.
-      if (event.type === 'exited') cookies.clear();
+      if (event.type === 'exited') {
+        cookies.clear();
+        lockSignals?.reset();
+      }
       // O servidor novo começa bloqueado: a janela volta para o início (que leva à tela de entrada).
       if (event.type === 'ready' && event.attempt > 1) void goHome(window, 'servidor da interface reiniciado');
     },
   });
+
+  const signals = new LockSignals({
+    notify: (message) => uiServer.notify(message),
+    // Com o tempo sem uso curto do build de teste, o aviso de uso precisa ser mais frequente que o prazo.
+    ...(idleMs === undefined ? {} : { activityEveryMs: Math.min(5_000, Math.floor(idleMs / 4)) }),
+    unconfirmed: (seq) => {
+      log.error('bloqueio.sem_confirmacao', { seq });
+      record({ type: 'lock.unconfirmed', seq });
+      uiServer.restartUnconfirmed();
+    },
+  });
+  lockSignals = signals;
+
+  /**
+   * Bloqueio que vem do Windows (decisão 0019). Três camadas: o principal apaga o pote de cookies (a página perde a
+   * sessão na hora), avisa o servidor da interface (que confirma em 2 s ou é reiniciado, já bloqueado) e volta a janela
+   * para o início, que leva à tela de entrada.
+   */
+  let osLocked = false;
+  const lockFromHost = (reason: HostLockReason, source: string) => {
+    log.info('bloqueio.do_sistema', { motivo: reason, origem: source });
+    record({ type: 'app.locked', reason, source });
+    cookies.clear();
+    signals.lock(reason);
+    void goHome(window, 'bloqueio do sistema');
+  };
+  const powerHandlers: Readonly<Record<string, () => void>> = {
+    'lock-screen': () => {
+      osLocked = true;
+      lockFromHost('os_locked', 'lock-screen');
+    },
+    'unlock-screen': () => {
+      osLocked = false;
+    },
+    suspend: () => lockFromHost('suspend', 'suspend'),
+    // A volta da suspensão bloqueia de novo: o aviso de suspensão pode não ter chegado a tempo.
+    resume: () => lockFromHost('suspend', 'resume'),
+  };
+  for (const [name, handler] of Object.entries(powerHandlers)) powerMonitor.on(name as 'lock-screen', handler);
+  // Segunda barreira: se o aviso de sessão bloqueada se perdeu, o estado do sistema ainda mostra.
+  setInterval(() => {
+    const state = powerMonitor.getSystemIdleState(60);
+    if (state === 'locked' && !osLocked) {
+      osLocked = true;
+      lockFromHost('os_locked', 'idle-state');
+    } else if (state !== 'locked') {
+      osLocked = false;
+    }
+  }, IDLE_STATE_EVERY_MS).unref();
 
   const appSession = session.fromPartition(APP_PARTITION);
   await setupAppSession(
@@ -181,6 +251,10 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   window = win;
   win.on('closed', () => {
     window = null;
+  });
+  // Uso de verdade: só a entrada que o sistema entrega à janela (um script da página não gera estes eventos).
+  win.webContents.on('input-event', (_event, input) => {
+    if (USER_INPUT.has(input.type)) signals.activity();
   });
   win.webContents.on('render-process-gone', (_event, details) => {
     log.warn('janela.pagina_caiu', { motivo: details.reason });
@@ -207,6 +281,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
         cookieCount: () => cookies.size,
         uiServerPid: () => currentChild?.pid,
         killUiServer: () => currentChild?.kill(),
+        emitPower: (name: string) => powerHandlers[name]?.(),
       },
     });
   }
