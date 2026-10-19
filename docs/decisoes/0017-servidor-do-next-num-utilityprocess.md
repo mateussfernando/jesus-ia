@@ -48,7 +48,9 @@ Limites encontrados no protótipo:
   - Se o servidor não fica pronto em 10 s, o pedido recebe 503. A página de erro é do próprio principal: sem script (`default-src 'none'`) e se recarrega sozinha em 2 s.
   - Se o processo cai no meio de um pedido, a resposta é interrompida: sem cabeçalho, vira 503; com o corpo já começado, o corpo falha. Uma resposta truncada nunca chega como se estivesse inteira.
   - Sem cabeçalho de resposta em 30 s, 504.
+  - **Vigia de vida:** com o servidor pronto, o principal manda um `ping` a cada 5 s pelo `parentPort`, e o servidor responde `pong` na hora. Sem resposta em 15 s (laço infinito, expressão regular catastrófica: vivo, mas preso), o processo é derrubado e segue o caminho de queda (sessão limpa, reinício, janela bloqueada). Antes disso, um servidor preso nunca saía: todo pedido esperava 30 s e recebia 504, para sempre.
   - O processo reinicia com espera (250 ms, 1 s, 3 s, 10 s). Depois de 5 quedas seguidas, o principal desiste e mostra uma página pedindo para abrir o Jesus de novo.
+  - **Limite do Electron 44:** no `protocol.handle`, o `request.signal` nunca aborta (medido na revisão #2). A janela desistir de um pedido antes do cabeçalho não chega ao principal: o pedido segue até a resposta ou o prazo de 504. Já o cancelamento do corpo chega, e o servidor para de produzir. O código que trata o sinal fica (vale se uma versão nova passar a abortar).
   - O estado de acesso mora no servidor da interface, então o processo novo começa bloqueado. O principal limpa o pote de cookies quando sabe da queda (ligação na etapa 3).
 
 - **Build do app:**

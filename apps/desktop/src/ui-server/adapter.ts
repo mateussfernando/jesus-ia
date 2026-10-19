@@ -5,10 +5,12 @@ import { Socket } from 'node:net';
  * Adaptador em memória entre o `protocol.handle` do Electron e o servidor do Next (decisão 0016): um `Request` do
  * padrão Fetch vira `IncomingMessage`/`ServerResponse` do Node (o que o `getRequestHandler()` do Next espera), e a
  * resposta volta como `Response` com o corpo em streaming e contrapressão. Nenhum socket de verdade: o "socket" do
- * pedido é um `net.Socket` que nunca conecta, só para o Next ler `encrypted` e deduzir https.
+ * pedido é um `net.Socket` que nunca conecta, para o Next ler `encrypted` e deduzir https. A resposta usa o mesmo
+ * (como num servidor de verdade): quando a janela desiste, ele é destruído e emite `close`, que é o que o `on-finished`
+ * (usado pelo `send` dos arquivos estáticos do Next) espera para fechar o arquivo.
  *
- * Partes internas do Node usadas aqui (`_header`, `finished`, `_readableState.readingMore`) estão fixadas pelo
- * Electron/Node da versão em uso; os testes de ponta a ponta acusam se uma versão nova mudar esse comportamento.
+ * Partes internas do Node usadas aqui (`_header`, `finished`, `_closed`, `_readableState.readingMore`) estão fixadas
+ * pelo Electron/Node da versão em uso; os testes de ponta a ponta acusam se uma versão nova mudar esse comportamento.
  */
 
 export const APP_ORIGIN = 'https://jesus.invalid';
@@ -118,6 +120,12 @@ export function toNodeRequest(request: Request): IncomingMessage {
 interface OutgoingInternals {
   _header: string | null;
   finished: boolean;
+  _closed: boolean;
+  socket: Socket | null;
+}
+
+function internalError(): Response {
+  return new Response('Erro interno.', { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } });
 }
 
 /** `ServerResponse` que, em vez de escrever num socket, entrega uma `Response` com `ReadableStream` (com contrapressão). */
@@ -132,6 +140,7 @@ class MemoryResponse extends ServerResponse {
 
   constructor(req: IncomingMessage, resolve: (response: Response) => void) {
     super(req);
+    this.#internals.socket = req.socket;
     this.#resolve = resolve;
     this.#stream = new ReadableStream<Uint8Array>(
       {
@@ -192,22 +201,31 @@ class MemoryResponse extends ServerResponse {
 
   #sendHead(): void {
     if (this.#internals._header !== null) return;
-    // Marca os cabeçalhos como enviados: `setHeader` depois disso lança, como num socket de verdade.
-    this.#internals._header = `HTTP/1.1 ${String(this.statusCode)}\r\n`;
-    const headers = new Headers();
-    for (const [name, value] of Object.entries(this.getHeaders())) {
-      if (value === undefined || HOP_BY_HOP.has(name)) continue;
-      if (Array.isArray(value)) for (const item of value) headers.append(name, String(item));
-      else headers.set(name, String(value));
-    }
     this.#nullBody = this.req.method === 'HEAD' || NULL_BODY_STATUS.has(this.statusCode);
-    this.#resolve(
-      new Response(this.#nullBody ? null : this.#stream, {
+    let response: Response;
+    try {
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(this.getHeaders())) {
+        if (value === undefined || HOP_BY_HOP.has(name)) continue;
+        if (Array.isArray(value)) for (const item of value) headers.append(name, String(item));
+        else headers.set(name, String(value));
+      }
+      response = new Response(this.#nullBody ? null : this.#stream, {
         status: this.statusCode,
         statusText: this.statusMessage || STATUS_CODES[this.statusCode] || '',
         headers,
-      }),
-    );
+      });
+    } catch {
+      // Status ou cabeçalho que o Fetch não aceita (103, 600, valor com quebra de linha): 500 seco, como um erro antes
+      // dos cabeçalhos, e o resto da resposta é descartado.
+      this.#internals._header = 'invalid';
+      this.#resolve(internalError());
+      this.destroy();
+      return;
+    }
+    // Marca os cabeçalhos como enviados: `setHeader` depois disso lança, como num socket de verdade.
+    this.#internals._header = `HTTP/1.1 ${String(this.statusCode)}\r\n`;
+    this.#resolve(response);
   }
 
   override write(chunk: unknown, encodingOrCallback?: unknown, maybeCallback?: unknown): boolean {
@@ -246,7 +264,8 @@ class MemoryResponse extends ServerResponse {
       encoding = undefined;
     }
     const done = callback as (() => void) | undefined;
-    if (this.#internals.finished) {
+    // Depois de destruída (a janela desistiu ou o servidor falhou), o corpo já foi encerrado: só o retorno.
+    if (this.#internals.finished || this.destroyed) {
       if (done !== undefined) process.nextTick(done);
       return this;
     }
@@ -269,10 +288,11 @@ class MemoryResponse extends ServerResponse {
     if (this.#internals._header === null) {
       // Falhou antes de mandar os cabeçalhos: a janela recebe um 500 seco, sem detalhe do erro.
       this.#internals._header = 'destroyed';
-      this.#resolve(new Response('Erro interno.', { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } }));
+      this.#resolve(internalError());
     } else if (!this.#internals.finished && !this.#cancelled && !this.#nullBody && this.#controller !== null) {
       this.#controller.error(error ?? new Error('resposta interrompida'));
     }
+    this.socket?.destroy();
     process.nextTick(() => this.#emitClose());
     return this;
   }
@@ -280,6 +300,8 @@ class MemoryResponse extends ServerResponse {
   #emitClose(): void {
     if (this.#closed) return;
     this.#closed = true;
+    // `res.closed`: o Next confere antes de continuar um trabalho que ninguém mais vai ler.
+    this.#internals._closed = true;
     this.emit('close');
   }
 }

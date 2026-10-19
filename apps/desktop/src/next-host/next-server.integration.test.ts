@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, readlink, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -170,5 +170,38 @@ describe('servidor do Next atrás da ponte, sem porta', () => {
     const response = await send('/');
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe('/entrar/');
+  });
+  it('estático cancelado no meio fecha o arquivo (no Linux, conferido pelos descritores abertos)', async () => {
+    const chunksDir = join(uiDir, '.next', 'static', 'chunks');
+    // O maior pedaço de JS do build: vários pedaços de 64 KiB pela ponte.
+    let largest = { name: '', size: 0 };
+    for (const name of (await readdir(chunksDir)).filter((file) => file.endsWith('.js'))) {
+      const { size } = await stat(join(chunksDir, name));
+      if (size > largest.size) largest = { name, size };
+    }
+    expect(largest.size).toBeGreaterThan(256 * 1024);
+    const openFiles = async () => {
+      if (process.platform !== 'linux') return 0;
+      let count = 0;
+      for (const fd of await readdir('/proc/self/fd')) {
+        try {
+          if ((await readlink(`/proc/self/fd/${fd}`)).endsWith(largest.name)) count++;
+        } catch {
+          // Fechou enquanto a lista era lida.
+        }
+      }
+      return count;
+    };
+    const before = await openFiles();
+    for (let i = 0; i < 5; i++) {
+      const response = await send(`/_next/static/chunks/${largest.name}`);
+      expect(response.status).toBe(200);
+      const reader = response.body?.getReader();
+      await reader?.read();
+      await reader?.cancel();
+    }
+    const end = Date.now() + 3_000;
+    while ((await openFiles()) !== before && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await openFiles()).toBe(before);
   });
 });

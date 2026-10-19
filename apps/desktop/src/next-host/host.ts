@@ -55,6 +55,12 @@ export function runNextHost(parent: ParentPortLike, load: LoadServer, log: HostL
       if (port !== undefined) refuse(port);
       return;
     }
+    if (message.type === 'ping') {
+      // Responde em qualquer fase: o que o principal confere é se o laço de eventos daqui ainda gira.
+      port?.close();
+      parent.postMessage({ type: 'pong', seq: message.seq });
+      return;
+    }
     if (message.type === 'config') {
       port?.close();
       // A configuração vale uma vez: trocar a pasta de dados com o servidor rodando nunca é aceito.

@@ -69,6 +69,16 @@ describe('protocolo da ponte com o servidor da interface', () => {
     expect(withHeaders({ accept: 'text/html' })).toBeNull();
   });
 
+  it('sinal de vida: ping e pong só com o número de sequência', () => {
+    expect(parseToServer({ type: 'ping', seq: 1 })).toEqual({ type: 'ping', seq: 1 });
+    expect(parseFromServer({ type: 'pong', seq: 7 })).toEqual({ type: 'pong', seq: 7 });
+    expect(parseToServer({ type: 'ping', seq: 0 })).toBeNull();
+    expect(parseToServer({ type: 'ping', seq: 1.5 })).toBeNull();
+    expect(parseToServer({ type: 'ping', seq: 1, extra: true })).toBeNull();
+    expect(parseFromServer({ type: 'pong' })).toBeNull();
+    expect(parseFromServer({ type: 'ping', seq: 1 })).toBeNull();
+  });
+
   it('mensagens do servidor: pronto, falha, e nada além disso', () => {
     expect(parseFromServer({ type: 'ready', prepareMs: 180 })).toEqual({ type: 'ready', prepareMs: 180 });
     expect(parseFromServer({ type: 'failed', message: 'erro' })?.type).toBe('failed');

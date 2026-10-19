@@ -181,6 +181,77 @@ describe('adaptador em memória Request → Node → Response', () => {
     expect(closed).toBe(true);
   });
 
+  it('a página desistir destrói o socket da resposta (o on-finished do Node percebe) e marca res.closed', async () => {
+    let socketClosed = false;
+    let response: ServerResponse | null = null;
+    const handler: NodeHandler = (_req, res) => {
+      response = res;
+      res.socket?.on('close', () => {
+        socketClosed = true;
+      });
+      res.write('começo');
+    };
+    const result = await serveWithNodeHandler(handler, new Request(`${BASE}/`));
+    expect((response as ServerResponse | null)?.socket).not.toBeNull();
+    await result.body?.cancel();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(socketClosed).toBe(true);
+    expect((response as ServerResponse | null)?.closed).toBe(true);
+  });
+
+  it('um arquivo mandado em partes e cancelado no meio é fechado (como o send dos estáticos do Next)', async () => {
+    // O `send` fecha o arquivo pelo on-finished: fim da resposta ou `close`/`error` no socket dela.
+    const file = { destroyed: false };
+    const handler: NodeHandler = (_req, res) => {
+      res.socket?.once('close', () => {
+        file.destroyed = true;
+      });
+      const timer = setInterval(() => {
+        if (!res.write('x'.repeat(16 * 1024))) clearInterval(timer);
+      }, 0);
+      res.once('close', () => clearInterval(timer));
+    };
+    const result = await serveWithNodeHandler(handler, new Request(`${BASE}/_next/static/chunks/grande.js`));
+    const reader = result.body?.getReader();
+    await reader?.read();
+    await reader?.cancel();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(file.destroyed).toBe(true);
+  });
+
+  it('status ou cabeçalho que o Fetch não aceita vira 500 seco, sem deixar o pedido pendurado', async () => {
+    for (const write of [
+      (res: ServerResponse) => res.writeHead(103).end(),
+      (res: ServerResponse) => res.writeHead(600).end('x'),
+      (res: ServerResponse) => {
+        res.statusMessage = 'quebra\r\nde linha';
+        res.end('x');
+      },
+    ]) {
+      const response = await serveWithNodeHandler((_req, res) => write(res), new Request(`${BASE}/`));
+      expect(response.status).toBe(500);
+      expect(await response.text()).toBe('Erro interno.');
+    }
+  });
+
+  it('end depois de destroy (corrida entre o cancelamento e o fim do Next) não lança', async () => {
+    let thrown: unknown = null;
+    const handler: NodeHandler = (_req, res) => {
+      res.write('parte');
+      setTimeout(() => {
+        res.destroy(new Error('cancelado'));
+        try {
+          res.end();
+        } catch (error) {
+          thrown = error;
+        }
+      }, 0);
+    };
+    const response = await serveWithNodeHandler(handler, new Request(`${BASE}/`));
+    await expect(response.text()).rejects.toThrow();
+    expect(thrown).toBeNull();
+  });
+
   it('pedido abortado pela janela também fecha a resposta', async () => {
     let closed = false;
     const controller = new AbortController();

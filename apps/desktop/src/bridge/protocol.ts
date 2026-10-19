@@ -80,7 +80,12 @@ export type ConfigMessage = z.infer<typeof ConfigMessageSchema>;
 export const RequestMessageSchema = z.strictObject({ type: z.literal('request'), meta: RequestMetaSchema });
 export type RequestMessage = z.infer<typeof RequestMessageSchema>;
 
-export const ToServerMessageSchema = z.discriminatedUnion('type', [ConfigMessageSchema, RequestMessageSchema]);
+const pingSeq = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+
+/** Sinal de vida: o principal pergunta de tempos em tempos, e o servidor responde `pong` na hora. */
+export const PingMessageSchema = z.strictObject({ type: z.literal('ping'), seq: pingSeq });
+
+export const ToServerMessageSchema = z.discriminatedUnion('type', [ConfigMessageSchema, RequestMessageSchema, PingMessageSchema]);
 export type ToServerMessage = z.infer<typeof ToServerMessageSchema>;
 
 // Servidor da interface → processo principal (pelo parentPort).
@@ -93,7 +98,8 @@ export const FailedMessageSchema = z.strictObject({
   type: z.literal('failed'),
   message: z.string().max(MAX_FAILURE_MESSAGE),
 });
-export const FromServerMessageSchema = z.discriminatedUnion('type', [ReadyMessageSchema, FailedMessageSchema]);
+export const PongMessageSchema = z.strictObject({ type: z.literal('pong'), seq: pingSeq });
+export const FromServerMessageSchema = z.discriminatedUnion('type', [ReadyMessageSchema, FailedMessageSchema, PongMessageSchema]);
 export type FromServerMessage = z.infer<typeof FromServerMessageSchema>;
 
 // Port de cada pedido: principal → servidor.

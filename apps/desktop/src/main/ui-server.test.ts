@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { createFakeChannel, FakeUtilityChild } from '../bridge/fake-ipc';
-import type { FakeMessagePort } from '../bridge/fake-ipc';
+import { createFakeChannel, FakeMessagePort, FakeUtilityChild } from '../bridge/fake-ipc';
 import { CREDIT_WINDOW, MAX_REQUEST_BODY_BYTES } from '../bridge/protocol';
 import type { ParentPortLike } from '../bridge/ports';
 import { runNextHost } from '../next-host/host';
@@ -205,7 +204,126 @@ describe('ponte do principal com o servidor da interface', () => {
     expect(source.state.produced).toBeLessThan(100);
   });
 
-  it('pedido abortado pela janela antes do cabeçalho cancela no servidor', async () => {
+  it('servidor preso (vivo, sem responder): o vigia derruba, o pedido em andamento recebe 503 e o servidor volta', async () => {
+    // O primeiro "processo" fica pronto e depois não responde a mais nada: nem ao sinal de vida, nem ao pedido.
+    const stuck = (parent: ParentPortLike) => {
+      parent.on('message', (event) => {
+        if ((event.data as { type?: string }).type === 'config') parent.postMessage({ type: 'ready', prepareMs: 1 });
+      });
+    };
+    const healthy = (parent: ParentPortLike) =>
+      runNextHost(parent, () => Promise.resolve({ serve: () => Promise.resolve(new Response('de volta')), prepareMs: 1 }), () => undefined);
+    const children: FakeUtilityChild[] = [];
+    const { server, events } = setup({
+      fork: () => {
+        const child = new FakeUtilityChild(children.length === 0 ? stuck : healthy);
+        children.push(child);
+        return child;
+      },
+      timing: { pingIntervalMs: 10, pingTimeoutMs: 40, headTimeoutMs: 10_000 },
+    });
+    await server.whenReady();
+    const pending = server.serve(new Request(`${APP}/`));
+    const response = await pending;
+    expect(response.status).toBe(503);
+    expect(response.headers.get('content-type')).toContain('text/html');
+    expect(events).toContainEqual({ type: 'failed', reason: 'unresponsive', message: 'o servidor da interface parou de responder' });
+    expect(children[0]?.exited).toBe(true);
+    await until(() => events.some((event) => event.type === 'ready' && event.attempt === 2));
+    expect(await (await server.serve(new Request(`${APP}/`))).text()).toBe('de volta');
+  });
+
+  it('servidor que responde ao sinal de vida não é derrubado, mesmo com um pedido demorado', async () => {
+    const { server, events, children } = setup({
+      serve: async () => {
+        await sleep(200);
+        return new Response('demorou');
+      },
+      timing: { pingIntervalMs: 10, pingTimeoutMs: 40 },
+    });
+    await server.whenReady();
+    expect(await (await server.serve(new Request(`${APP}/`))).text()).toBe('demorou');
+    expect(events.filter((event) => event.type === 'failed')).toEqual([]);
+    expect(children[0]?.exited).toBe(false);
+  });
+
+  it('pong fora de ordem é fuga do protocolo: o processo cai e sobe de novo', async () => {
+    const children: FakeUtilityChild[] = [];
+    const { server, events } = setup({
+      fork: () => {
+        const child = new FakeUtilityChild((parent) => {
+          parent.on('message', (event) => {
+            if ((event.data as { type?: string }).type !== 'config') return;
+            parent.postMessage({ type: 'ready', prepareMs: 1 });
+            if (children.length === 1) parent.postMessage({ type: 'pong', seq: 999 });
+          });
+        });
+        children.push(child);
+        return child;
+      },
+    });
+    await server.whenReady();
+    await until(() => events.some((event) => event.type === 'failed' && event.reason === 'invalid-message'));
+    expect(children[0]?.exited).toBe(true);
+  });
+
+  it('processo que sai logo depois de mandar a resposta: ela nunca chega inteira (o exit vem antes das mensagens)', async () => {
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let pulls = 0;
+    const { server, events, children } = setup({
+      serve: () =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              async pull(controller) {
+                pulls++;
+                if (pulls === 1) controller.enqueue(new TextEncoder().encode('parte'));
+                else {
+                  await released;
+                  controller.close();
+                }
+              },
+            }),
+          ),
+        ),
+    });
+    await server.whenReady();
+    // Derruba o processo assim que ele manda o cabeçalho ou o fim pelo port, antes de a mensagem chegar ao principal.
+    let crashOn = 'head';
+    const post = Object.getOwnPropertyDescriptor(FakeMessagePort.prototype, 'postMessage')?.value as FakeMessagePort['postMessage'];
+    FakeMessagePort.prototype.postMessage = function (this: FakeMessagePort, message: unknown) {
+      post.call(this, message);
+      if ((message as { type?: string }).type === crashOn) children.at(-1)?.crash(1);
+    };
+    try {
+      // Sem cabeçalho ainda: 503 que se recarrega sozinho.
+      const early = await server.serve(new Request(`${APP}/`));
+      expect(early.status).toBe(503);
+      await until(() => events.filter((event) => event.type === 'ready').length === 2);
+      // Com o corpo começado: o fim nunca chega antes do exit, e o corpo falha.
+      crashOn = 'end';
+      pulls = 0;
+      const response = await server.serve(new Request(`${APP}/`));
+      expect(response.status).toBe(200);
+      release();
+      await expect(response.text()).rejects.toThrow();
+    } finally {
+      FakeMessagePort.prototype.postMessage = post;
+    }
+  });
+
+  it('parar logo depois de subir: o processo morre quando sobe (no Electron, kill antes do spawn não faz nada)', async () => {
+    const { server, events, children } = setup();
+    server.stop();
+    expect(children[0]?.spawned).toBe(false);
+    await until(() => children[0]?.exited === true);
+    expect(events.some((event) => event.type === 'ready')).toBe(false);
+  });
+
+  it('se o sinal da janela abortar antes do cabeçalho, o servidor cancela (no Electron 44 o protocol.handle não aborta)', async () => {
     let signal: AbortSignal | null = null;
     const { server } = setup({
       serve: (request) => {

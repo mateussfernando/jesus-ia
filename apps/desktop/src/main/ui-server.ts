@@ -9,7 +9,11 @@ import { isAppUrl } from './policy/url';
  * Lado do processo principal na ponte com o servidor da interface (`jesus-next`, decisão 0017). Sobe o utilityProcess,
  * manda a configuração por mensagem, encaminha cada pedido da janela por um port próprio e devolve a `Response` com o
  * corpo em streaming. Falha fechada em tudo: servidor fora do ar dá 503, mensagem inválida dá 502, demora dá 504, e
- * um pedido em andamento quando o processo cai é interrompido (nunca fica pendurado).
+ * um pedido em andamento quando o processo cai é interrompido (nunca fica pendurado). Um servidor vivo mas preso (laço
+ * infinito, expressão regular catastrófica) para de responder ao sinal de vida e é derrubado, como se tivesse caído.
+ *
+ * No Electron 44, o `protocol.handle` nunca aborta o `request.signal`: a janela desistir de um pedido antes do cabeçalho
+ * não chega aqui, e o pedido segue até a resposta ou o prazo de 504 (o cancelamento do corpo chega).
  *
  * O estado de acesso (bloqueado ou não) mora no servidor da interface: se ele cair, o novo começa bloqueado. Quem usa
  * este módulo limpa o pote de cookies e volta a janela para o início no evento `exited`.
@@ -28,6 +32,10 @@ export interface UiServerTiming {
   readonly stableAfterMs: number;
   /** Quedas seguidas antes de desistir (a janela passa a mostrar que o servidor não sobe). */
   readonly maxConsecutiveFailures: number;
+  /** De quanto em quanto tempo o principal manda o sinal de vida (`ping`) ao servidor pronto. */
+  readonly pingIntervalMs: number;
+  /** Sem `pong` nesse tempo, o servidor está preso: é derrubado e sobe de novo. */
+  readonly pingTimeoutMs: number;
 }
 
 export const DEFAULT_TIMING: UiServerTiming = {
@@ -37,6 +45,9 @@ export const DEFAULT_TIMING: UiServerTiming = {
   restartDelaysMs: [250, 1_000, 3_000, 10_000],
   stableAfterMs: 60_000,
   maxConsecutiveFailures: 5,
+  // A senha (bcrypt) não segura o laço: é assíncrona. Um laço parado por 15 s não é trabalho normal.
+  pingIntervalMs: 5_000,
+  pingTimeoutMs: 15_000,
 };
 
 export type UiServerEvent =
@@ -44,7 +55,7 @@ export type UiServerEvent =
   | { readonly type: 'ready'; readonly attempt: number; readonly pid: number | undefined; readonly prepareMs: number }
   | {
       readonly type: 'failed';
-      readonly reason: 'fork-error' | 'failed-message' | 'ready-timeout' | 'invalid-message';
+      readonly reason: 'fork-error' | 'failed-message' | 'ready-timeout' | 'invalid-message' | 'unresponsive';
       readonly message: string;
     }
   | { readonly type: 'exited'; readonly code: number; readonly inflight: number }
@@ -157,6 +168,12 @@ export async function readBodyLimited(
   return joined;
 }
 
+/** Derruba o processo. No Electron, `kill()` antes do evento `spawn` não faz nada: aí a morte fica para quando ele subir. */
+function terminate(child: UtilityChildLike): void {
+  if (child.kill()) return;
+  child.on('spawn', () => child.kill());
+}
+
 interface ChildRecord {
   readonly child: UtilityChildLike;
   readonly attempt: number;
@@ -227,8 +244,36 @@ export function startUiServer(options: UiServerOptions): UiServer {
     const readyTimer = setTimeout(() => {
       if (record.ready || current !== record) return;
       emit({ type: 'failed', reason: 'ready-timeout', message: 'o servidor da interface não ficou pronto a tempo' });
-      child.kill();
+      terminate(child);
     }, timing.readyTimeoutMs);
+
+    // Vigia de vida (depois de pronto): um `ping` por vez; sem `pong` no prazo, o processo é derrubado. O caminho de
+    // queda limpa a sessão e reinicia, como numa queda de verdade. No Windows, o `kill()` é um TerminateProcess, que um
+    // laço preso não segura; no Linux, um SIGTERM (o Next só trata esse sinal no `next start`, que o app não usa).
+    let ping: { readonly seq: number; readonly sentAt: number } | null = null;
+    let pingSeq = 0;
+    let unresponsive = false;
+    const watchdog = setInterval(() => {
+      if (current !== record) {
+        clearInterval(watchdog);
+        return;
+      }
+      if (!record.ready) return;
+      if (ping === null) {
+        pingSeq += 1;
+        ping = { seq: pingSeq, sentAt: now() };
+        try {
+          child.postMessage({ type: 'ping', seq: pingSeq });
+        } catch {
+          // O prazo cuida disso.
+        }
+        return;
+      }
+      if (unresponsive || now() - ping.sentAt < timing.pingTimeoutMs) return;
+      unresponsive = true;
+      emit({ type: 'failed', reason: 'unresponsive', message: 'o servidor da interface parou de responder' });
+      terminate(child);
+    }, timing.pingIntervalMs);
 
     child.on('message', (data) => {
       if (current !== record) return;
@@ -236,12 +281,22 @@ export function startUiServer(options: UiServerOptions): UiServer {
       if (message === null) {
         // Mensagem fora do protocolo: o processo não é confiável, cai e sobe de novo.
         emit({ type: 'failed', reason: 'invalid-message', message: 'mensagem inválida do servidor da interface' });
-        child.kill();
+        terminate(child);
         return;
       }
       if (message.type === 'failed') {
         emit({ type: 'failed', reason: 'failed-message', message: message.message });
-        child.kill();
+        terminate(child);
+        return;
+      }
+      if (message.type === 'pong') {
+        // Só vale a resposta ao `ping` pendente; qualquer outra é fuga do protocolo.
+        if (ping?.seq !== message.seq) {
+          emit({ type: 'failed', reason: 'invalid-message', message: 'sinal de vida fora de ordem' });
+          terminate(child);
+          return;
+        }
+        ping = null;
         return;
       }
       if (record.ready) return;
@@ -254,6 +309,7 @@ export function startUiServer(options: UiServerOptions): UiServer {
 
     child.on('exit', (code) => {
       clearTimeout(readyTimer);
+      clearInterval(watchdog);
       emit({ type: 'exited', code, inflight: record.inflight.size });
       for (const fail of [...record.inflight]) fail();
       if (current !== record) return;
@@ -265,7 +321,7 @@ export function startUiServer(options: UiServerOptions): UiServer {
     try {
       child.postMessage({ type: 'config', uiDir: options.config.uiDir, dataDir: options.config.dataDir });
     } catch {
-      child.kill();
+      terminate(child);
     }
   };
 
@@ -449,7 +505,7 @@ export function startUiServer(options: UiServerOptions): UiServer {
       current = null;
       if (record !== null) {
         for (const fail of [...record.inflight]) fail();
-        record.child.kill();
+        terminate(record.child);
       }
     },
   };

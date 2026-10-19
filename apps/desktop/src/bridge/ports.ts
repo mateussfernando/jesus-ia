@@ -29,8 +29,10 @@ export interface ParentPortLike {
 export interface UtilityChildLike {
   readonly pid: number | undefined;
   postMessage(message: unknown, transfer?: MessagePortLike[]): void;
+  on(event: 'spawn', listener: () => void): unknown;
   on(event: 'message', listener: (message: unknown) => void): unknown;
   on(event: 'exit', listener: (code: number) => void): unknown;
+  /** No Electron, antes do evento `spawn` não faz nada e devolve `false`. */
   kill(): boolean;
 }
 

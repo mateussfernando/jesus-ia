@@ -5,7 +5,14 @@ import type { ChannelLike, MessagePortLike, ParentPortLike, PortMessageEvent, Ut
  * Falsos do IPC do Electron para os testes (só os testes importam este arquivo). Imitam o que importa do
  * `MessagePortMain` e do `utilityProcess`: entrega assíncrona, cópia estruturada (o que não é clonável lança, como no
  * Electron), fila até o `start()`, aviso de `close` para o outro lado depois das mensagens pendentes, e um processo
- * que pode cair (os ports que ele recebeu fecham junto).
+ * que pode cair (os ports que ele recebeu fecham junto). Também imitam três detalhes medidos no Electron 44.7.0:
+ * - `close()` local emite `close` no próprio port, na hora;
+ * - `kill()` antes do processo subir (evento `spawn`) não faz nada e devolve `false`;
+ * - quando o processo sai, o `exit` chega antes das mensagens que ele já tinha mandado pelos ports (o principal vê a
+ *   queda primeiro, e a resposta em andamento falha em vez de chegar inteira).
+ *
+ * O `protocol.handle` não entra aqui: nele, o `request.signal` nunca aborta (a janela desistir antes do cabeçalho não
+ * chega ao principal).
  */
 
 type Task = () => void;
@@ -54,6 +61,7 @@ export class FakeMessagePort extends EventEmitter implements MessagePortLike {
     this.#peer = null;
     // O outro lado recebe o que já estava a caminho e só depois o aviso de fechamento.
     if (peer !== null) later(() => later(() => peer.#remoteClosed()));
+    this.emit('close');
   }
 
   #receive(event: PortMessageEvent): void {
@@ -91,6 +99,7 @@ let nextPid = 40_000;
 export class FakeUtilityChild extends EventEmitter implements UtilityChildLike {
   readonly pid: number | undefined = nextPid++;
   readonly received: unknown[] = [];
+  #spawned = false;
   #exited = false;
   readonly #parent = new EventEmitter();
   readonly #transferred: MessagePortLike[] = [];
@@ -107,11 +116,19 @@ export class FakeUtilityChild extends EventEmitter implements UtilityChildLike {
       },
       on: (event, listener) => this.#parent.on(event, listener),
     };
-    later(() => run(parent));
+    later(() => {
+      this.#spawned = true;
+      this.emit('spawn');
+      run(parent);
+    });
   }
 
   get exited(): boolean {
     return this.#exited;
+  }
+
+  get spawned(): boolean {
+    return this.#spawned;
   }
 
   postMessage(message: unknown, transfer: MessagePortLike[] = []): void {
@@ -124,16 +141,23 @@ export class FakeUtilityChild extends EventEmitter implements UtilityChildLike {
     });
   }
 
+  /** Como no Electron: antes do processo subir, não faz nada. */
   kill(): boolean {
+    if (!this.#spawned || this.#exited) return false;
     this.crash(0);
     return true;
   }
 
-  /** O processo caiu com este código de saída. */
+  /**
+   * O processo caiu com este código de saída. O `exit` vem antes das mensagens que já estavam a caminho pelos ports
+   * (como no Electron); depois, os ports que ele recebeu fecham.
+   */
   crash(code = 1): void {
     if (this.#exited) return;
     this.#exited = true;
-    for (const port of this.#transferred) port.close();
-    later(() => this.emit('exit', code));
+    process.nextTick(() => {
+      this.emit('exit', code);
+      for (const port of this.#transferred) port.close();
+    });
   }
 }

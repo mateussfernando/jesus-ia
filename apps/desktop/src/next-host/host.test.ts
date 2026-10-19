@@ -74,6 +74,19 @@ describe('servidor da interface: configuração e pedidos pelo parentPort', () =
     expect(logs).toContain('configuração repetida recusada');
   });
 
+  it('responde ao sinal de vida em qualquer fase, com o mesmo número', async () => {
+    const { child, messages } = hostWith(() => new Promise(() => undefined));
+    child.postMessage({ type: 'ping', seq: 1 });
+    await settle();
+    child.postMessage(CONFIG);
+    child.postMessage({ type: 'ping', seq: 2 });
+    await settle();
+    expect(messages).toEqual([
+      { type: 'pong', seq: 1 },
+      { type: 'pong', seq: 2 },
+    ]);
+  });
+
   it('falha ao carregar vira mensagem `failed` com o motivo', async () => {
     const { child, messages } = hostWith(() => Promise.reject(new Error('falta o build')));
     child.postMessage(CONFIG);
