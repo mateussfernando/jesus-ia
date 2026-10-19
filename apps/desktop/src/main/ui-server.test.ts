@@ -291,6 +291,35 @@ describe('ponte do principal com o servidor da interface', () => {
     expect(replies[1]).toEqual({ type: 'vault-reply', id: 1, ok: false, anthropicKey: 'unknown', problem: 'failed' });
   });
 
+  it('pedido sobre o teto do dia: o principal responde ao mesmo processo; sem quem atenda, falha', async () => {
+    const replies: unknown[] = [];
+    const day = { dayKey: '2026-10-19', spentPUsd: 0, reservedPUsd: 0, limitPUsd: 1_000_000_000_000 };
+    const asking = (parent: ParentPortLike) => {
+      parent.on('message', (event) => {
+        const data = event.data as { type?: string };
+        if (data.type === 'config') {
+          parent.postMessage({ type: 'ready', prepareMs: 1 });
+          parent.postMessage({ type: 'spend', id: 4, op: 'status' });
+        }
+        if (data.type === 'spend-reply') replies.push(data);
+      });
+    };
+    const server = startUiServer({
+      fork: () => new FakeUtilityChild(asking),
+      createChannel: createFakeChannel,
+      config: { uiDir: '/app/ui', dataDir: '/dados' },
+      timing: FAST,
+      onSpendRequest: () => Promise.resolve({ ok: true, day }),
+    });
+    running.push(server);
+    await until(() => replies.length === 1);
+    expect(replies).toEqual([{ type: 'spend-reply', id: 4, ok: true, day }]);
+    const { server: plain } = setup({ run: asking });
+    await plain.whenReady();
+    await until(() => replies.length === 2);
+    expect(replies[1]).toEqual({ type: 'spend-reply', id: 4, ok: false, problem: 'failed' });
+  });
+
   it('pong fora de ordem é fuga do protocolo: o processo cai e sobe de novo', async () => {
     const children: FakeUtilityChild[] = [];
     const { server, events } = setup({

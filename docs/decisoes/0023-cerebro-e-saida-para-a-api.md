@@ -71,6 +71,12 @@ O [plano da fase 1](../rascunhos/plano-fase-1.md) (etapa 9) pede:
   - Todo pedido termina com uma resposta ao Cérebro. Um erro inesperado no próprio principal vira `internal` e nunca derruba o principal; o Cérebro é que cai e sobe de novo.
 - **Teto de gasto do dia** (`spend.ts`, com o livro de gastos do `packages/models`):
   - **Padrão:** US$ 1 por dia, cerca de dez vezes o uso típico estimado.
+  - **O dono escolhe o valor na tela Configurações** (pedido dele, 19/10/2026), de US$ 0,01 a US$ 100,00 por dia:
+    - a Server Action confere a sessão e o formato; o principal confere a faixa de novo;
+    - a mudança vai ao registro de auditoria (`spend.limit_set`, com o valor anterior) e só vale se gravou;
+    - vale na hora: abaixo do gasto do dia, os pedidos seguintes são recusados até o dia virar;
+    - **o registro é a fonte do teto:** ao abrir, vale o último `spend.limit_set` válido (de qualquer dia); sem nenhum, o padrão. Nada de arquivo de configuração à parte, que não teria a cadeia do registro.
+    - Só o servidor da interface, com a sessão aberta, pede a mudança. O Cérebro não tem esse caminho: a ponte dele só leva pedidos à API.
   - **Reserva antes do pedido, pelo pior caso:** cada byte do corpo como um token gravado no cache, mais 4.096 de folga, na faixa de preço desse tamanho, mais o `max_tokens` inteiro de saída. O que não cabe na sobra do dia é recusado antes de sair.
   - **Liquidação pelo uso real:**
     - sem a saída final, a saída conta inteira;
@@ -99,7 +105,8 @@ O [plano da fase 1](../rascunhos/plano-fase-1.md) (etapa 9) pede:
 - **O plano dizia "`fetch` do Node no principal".** A medição mostrou que ele obedece ao ambiente, e o transporte é o `https` com agente próprio.
 - **Rede que só sai por proxy ou com inspeção de TLS** (rede de empresa, antivírus que abre o HTTPS): o Jesus não passa por ela, de propósito, e a conversa falha com `network`.
   - As autoridades aceitas são as da versão do Electron; atualizar o Electron as atualiza.
-- **O teto é conservador:** perto do limite do dia, um pedido com contexto grande é recusado antes de um pequeno, porque a reserva conta o pior caso. A etapa 10 mostra isso na conversa; o valor do teto pode virar configuração.
+- **O teto é conservador:** perto do limite do dia, um pedido com contexto grande é recusado antes de um pequeno, porque a reserva conta o pior caso. A etapa 10 mostra isso na conversa.
+- **Teto e gasto vêm do registro de auditoria:** quando o registro ganhar rotação (etapa 14), o arquivo novo precisa começar com o teto e o gasto do dia, ou a leitura da abertura precisa atravessar os arquivos.
 - **O Cérebro não é barreira contra código rodando nele** (o utilityProcess não tem a sandbox do Chromium). Ele não tem chave nem rede, e a barreira é a conferência do principal.
 - **Atualizar o AI SDK** pode trazer campos novos no corpo, que a conferência recusa. O teste com o AI SDK de verdade pega isso antes de o app sair.
 - **Fica para a etapa 10:** o laço da conversa, o histórico, os pontos de cache, a saída máxima pelo orçamento, a tela e um destino de teste para o teste de ponta a ponta da conversa.

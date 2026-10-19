@@ -67,7 +67,8 @@
   cursor: default;
 }
 
-.settings-state {
+.settings-state,
+.settings-summary {
   font-weight: 600;
 }
 

@@ -12,6 +12,19 @@ import type { ModelCard, SpendLedger } from '@jesus/models';
 
 /** Teto padrão: US$ 1 por dia, uma dezena de vezes o uso típico estimado do Claude Haiku 5.5 (decisão 0011). */
 export const DEFAULT_DAILY_LIMIT_PUSD = 1_000_000_000_000;
+/** Faixa do teto que o dono pode escolher nas Configurações: de US$ 0,01 a US$ 100 por dia. */
+export const MIN_DAILY_LIMIT_PUSD = 10_000_000_000;
+export const MAX_DAILY_LIMIT_PUSD = 100_000_000_000_000;
+
+/** O teto está na faixa aceita (inteiro, em picodólares). */
+export function isValidDailyLimit(limitPUsd: unknown): limitPUsd is number {
+  return (
+    typeof limitPUsd === 'number' &&
+    Number.isSafeInteger(limitPUsd) &&
+    limitPUsd >= MIN_DAILY_LIMIT_PUSD &&
+    limitPUsd <= MAX_DAILY_LIMIT_PUSD
+  );
+}
 
 /**
  * Folga para o que a API põe na entrada além do corpo (instruções das ferramentas, separadores de papel). O resto do
@@ -55,7 +68,7 @@ function saturatingAdd(a: number, b: number): number {
 
 export class DailySpend {
   #ledger: SpendLedger;
-  readonly #limitPUsd: number;
+  #limitPUsd: number;
   readonly #timeZone: string;
   readonly #now: () => number;
 
@@ -89,6 +102,16 @@ export class DailySpend {
     return true;
   }
 
+  /**
+   * Troca o teto (pedido do dono nas Configurações, já gravado no registro). Vale na hora: abaixo do gasto do dia, os
+   * pedidos seguintes são recusados até o dia virar. Fora da faixa, nada muda.
+   */
+  setLimit(limitPUsd: number): boolean {
+    if (!isValidDailyLimit(limitPUsd)) return false;
+    this.#limitPUsd = limitPUsd;
+    return true;
+  }
+
   /** Liquida pelo custo real (zero devolve a reserva inteira: o pedido não saiu ou a API não cobra erro). */
   settle(requestId: string, actualPUsd: number): void {
     this.#roll();
@@ -111,7 +134,7 @@ export interface ScannedEntry {
 
 export interface SpendScan {
   add(entry: ScannedEntry): void;
-  result(): { readonly dayKey: string; readonly settledPUsd: number };
+  result(): { readonly dayKey: string; readonly settledPUsd: number; readonly limitPUsd: number | null };
 }
 
 function pUsdField(value: unknown): number | null {
@@ -120,14 +143,21 @@ function pUsdField(value: unknown): number | null {
 
 /**
  * Gasto do dia a partir do registro de auditoria: soma o custo de cada `api.call` do dia e, para cada `api.reserved`
- * sem `api.call` depois (o app caiu no meio do pedido), o valor reservado inteiro (falha fechada).
+ * sem `api.call` depois (o app caiu no meio do pedido), o valor reservado inteiro (falha fechada). O teto vem do último
+ * `spend.limit_set` válido do registro inteiro (de qualquer dia); sem nenhum, vale o padrão.
  */
 export function createSpendScan(dayKey: string, timeZone: string): SpendScan {
   let settled = 0;
+  let limit: number | null = null;
   const open = new Map<string, number>();
   return {
     add(entry) {
       const { type } = entry.event;
+      if (type === 'spend.limit_set') {
+        const value = entry.event['limit_pusd'];
+        if (isValidDailyLimit(value)) limit = value;
+        return;
+      }
       if (type !== 'api.reserved' && type !== 'api.call') return;
       let day: string;
       try {
@@ -148,7 +178,7 @@ export function createSpendScan(dayKey: string, timeZone: string): SpendScan {
     result() {
       let total = settled;
       for (const reserved of open.values()) total = saturatingAdd(total, reserved);
-      return { dayKey, settledPUsd: total };
+      return { dayKey, settledPUsd: total, limitPUsd: limit };
     },
   };
 }

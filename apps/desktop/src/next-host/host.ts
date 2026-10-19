@@ -80,6 +80,11 @@ export function runNextHost(parent: ParentPortLike, load: LoadServer, log: HostL
       host.vaultReply(message);
       return;
     }
+    if (message.type === 'spend-reply') {
+      port?.close();
+      host.spendReply(message);
+      return;
+    }
     if (message.type === 'config') {
       port?.close();
       // A configuração vale uma vez: trocar a pasta de dados com o servidor rodando nunca é aceito.

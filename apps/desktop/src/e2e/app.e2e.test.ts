@@ -294,9 +294,10 @@ describe('app de desktop: janela sem porta', () => {
   it('Configurações: a chave vai para o cofre do principal e nunca volta para a tela', async () => {
     await page.goto(`${APP}/configuracoes/`);
     await page.getByRole('heading', { name: 'Chave da API da Anthropic' }).waitFor();
-    const state = page.locator('.settings-state');
-    const field = page.locator('#anthropic-key');
-    const message = page.getByRole('status');
+    const section = page.locator('section', { has: page.getByRole('heading', { name: 'Chave da API da Anthropic' }) });
+    const state = section.locator('.settings-state');
+    const field = section.locator('#anthropic-key');
+    const message = section.getByRole('status');
     await field.fill(FAKE_ADMIN);
     await page.getByRole('button', { name: 'Guardar' }).click();
     await expect.poll(() => message.textContent()).toContain('administrador');
@@ -322,6 +323,29 @@ describe('app de desktop: janela sem porta', () => {
       expect(content, name).not.toContain(FAKE_KEY);
       expect(content, name).not.toContain(FAKE_ADMIN);
     }
+  });
+
+  it('Configurações: o teto do dia muda na tela, vale na hora no principal e vai para o registro', async () => {
+    await page.goto(`${APP}/configuracoes/`);
+    const heading = page.getByRole('heading', { name: 'Teto de gasto do dia' });
+    await heading.waitFor();
+    const section = page.locator('section', { has: heading });
+    const summary = section.locator('.settings-summary');
+    const field = section.locator('#daily-limit');
+    const save = section.getByRole('button', { name: 'Salvar teto' });
+    const message = section.getByRole('status');
+    await expect.poll(() => summary.textContent()).toMatch(/^Gasto hoje: US\$\s0,00 de US\$\s1,00\.$/);
+    expect(await field.inputValue()).toBe('1,00');
+    // Fora da faixa: nada muda no principal.
+    await field.fill('0');
+    await save.click();
+    await expect.poll(() => message.textContent()).toContain('entre US$ 0,01 e US$ 100,00');
+    expect(await hooks<{ limitPUsd: number }>('h.spend()')).toMatchObject({ limitPUsd: 1_000_000_000_000 });
+    await field.fill('2,50');
+    await save.click();
+    await expect.poll(() => message.textContent()).toMatch(/^Teto do dia: US\$\s2,50\.$/);
+    expect(await hooks<{ limitPUsd: number }>('h.spend()')).toMatchObject({ limitPUsd: 2_500_000_000_000 });
+    await expect.poll(() => summary.textContent()).toMatch(/de US\$\s2,50\.$/);
   });
 
   it('se o servidor da interface cair, ele volta sozinho e o Jesus volta bloqueado', async () => {
@@ -355,7 +379,7 @@ describe('app de desktop: janela sem porta', () => {
       .split('\n')
       .map((line) => (JSON.parse(line) as { event: { type: string; kind?: string } }).event);
     const types = events.map((event) => event.type);
-    for (const type of ['app.opened', 'ui_server.ready', 'brain.ready', 'brain.exited', 'window.violation', 'app.locked', 'vault.key_refused', 'ui_server.exited']) {
+    for (const type of ['app.opened', 'ui_server.ready', 'brain.ready', 'brain.exited', 'window.violation', 'app.locked', 'vault.key_refused', 'spend.limit_set', 'ui_server.exited']) {
       expect(types).toContain(type);
     }
     expect(events.some((event) => event.type === 'window.violation' && event.kind === 'frame-origin')).toBe(true);

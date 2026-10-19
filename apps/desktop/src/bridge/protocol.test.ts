@@ -100,6 +100,19 @@ describe('protocolo da ponte com o servidor da interface', () => {
     expect(parseToServer({ type: 'vault-reply', id: 1, ok: false, anthropicKey: 'unknown', problem: 'admin' })?.type).toBe('vault-reply');
   });
 
+  it('teto do dia: pedido do servidor e resposta do principal, sem campos a mais', () => {
+    const day = { dayKey: '2026-10-19', spentPUsd: 10, reservedPUsd: 0, limitPUsd: 1_000_000_000_000 };
+    expect(parseFromServer({ type: 'spend', id: 1, op: 'status' })).toEqual({ type: 'spend', id: 1, op: 'status' });
+    expect(parseFromServer({ type: 'spend', id: 2, op: 'set-limit', limitPUsd: 2_000_000_000_000 })?.type).toBe('spend');
+    expect(parseFromServer({ type: 'spend', id: 2, op: 'set-limit', limitPUsd: 1.5 })).toBeNull();
+    expect(parseFromServer({ type: 'spend', id: 2, op: 'set-limit', limitPUsd: -1 })).toBeNull();
+    expect(parseFromServer({ type: 'spend', id: 3, op: 'reset' })).toBeNull();
+    expect(parseToServer({ type: 'spend-reply', id: 1, ok: true, day })?.type).toBe('spend-reply');
+    expect(parseToServer({ type: 'spend-reply', id: 1, ok: false, problem: 'failed' })?.type).toBe('spend-reply');
+    expect(parseToServer({ type: 'spend-reply', id: 1, ok: true, day: { ...day, dayKey: 'ontem' } })).toBeNull();
+    expect(parseToServer({ type: 'spend-reply', id: 1, ok: true, day: { ...day, extra: 1 } })).toBeNull();
+  });
+
   it('configuração: tempo sem uso só dentro da faixa', () => {
     const config = { type: 'config', uiDir: '/app/ui', dataDir: '/dados' };
     expect(parseToServer({ ...config, idleMs: 3_000 })).toEqual({ ...config, idleMs: 3_000 });

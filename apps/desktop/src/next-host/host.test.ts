@@ -165,6 +165,27 @@ describe('servidor da interface: configuração e pedidos pelo parentPort', () =
     await settle();
   });
 
+  it('teto do dia: o pedido vai ao principal e só a resposta do mesmo tipo vale', async () => {
+    const host = createHostBridge({ vaultTimeoutMs: 50 });
+    const child = new FakeUtilityChild((parent) => runNextHost(parent, () => new Promise(() => undefined), () => undefined, host));
+    const day = { dayKey: '2026-10-19', spentPUsd: 5, reservedPUsd: 0, limitPUsd: 2_000_000_000_000 };
+    const requests: { type: string; id: number; op: string; limitPUsd?: number }[] = [];
+    child.on('message', (message: { type: string; id: number; op: string; limitPUsd?: number }) => {
+      if (message.type !== 'spend') return;
+      requests.push(message);
+      if (message.op === 'set-limit') child.postMessage({ type: 'spend-reply', id: message.id, ok: true, day });
+      // Resposta de outro tipo com o mesmo id: ignorada (o pedido falha pelo prazo).
+      else child.postMessage({ type: 'vault-reply', id: message.id, ok: true, anthropicKey: 'present' });
+    });
+    await settle();
+    expect(await host.bridge.spend.setDailyLimit(2_000_000_000_000)).toEqual({ ok: true, day });
+    expect(await host.bridge.spend.status()).toEqual({ ok: false, problem: 'failed' });
+    expect(requests.map((request) => [request.op, request.limitPUsd])).toEqual([
+      ['set-limit', 2_000_000_000_000],
+      ['status', undefined],
+    ]);
+  });
+
   it('cofre sem ligação com o principal: falha na hora', async () => {
     const host = createHostBridge();
     expect(await host.bridge.vault.clearAnthropicKey()).toEqual({ ok: false, anthropicKey: 'unknown', problem: 'failed' });

@@ -1,6 +1,6 @@
 import { computeCost, getModelCard } from '@jesus/models';
 import { describe, expect, it } from 'vitest';
-import { createSpendScan, DailySpend, DEFAULT_DAILY_LIMIT_PUSD, worstCaseCostPUsd } from './spend';
+import { createSpendScan, DailySpend, DEFAULT_DAILY_LIMIT_PUSD, MAX_DAILY_LIMIT_PUSD, MIN_DAILY_LIMIT_PUSD, worstCaseCostPUsd } from './spend';
 
 const card = getModelCard('anthropic:claude-haiku-5-5');
 if (card === null) throw new Error('cartão do Claude Haiku 5.5 sumiu do catálogo');
@@ -80,6 +80,20 @@ describe('DailySpend', () => {
   it('o teto padrão é US$ 1', () => {
     expect(DEFAULT_DAILY_LIMIT_PUSD).toBe(USD);
   });
+
+  it('o teto muda na hora, só dentro da faixa (US$ 0,01 a US$ 100)', () => {
+    const spend = new DailySpend({ limitPUsd: USD, timeZone: TZ, now: () => NOON });
+    expect(spend.reserve('a', 0.9 * USD)).toBe(true);
+    spend.settle('a', 0.9 * USD);
+    expect(spend.reserve('b', 0.2 * USD)).toBe(false);
+    expect(spend.setLimit(2 * USD)).toBe(true);
+    expect(spend.reserve('b', 0.2 * USD)).toBe(true);
+    // Abaixo do gasto do dia: os pedidos seguintes são recusados.
+    expect(spend.setLimit(0.5 * USD)).toBe(true);
+    expect(spend.reserve('c', 1)).toBe(false);
+    for (const invalid of [0, MIN_DAILY_LIMIT_PUSD - 1, MAX_DAILY_LIMIT_PUSD + 1, 1.5, Number.NaN]) expect(spend.setLimit(invalid)).toBe(false);
+    expect(spend.snapshot().limitPUsd).toBe(0.5 * USD);
+  });
 });
 
 describe('createSpendScan', () => {
@@ -91,7 +105,7 @@ describe('createSpendScan', () => {
     scan.add({ ts: at(-1), event: { type: 'api.call', request: 'r1', cost_pusd: 120 } });
     scan.add({ ts: at(0), event: { type: 'api.reserved', request: 'r2', reserved_pusd: 900 } });
     scan.add({ ts: at(0), event: { type: 'app.opened' } });
-    expect(scan.result()).toEqual({ dayKey: '2026-10-19', settledPUsd: 120 + 900 });
+    expect(scan.result()).toEqual({ dayKey: '2026-10-19', settledPUsd: 120 + 900, limitPUsd: null });
   });
 
   it('ignora outros dias (no fuso local) e o que não é gasto', () => {
@@ -101,6 +115,17 @@ describe('createSpendScan', () => {
     scan.add({ ts: at(30), event: { type: 'api.call', request: 'r9', cost_pusd: 999 } });
     scan.add({ ts: at(0), event: { type: 'api.call', request: 7, cost_pusd: 999 } });
     expect(scan.result().settledPUsd).toBe(0);
+  });
+
+  it('o teto vem do último spend.limit_set válido, de qualquer dia', () => {
+    const scan = createSpendScan('2026-10-19', TZ);
+    expect(scan.result().limitPUsd).toBeNull();
+    scan.add({ ts: at(-48), event: { type: 'spend.limit_set', limit_pusd: 3 * USD, previous_pusd: USD } });
+    scan.add({ ts: at(-1), event: { type: 'spend.limit_set', limit_pusd: 2 * USD, previous_pusd: 3 * USD } });
+    // Fora da faixa ou estragado: ignorado.
+    scan.add({ ts: at(0), event: { type: 'spend.limit_set', limit_pusd: 0 } });
+    scan.add({ ts: at(0), event: { type: 'spend.limit_set', limit_pusd: '5' } });
+    expect(scan.result().limitPUsd).toBe(2 * USD);
   });
 
   it('valor estragado no registro conta como o dia inteiro gasto (falha fechada)', () => {

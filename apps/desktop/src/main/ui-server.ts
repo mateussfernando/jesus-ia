@@ -7,6 +7,8 @@ import type {
   HeaderList,
   LockMessage,
   RequestMeta,
+  SpendReply,
+  SpendRequest,
   VaultReply,
   VaultRequest,
 } from '../bridge/protocol';
@@ -83,6 +85,8 @@ export interface UiServerOptions {
   readonly onLockAck?: (seq: number) => void;
   /** Pedido do servidor ao cofre (decisão 0020). Sem quem atenda, a resposta é falha. */
   readonly onVaultRequest?: (request: VaultRequest) => Promise<Omit<VaultReply, 'type' | 'id'>>;
+  /** Pedido do servidor ao teto de gasto do dia (decisão 0023). Sem quem atenda, a resposta é falha. */
+  readonly onSpendRequest?: (request: SpendRequest) => Promise<Omit<SpendReply, 'type' | 'id'>>;
   readonly timing?: Partial<UiServerTiming>;
   readonly now?: () => number;
 }
@@ -321,6 +325,22 @@ export function startUiServer(options: UiServerOptions): UiServer {
             if (current !== record) return;
             try {
               child.postMessage({ type: 'vault-reply', id: message.id, ...result });
+            } catch {
+              // O processo saiu; o pedido do outro lado falha pelo prazo.
+            }
+          });
+        return;
+      }
+      if (message.type === 'spend') {
+        if (!record.ready) return;
+        const failed: Omit<SpendReply, 'type' | 'id'> = { ok: false, problem: 'failed' };
+        const answer = options.onSpendRequest?.(message) ?? Promise.resolve(failed);
+        void answer
+          .catch(() => failed)
+          .then((result) => {
+            if (current !== record) return;
+            try {
+              child.postMessage({ type: 'spend-reply', id: message.id, ...result });
             } catch {
               // O processo saiu; o pedido do outro lado falha pelo prazo.
             }

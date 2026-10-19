@@ -123,6 +123,43 @@ export const VaultReplySchema = z.strictObject({
 });
 export type VaultReply = z.infer<typeof VaultReplySchema>;
 
+/** Teto de gasto do dia (decisão 0023): o servidor da interface pede o estado e muda o teto; o principal decide. */
+export const SPEND_OPS = ['status', 'set-limit'] as const;
+/** `range`: teto fora da faixa aceita; `audit`: o registro não gravou a mudança; `failed`: sem resposta do principal. */
+export const SPEND_PROBLEMS = ['range', 'audit', 'failed'] as const;
+const pUsd = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+
+export const SpendRequestSchema = z.strictObject({
+  type: z.literal('spend'),
+  id: pingSeq,
+  op: z.enum(SPEND_OPS),
+  /** Só ao mudar o teto, em picodólares (US$ 1 = 10¹² pUSD). */
+  limitPUsd: pUsd.optional(),
+});
+export type SpendRequest = z.infer<typeof SpendRequestSchema>;
+
+/** O gasto do dia, como o principal vê. */
+export const SpendDaySchema = z.strictObject({
+  /** Dia local (AAAA-MM-DD). */
+  dayKey: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** Já cobrado hoje. */
+  spentPUsd: pUsd,
+  /** Reservado por pedidos em andamento. */
+  reservedPUsd: pUsd,
+  limitPUsd: pUsd,
+});
+export type SpendDay = z.infer<typeof SpendDaySchema>;
+
+export const SpendReplySchema = z.strictObject({
+  type: z.literal('spend-reply'),
+  id: pingSeq,
+  ok: z.boolean(),
+  /** Ausente quando o principal não respondeu. */
+  day: SpendDaySchema.optional(),
+  problem: z.enum(SPEND_PROBLEMS).optional(),
+});
+export type SpendReply = z.infer<typeof SpendReplySchema>;
+
 export const ToServerMessageSchema = z.discriminatedUnion('type', [
   ConfigMessageSchema,
   RequestMessageSchema,
@@ -130,6 +167,7 @@ export const ToServerMessageSchema = z.discriminatedUnion('type', [
   LockMessageSchema,
   ActivityMessageSchema,
   VaultReplySchema,
+  SpendReplySchema,
 ]);
 export type ToServerMessage = z.infer<typeof ToServerMessageSchema>;
 
@@ -151,6 +189,7 @@ export const FromServerMessageSchema = z.discriminatedUnion('type', [
   PongMessageSchema,
   LockAckMessageSchema,
   VaultRequestSchema,
+  SpendRequestSchema,
 ]);
 export type FromServerMessage = z.infer<typeof FromServerMessageSchema>;
 

@@ -54,6 +54,7 @@ function installFakeBridge(idleMs?: number) {
     value: Object.freeze({
       idleMs,
       vault: { status: vi.fn(), setAnthropicKey: vi.fn(), clearAnthropicKey: vi.fn() },
+      spend: { status: vi.fn(), setDailyLimit: vi.fn() },
       onLock: (listener: (reason: 'os_locked' | 'suspend') => void) => (listeners.lock = listener),
       onActivity: (listener: () => void) => (listeners.activity = listener),
     }),

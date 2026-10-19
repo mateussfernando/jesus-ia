@@ -33,6 +33,7 @@ import type { SupervisorEvent } from './supervisor';
 import { startUiServer, statusPage } from './ui-server';
 import type { UiServerEvent } from './ui-server';
 import { Vault } from './vault';
+import { handleSpendRequest } from './spend-requests';
 import { handleVaultRequest } from './vault-requests';
 
 /**
@@ -170,6 +171,16 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   const ignoredEnv = ignoredEgressEnvironment(process.env);
   if (ignoredEnv.length > 0) log.info('saida.ambiente_ignorado', { variaveis: ignoredEnv.join(' ') });
 
+  // Teto de gasto do dia (decisão 0023): o gasto e o teto vêm do registro (o último `spend.limit_set`, escolhido pelo
+  // dono nas Configurações; sem nenhum, o padrão). Reabrir o app não zera nada.
+  const card = getModelCard(BRAIN_MODEL_KEY);
+  if (card === null) throw new Error('o modelo do Cérebro não está no catálogo');
+  const scanned = spendScan.result();
+  const spend = new DailySpend({ limitPUsd: scanned.limitPUsd ?? DEFAULT_DAILY_LIMIT_PUSD, timeZone, start: scanned });
+  /** Grava no registro e espera: sem registro, nem gasto nem mudança do teto. */
+  const appendAudit = (event: AuditEvent) =>
+    audit === null ? Promise.reject(new Error('registro de auditoria indisponível')) : audit.append(event);
+
   const cookies = new CookieJar();
   jar = cookies;
   // Ambiente por lista (sem segredos); a configuração vai por mensagem (decisão 0017).
@@ -188,6 +199,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     config: { uiDir: paths.uiDir, dataDir: paths.dataDir, ...(idleMs === undefined ? {} : { idleMs }) },
     onLockAck: (seq) => lockSignals?.ack(seq),
     onVaultRequest: (request) => Promise.resolve(handleVaultRequest(request, vault, record)),
+    onSpendRequest: (request) => handleSpendRequest(request, spend, appendAudit),
     onEvent: (event) => {
       serverEvents.push(event);
       log.info('servidor_interface', event);
@@ -206,18 +218,15 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     },
   });
 
-  // Saída para a API da Anthropic e o Cérebro (decisão 0023). A chave sai do cofre só na hora de cada pedido; o teto do
-  // dia começa do que o registro mostra; sem registro de auditoria, nenhum pedido sai.
-  const card = getModelCard(BRAIN_MODEL_KEY);
-  if (card === null) throw new Error('o modelo do Cérebro não está no catálogo');
-  const spend = new DailySpend({ limitPUsd: DEFAULT_DAILY_LIMIT_PUSD, timeZone, start: spendScan.result() });
+  // Saída para a API da Anthropic e o Cérebro (decisão 0023). A chave sai do cofre só na hora de cada pedido; sem
+  // registro de auditoria, nenhum pedido sai.
   const transport = createTransport(ANTHROPIC_TARGET);
   const egress = createEgress({
     transport,
     readKey: () => readApiKey(vault),
     spend,
     card,
-    audit: (event) => (audit === null ? Promise.reject(new Error('registro de auditoria indisponível')) : audit.append(event)),
+    audit: appendAudit,
     toolNames: PHASE1_TOOL_NAMES,
     userAgent: `Jesus/${app.getVersion()}`,
   });
