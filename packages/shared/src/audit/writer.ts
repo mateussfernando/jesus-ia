@@ -23,6 +23,8 @@ export interface AuditWriterOptions {
   readonly path: string;
   readonly anchors: AnchorStore;
   readonly now?: () => number;
+  /** Recebe cada entrada conferida do arquivo, na abertura (veja `verifyChain`). */
+  readonly visit?: (entry: AuditEntry) => void;
 }
 
 export interface OpenedAuditWriter {
@@ -68,7 +70,7 @@ export class AuditWriter {
     const content = await readIfExists(options.path);
     const stored = await options.anchors.read();
     const anchor = stored === null ? null : AnchorSchema.parse(stored);
-    const verdict = verifyChain(content ?? '', anchor);
+    const verdict = verifyChain(content ?? '', anchor, options.visit);
     const healthy = verdict.status === 'ok' || verdict.status === 'ahead';
 
     let quarantined: string | null = null;

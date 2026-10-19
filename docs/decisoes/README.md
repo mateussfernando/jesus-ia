@@ -25,6 +25,7 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0019](0019-bloqueio-pelos-eventos-do-windows.md) | Bloqueio pelos eventos do Windows e ponte do servidor da interface com o principal | aceita |
 | [0020](0020-cofre-da-chave-no-processo-principal.md) | Cofre da chave no processo principal e tela Configurações | aceita |
 | [0022](0022-registro-de-auditoria-e-mascaramento.md) | Registro de auditoria encadeado, mascaramento de segredos e logger com redação | aceita (âncora no cofre pela 0020; número 0021 reservado no plano da fase 1) |
+| [0023](0023-cerebro-e-saida-para-a-api.md) | Cérebro num utilityProcess e saída para a API pelo processo principal | aceita |
 
 ## Modelo
 

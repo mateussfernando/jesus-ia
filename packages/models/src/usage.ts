@@ -32,9 +32,9 @@ export interface UsageReport extends NormalizedUsage {
 /** Formato do objeto `usage` cru de cada API. */
 export type UsageFormat = 'anthropic' | 'deepseek' | 'openai_chat' | 'openai_responses';
 
-// Adaptador do Vercel AI SDK ('ai_sdk' na especificação): fica para a fase 1. O SDK ainda não está instalado e os
-// nomes dos campos de uso, cache e raciocínio mudam entre versões; o adaptador só entra depois de conferir os tipos
-// da versão instalada (na dúvida, o `providerMetadata` cru passa por um dos formatos acima).
+// Adaptador do Vercel AI SDK ('ai_sdk' na especificação): ainda não existe. O SDK está no app de desktop desde a etapa 9
+// da fase 1, mas o processo principal lê o uso cru da Anthropic na resposta (formato 'anthropic' acima), e os nomes dos
+// campos de uso do SDK mudam entre versões; o adaptador só entra se a etapa 10 precisar dele.
 
 /**
  * Sanidade: nenhuma resposta tem 100 milhões de tokens (10 × a maior janela aceita no catálogo). Acima disso o

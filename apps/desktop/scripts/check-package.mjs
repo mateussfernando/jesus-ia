@@ -75,7 +75,7 @@ if (!existsSync(asarPath)) problems.push(`falta ${asarPath}`);
 else {
   const files = asar.listPackage(asarPath, { isPack: false }).map((path) => path.replaceAll('\\', '/'));
   const bundle = testBuild ? 'dist-test' : 'dist';
-  for (const required of [`/${bundle}/main.mjs`, `/${bundle}/next-host.mjs`, '/package.json', '/stage/ui/apps/ui/.next/required-server-files.json']) {
+  for (const required of [`/${bundle}/main.mjs`, `/${bundle}/next-host.mjs`, `/${bundle}/brain.mjs`, '/package.json', '/stage/ui/apps/ui/.next/required-server-files.json']) {
     if (!files.includes(required)) problems.push(`falta no app.asar: ${required}`);
   }
   if (!testBuild && files.some((path) => path.startsWith('/dist-test/'))) problems.push('o build de teste foi parar no pacote de produção');
@@ -89,11 +89,13 @@ else {
   if (manifest.main !== `${bundle}/main.mjs`) problems.push(`package.json do app aponta para ${String(manifest.main)}`);
   const productName = testBuild ? 'Jesus (teste)' : 'Jesus';
   if (manifest.productName !== productName) problems.push(`nome do app: esperado "${productName}", está "${String(manifest.productName)}"`);
-  if (!testBuild) {
-    for (const path of files.filter((file) => file.startsWith('/dist/') && file.endsWith('.mjs'))) {
-      const text = asar.extractFile(asarPath, archivePath(path)).toString('utf8');
+  for (const path of files.filter((file) => file.startsWith(`/${bundle}/`) && file.endsWith('.mjs'))) {
+    const text = asar.extractFile(asarPath, archivePath(path)).toString('utf8');
+    if (!testBuild) {
       for (const marker of ['__jesusTest', 'JESUS_E2E_USER_DATA', 'JESUS_E2E_IDLE_MS']) if (text.includes(marker)) problems.push(`código de teste em ${path}: ${marker}`);
     }
+    // O AI Gateway da Vercel nunca entra no app (decisão 0023): o build o troca por um substituto que recusa tudo.
+    for (const marker of ['ai-gateway.vercel.sh', 'AI_GATEWAY_API_KEY', 'VERCEL_OIDC_TOKEN']) if (text.includes(marker)) problems.push(`AI Gateway em ${path}: ${marker}`);
   }
 }
 

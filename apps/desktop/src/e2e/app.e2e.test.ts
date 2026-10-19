@@ -27,6 +27,15 @@ const PASSWORD = 'cavalo bateria grampo correto 42';
 // Chaves falsas, montadas por partes (nenhum padrão de token inteiro no código-fonte).
 const FAKE_KEY = ['sk-', 'ant-', 'api03-', 'q7Lm2Xv9Rt4Kp8Zw3Nd6Hs1Bf5Gy0Jcu', 'e2eChaveFalsa'].join('');
 const FAKE_ADMIN = ['sk-', 'ant-', 'admin01-', 'q7Lm2Xv9Rt4Kp8Zw3Nd6Hs1Bf5Gy0Jcu'].join('');
+/** Chave falsa no ambiente de quem abre o app: o principal não a usa, e ela não chega a nenhum processo filho. */
+const FAKE_ENV_KEY = ['sk-', 'ant-', 'api03-', 'Zx8Wq2Pl5Mn7Bv4Cx1Lk9Jh3Gf6Ds0Aenv'].join('');
+const HOSTILE_ENV: Readonly<Record<string, string>> = {
+  ANTHROPIC_API_KEY: FAKE_ENV_KEY,
+  ANTHROPIC_BASE_URL: 'https://atacante.example/v1',
+  AI_GATEWAY_API_KEY: 'gw-chave-falsa',
+  HTTPS_PROXY: 'http://127.0.0.1:9',
+  NODE_TLS_REJECT_UNAUTHORIZED: '0',
+};
 /**
  * No pacote, um módulo deixado em `resources/node_modules` (fora do `app.asar`) no caminho de um `require` opcional do
  * Next não pode rodar no servidor da interface. Se rodasse, ele deixaria esta marca na pasta de dados.
@@ -74,7 +83,7 @@ beforeAll(async () => {
     );
   }
   userData = await mkdtemp(join(tmpdir(), 'jesus-e2e-'));
-  app = await launchApp({ mainEntry, userData, executable });
+  app = await launchApp({ mainEntry, userData, executable, env: HOSTILE_ENV });
   page = app.page;
 });
 
@@ -95,6 +104,23 @@ describe('app de desktop: janela sem porta', () => {
     if (plantedModules !== undefined) expect(existsSync(join(userData, 'data', PLANTED_MARK))).toBe(false);
     // No Windows, a conferência de administrador rodou de verdade (o build de teste só registra o resultado).
     if (process.platform === 'win32') expect(app.output.join('')).toMatch(/admin\.elevacao \{"elevacao":"(elevated|not-elevated)"/);
+  });
+
+  it('o Cérebro sobe no utilityProcess dele, sem chave nem segredos no ambiente', async () => {
+    await expect.poll(async () => hooks<boolean>("h.brainEvents.some((e) => e.type === 'ready')"), { timeout: 30_000 }).toBe(true);
+    const brainPid = await hooks<number>('h.brainPid()');
+    expect(brainPid).toBeGreaterThan(0);
+    // O principal anota que ignora as variáveis que mudariam a saída para a API (só os nomes).
+    const ignored = /saida\.ambiente_ignorado \{"variaveis":"([^"]*)"\}/.exec(app.output.join(''))?.[1]?.split(' ') ?? [];
+    expect(ignored).toEqual(expect.arrayContaining(['NODE_TLS_REJECT_UNAUTHORIZED', 'HTTPS_PROXY']));
+    if (process.platform === 'linux') {
+      for (const pid of [brainPid, await hooks<number>('h.uiServerPid()')]) {
+        const environ = await readFile(`/proc/${String(pid)}/environ`, 'utf8');
+        const names = environ.split('\0').map((entry) => entry.split('=')[0] ?? '');
+        expect(names.filter((name) => /ANTHROPIC|AI_GATEWAY|VERCEL|PROXY|NODE_(?!ENV$)|ELECTRON_|JESUS_/i.test(name))).toEqual([]);
+        expect(environ).not.toContain(FAKE_ENV_KEY);
+      }
+    }
   });
 
   it('a página não tem Node; sandbox e isolamento ligados', async () => {
@@ -308,6 +334,17 @@ describe('app de desktop: janela sem porta', () => {
     await unlock();
   });
 
+  it('se o Cérebro cair, ele volta sozinho', async () => {
+    const before = await hooks<number>('h.brainPid()');
+    await hooks('h.restartBrain()');
+    await expect
+      .poll(async () => hooks<number>("h.brainEvents.filter((e) => e.type === 'ready').length"), { timeout: 30_000 })
+      .toBe(2);
+    expect(await hooks<number>('h.brainPid()')).not.toBe(before);
+    // Nenhum pedido saiu para a API: o teto do dia segue zerado.
+    expect(await hooks<{ settledPUsd: number; reservedPUsd: number }>('h.spend()')).toMatchObject({ settledPUsd: 0, reservedPUsd: 0 });
+  });
+
   it('o registro de auditoria fica encadeado, confere com a âncora e guarda os eventos de segurança', async () => {
     const auditFile = join(userData, 'data', 'audit.jsonl');
     // A âncora fica no cofre (Windows) ou, sem cofre, num arquivo ao lado: o principal diz qual é.
@@ -318,7 +355,7 @@ describe('app de desktop: janela sem porta', () => {
       .split('\n')
       .map((line) => (JSON.parse(line) as { event: { type: string; kind?: string } }).event);
     const types = events.map((event) => event.type);
-    for (const type of ['app.opened', 'ui_server.ready', 'window.violation', 'app.locked', 'vault.key_refused', 'ui_server.exited']) {
+    for (const type of ['app.opened', 'ui_server.ready', 'brain.ready', 'brain.exited', 'window.violation', 'app.locked', 'vault.key_refused', 'ui_server.exited']) {
       expect(types).toContain(type);
     }
     expect(events.some((event) => event.type === 'window.violation' && event.kind === 'frame-origin')).toBe(true);

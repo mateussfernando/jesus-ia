@@ -1,4 +1,5 @@
-// Empacota em JavaScript o processo principal e o servidor da interface, para o Electron rodar (decisão 0017).
+// Empacota em JavaScript o processo principal, o servidor da interface e o Cérebro, para o Electron rodar (decisões
+// 0017 e 0023).
 //   node scripts/build.mjs          → dist/       (produção)
 //   node scripts/build.mjs --test   → dist-test/  (build de teste, com os ganchos dos testes de ponta a ponta)
 // O build de teste é decidido aqui, na compilação (constante __JESUS_TEST_BUILD__), nunca em tempo de execução. No de
@@ -14,13 +15,19 @@ const outDir = join(desktopDir, testBuild ? 'dist-test' : 'dist');
 
 /** Textos que só existem no código de teste: se aparecerem no build de produção, o build falha. */
 const TEST_ONLY_MARKERS = ['__jesusTest', 'JESUS_E2E_USER_DATA', 'JESUS_E2E_IDLE_MS'];
+/**
+ * Textos do AI Gateway da Vercel (decisão 0023): o pacote `ai` o importa, e o build o troca por um substituto que recusa
+ * tudo. Se algum aparecer em qualquer build, o substituto não foi aplicado, e o build falha.
+ */
+const GATEWAY_MARKERS = ['ai-gateway.vercel.sh', 'AI_GATEWAY_API_KEY', 'VERCEL_OIDC_TOKEN'];
 
 rmSync(outDir, { recursive: true, force: true });
 await build({
   cwd: desktopDir,
-  input: { main: 'src/main/index.ts', 'next-host': 'src/next-host/main.ts' },
+  input: { main: 'src/main/index.ts', 'next-host': 'src/next-host/main.ts', brain: 'src/brain-host/main.ts' },
   platform: 'node',
   external: ['electron'],
+  resolve: { alias: { '@ai-sdk/gateway': join(desktopDir, 'src', 'brain-host', 'gateway-stub.ts') } },
   transform: { define: { __JESUS_TEST_BUILD__: JSON.stringify(testBuild) } },
   output: {
     dir: outDir,
@@ -40,16 +47,15 @@ function filesUnder(dir) {
   });
 }
 
-if (!testBuild) {
-  const leaks = [];
-  for (const file of filesUnder(outDir)) {
-    const text = readFileSync(file, 'utf8');
-    for (const marker of TEST_ONLY_MARKERS) if (text.includes(marker)) leaks.push(`${file}: ${marker}`);
-  }
-  if (leaks.length > 0) {
-    console.error('Código de teste no build de produção:');
-    for (const leak of leaks) console.error(`  - ${leak}`);
-    process.exit(1);
-  }
+const leaks = [];
+for (const file of filesUnder(outDir)) {
+  const text = readFileSync(file, 'utf8');
+  for (const marker of GATEWAY_MARKERS) if (text.includes(marker)) leaks.push(`${file}: ${marker} (AI Gateway)`);
+  if (!testBuild) for (const marker of TEST_ONLY_MARKERS) if (text.includes(marker)) leaks.push(`${file}: ${marker} (código de teste)`);
+}
+if (leaks.length > 0) {
+  console.error('O build tem o que não pode ter:');
+  for (const leak of leaks) console.error(`  - ${leak}`);
+  process.exit(1);
 }
 console.log(`Build ${testBuild ? 'de teste' : 'de produção'} em ${outDir}: ${filesUnder(outDir).length} arquivos.`);

@@ -36,8 +36,8 @@ function isHeaderValue(value: string): boolean {
   return !/[\r\n]/.test(value) && !value.includes('\u0000');
 }
 
-const headerName = z.string().min(1).max(256).regex(HEADER_NAME);
-const headerValue = z.string().max(16 * 1024).refine(isHeaderValue, 'valor de cabeçalho inválido');
+export const headerName = z.string().min(1).max(256).regex(HEADER_NAME);
+export const headerValue = z.string().max(16 * 1024).refine(isHeaderValue, 'valor de cabeçalho inválido');
 
 export const HeaderListSchema = z
   .array(z.tuple([headerName, headerValue]))
@@ -54,7 +54,7 @@ const absolutePath = z
   .max(MAX_PATH_LENGTH)
   .refine((path) => !path.includes('\u0000') && isAbsolute(path), 'caminho absoluto esperado');
 
-const bytes = (max: number) => z.instanceof(Uint8Array).refine((chunk) => chunk.byteLength <= max, 'grande demais');
+export const bytes = (max: number) => z.instanceof(Uint8Array).refine((chunk) => chunk.byteLength <= max, 'grande demais');
 
 export const RequestMetaSchema = z
   .strictObject({
@@ -82,7 +82,7 @@ export type ConfigMessage = z.infer<typeof ConfigMessageSchema>;
 export const RequestMessageSchema = z.strictObject({ type: z.literal('request'), meta: RequestMetaSchema });
 export type RequestMessage = z.infer<typeof RequestMessageSchema>;
 
-const pingSeq = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+export const pingSeq = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
 /** Sinal de vida: o principal pergunta de tempos em tempos, e o servidor responde `pong` na hora. */
 export const PingMessageSchema = z.strictObject({ type: z.literal('ping'), seq: pingSeq });

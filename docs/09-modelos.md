@@ -35,6 +35,7 @@ Para cada modelo, o Jesus guarda: provedor, nome, janela de contexto, se usa fer
 ## 9.4 Custos
 
 - Orçamento por dia e por tarefa; alerta em 80%; parada em 100%.
+- O teto do dia também vale no processo principal, por fora do Cérebro: o pior caso de cada pedido é reservado antes de sair ([decisão 0023](decisoes/0023-cerebro-e-saida-para-a-api.md)).
 - Usar cache de prompt quando o provedor oferece (prompt de sistema e ferramentas fixos no começo da conversa).
 - Compactar antes de estourar; usar um leitor em quarentena barato para textos longos.
 

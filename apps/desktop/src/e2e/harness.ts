@@ -132,6 +132,8 @@ export async function launchApp(options: {
   executable?: string | undefined;
   /** Tempo sem uso até bloquear (só o build de teste aceita); sem ele, o padrão de 15 min. */
   idleMs?: number;
+  /** Variáveis a mais no ambiente do app (para conferir que não chegam aos processos filhos). */
+  env?: Readonly<Record<string, string>>;
 }): Promise<RunningApp> {
   const asRoot = process.getuid?.() === 0;
   const packaged = options.executable !== undefined && options.executable !== '';
@@ -150,6 +152,7 @@ export async function launchApp(options: {
         ...baseEnv(options.userData),
         JESUS_E2E_USER_DATA: options.userData,
         ...(options.idleMs === undefined ? {} : { JESUS_E2E_IDLE_MS: String(options.idleMs) }),
+        ...options.env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     },

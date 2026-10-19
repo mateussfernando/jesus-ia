@@ -10,6 +10,7 @@ describe('caminhos do app', () => {
       dataDir: join('/home/u/.config', 'Jesus', 'data'),
       uiDir: join('/app/resources/app.asar', 'stage', 'ui', 'apps', 'ui'),
       nextHostEntry: join('/app/resources/app.asar/dist', 'next-host.mjs'),
+      brainEntry: join('/app/resources/app.asar/dist', 'brain.mjs'),
     });
   });
 

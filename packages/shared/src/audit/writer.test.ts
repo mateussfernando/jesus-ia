@@ -56,6 +56,26 @@ describe('escritor do registro de auditoria', () => {
     expect(verifyChain(await readFile(path, 'utf8'), anchors.value).status).toBe('ok');
   });
 
+  it('na abertura, entrega cada entrada conferida a quem pediu (o gasto do dia sai daí)', async () => {
+    await writeEvents(3);
+    const seen: number[] = [];
+    const { writer } = await AuditWriter.open({ path, anchors, visit: (entry) => seen.push(Number(entry.event['n'])) });
+    await writer.close();
+    expect(seen).toEqual([0, 1, 2]);
+  });
+
+  it('com a cadeia quebrada no meio, só as entradas de antes da quebra chegam a quem pediu', async () => {
+    await writeEvents(4);
+    const content = await lines();
+    content[2] = (content[2] ?? '').replace('"n":2', '"n":20');
+    await writeFile(path, `${content.join('\n')}\n`);
+    const seen: number[] = [];
+    const { writer, verdict } = await AuditWriter.open({ path, anchors, visit: (entry) => seen.push(Number(entry.event['n'])) });
+    await writer.close();
+    expect(verdict.status).toBe('tampered');
+    expect(seen).toEqual([0, 1]);
+  });
+
   it('chamadas ao mesmo tempo saem em fila, na ordem', async () => {
     const { writer } = await AuditWriter.open({ path, anchors });
     const entries = await Promise.all(Array.from({ length: 20 }, (_, n) => writer.append({ type: 'ferramenta.leitura', n })));

@@ -123,8 +123,11 @@ export interface ChainVerdict {
   readonly problem?: { readonly line: number; readonly reason: string };
 }
 
-/** Confere o conteúdo inteiro do arquivo contra a âncora. */
-export function verifyChain(content: string, anchor: AuditAnchor | null): ChainVerdict {
+/**
+ * Confere o conteúdo inteiro do arquivo contra a âncora. `visit` recebe cada entrada que passou na conferência, na
+ * ordem (as do começo, até a primeira linha quebrada): o processo principal soma ali o gasto do dia.
+ */
+export function verifyChain(content: string, anchor: AuditAnchor | null, visit?: (entry: AuditEntry) => void): ChainVerdict {
   const lastNewline = content.lastIndexOf('\n');
   const complete = lastNewline < 0 ? '' : content.slice(0, lastNewline);
   const tornTail = content.length > lastNewline + 1;
@@ -158,6 +161,7 @@ export function verifyChain(content: string, anchor: AuditAnchor | null): ChainV
       if (entry.prev !== last.hash) return broken(number, 'encadeamento quebrado');
     }
     last = { seq: entry.seq, hash };
+    visit?.(entry);
     if (anchor !== null && entry.seq === anchor.seq) hashAtAnchorSeq = hash;
     validBytes += Buffer.byteLength(line, 'utf8') + 1;
   }

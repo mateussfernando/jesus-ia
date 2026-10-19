@@ -24,12 +24,15 @@ export function isModuleInside(root: string, url: string, separator: string = se
   return path === fold(root) || path.startsWith(base);
 }
 
-/** Liga a trava para tudo o que carregar daqui em diante, por `require` ou `import`. */
-export function confineModules(root: string): void {
+/**
+ * Liga a trava para tudo o que carregar daqui em diante, por `require` ou `import`. `refuse` recusa também módulos de
+ * dentro (no Cérebro, os de rede do Node).
+ */
+export function confineModules(root: string, refuse?: (specifier: string, url: string) => boolean): void {
   registerHooks({
     resolve(specifier, context, nextResolve) {
       const resolved = nextResolve(specifier, context);
-      if (!isModuleInside(root, resolved.url)) {
+      if (!isModuleInside(root, resolved.url) || refuse?.(specifier, resolved.url) === true) {
         // O mesmo código do "não achei": quem tenta um módulo opcional (como o Next) segue com a cópia embutida.
         throw Object.assign(new Error(`módulo de fora do app recusado: ${specifier}`), { code: 'MODULE_NOT_FOUND' });
       }

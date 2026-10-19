@@ -13,6 +13,8 @@ export interface AppPaths {
   readonly uiDir: string;
   /** Entrada do utilityProcess do servidor da interface. */
   readonly nextHostEntry: string;
+  /** Entrada do utilityProcess do Cérebro (decisão 0023). */
+  readonly brainEntry: string;
 }
 
 export interface AppPathsOptions {
@@ -44,5 +46,6 @@ export function appPaths(options: AppPathsOptions): AppPaths {
     dataDir: join(userData, 'data'),
     uiDir: join(appRoot, 'stage', 'ui', 'apps', 'ui'),
     nextHostEntry: join(options.bundleDir, 'next-host.mjs'),
+    brainEntry: join(options.bundleDir, 'brain.mjs'),
   };
 }

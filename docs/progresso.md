@@ -2,7 +2,7 @@
 
 > **Leia isto antes de qualquer tarefa** e atualize ao terminar cada etapa (o que foi feito, o que falta, onde parou). Serve para continuar o trabalho em outra sessão sem perder contexto. O resumo fixo do projeto está no [`CLAUDE.md`](../CLAUDE.md); aqui fica o **andamento**.
 
-**Última atualização:** 19/10/2026, sessão na nuvem (trabalho feito na `ccr-d2d5ac72-nmmks6` e levado para a `main-7zybuc` com o aval do dono; veja "Branch" abaixo). **Fase 1 em andamento: etapas 0 a 8 feitas; a próxima é a etapa 9** (seção "Fase 1: andamento"). Recomendar ao dono a revisão independente com o ultracode depois da etapa 9 (cofre e saída com a chave). A revisão independente #2 (etapas 1 a 5) teve os 16 achados conferidos e corrigidos. O `.exe` do CI espera o teste do dono no PC dele.
+**Última atualização:** 19/10/2026, sessão na nuvem (trabalho feito na `ccr-d2d5ac72-nmmks6` e levado para a `main-7zybuc` com o aval do dono; veja "Branch" abaixo). **Fase 1 em andamento: etapas 0 a 9 feitas; a próxima é a etapa 10** (o laço da conversa; seção "Fase 1: andamento"). **Recomendar agora ao dono a revisão independente com o ultracode** das etapas 8 e 9 (cofre e saída com a chave), como o plano pede. A revisão independente #2 (etapas 1 a 5) teve os 16 achados conferidos e corrigidos. O `.exe` do CI espera o teste do dono no PC dele.
 
 ## Onde estamos
 
@@ -200,6 +200,35 @@ Roteiro: [plano da fase 1](rascunhos/plano-fase-1.md). Cada etapa é um commit c
   - A âncora do registro passou para o cofre, com migração da âncora em arquivo (vale uma vez; a primeira gravação vai para o cofre e apaga o arquivo). Sem cofre (Linux sem chaveiro), fica no arquivo.
   - Corrigido junto (etapa 7): abrir uma página contava como uso (`requireUnlocked`); no app, não conta mais, e o teste de tempo sem uso agora também pede páginas sem parar.
   - Testes: cofre com `safeStorage` falso, pedidos ao cofre, âncora no cofre com migração, ponte do cofre (servidor, principal, protocolo), validação da ponte e mensagens no `apps/ui`, forma da chave; ponta a ponta: a chave de administrador é recusada, a chave falsa é guardada e apagada (no Windows) ou recusada pelo cofre (no Linux sem chaveiro), e ela não aparece na tela, na saída do principal nem em nenhum arquivo da pasta de dados.
+
+- **Etapa 9 (19/10/2026):** Cérebro num utilityProcess e saída para a API pelo principal ([decisão 0023](decisoes/0023-cerebro-e-saida-para-a-api.md)).
+  - **Medido antes do código:** no Electron 44.7.0, o `fetch` do Node e o agente global do `https` obedecem a `NODE_EXTRA_CA_CERTS`, `NODE_USE_SYSTEM_CA` (com `SSL_CERT_FILE`), `NODE_TLS_REJECT_UNAUTHORIZED=0` e `NODE_USE_ENV_PROXY` com `HTTPS_PROXY`. Um `https.request` com agente próprio, autoridades explícitas e `rejectUnauthorized: true` não obedece a nenhuma. Por isso o transporte é esse, e não o `fetch` que o plano citava.
+  - **Dependências:** `ai` 7.0.142 e `@ai-sdk/anthropic` 4.0.81 (as 7.0.143 e 4.0.82, anotadas antes, ainda não tinham 3 dias), no `apps/desktop`. Nove pacotes novos, nenhum com script de instalação: `ai`, `@ai-sdk/anthropic`, `@ai-sdk/gateway`, `@ai-sdk/provider`, `@ai-sdk/provider-utils`, `@vercel/oidc`, `@workflow/serde`, `eventsource-parser` e `json-schema` (o `undici` já estava na árvore). O `@jesus/models` entrou como dependência do app.
+  - **Cérebro (`src/brain-host/`):**
+    - travas antes do AI SDK: `fetch`/`WebSocket`/`EventSource` que lançam, módulos de rede do Node e `undici` recusados (ganchos de módulo e `getBuiltinModule`), `process.binding` fora;
+    - modelo com endereço fixo, chave de mentira e o `fetch` da ponte;
+    - download que recusa;
+    - `@ai-sdk/gateway` trocado no build por um substituto (o build e a conferência do pacote procuram o código dele).
+  - **Ponte:** mensagens `api-*` com `id`, Zod estrito. O supervisor novo (`main/supervisor.ts`, o mesmo desenho do servidor da interface) sobe o Cérebro, vigia com `ping`/`pong`, derruba quem foge do protocolo e reinicia.
+  - **Saída (`src/main/egress/`):**
+    - conferência do pedido por lista branca (destino, cabeçalhos, betas, corpo: modelo, `max_tokens` até 32.000, streaming, só ferramentas próprias, sem imagem nem URL); o corpo que sai é o conferido, serializado de novo;
+    - chave do cofre na hora;
+    - reserva do pior caso no teto do dia (US$ 1 por padrão) e `api.reserved` no registro antes de mandar;
+    - transporte com autoridades fixas, 3xx como falha e prazos;
+    - pedaços copiados para o Cérebro;
+    - liquidação pelo uso lido do SSE.
+    - O bloqueio interrompe tudo (`locked`).
+    - O gasto do dia é refeito pelo registro ao abrir (o plano deixava isso para a etapa 10). A conferência da cadeia do registro ganhou um visitante para isso.
+  - **Achado no caminho:** um `Buffer` do Node pode ser fatia do reservatório compartilhado, e mandá-lo inteiro por mensagem levaria o reservatório junto (com os cabeçalhos da chave, em tese). A saída copia cada pedaço; o teste falha sem a cópia.
+  - **Testes:** 125 novos no `apps/desktop` (276 no pacote) e 2 no `packages/shared`.
+    - Conferência do pedido (46 casos), leitor do SSE, teto e reconstrução, saída com transporte roteirizado (recusas, bloqueio, cancelamento, corte, resposta grande, cópia dos pedaços) e chave do cofre.
+    - Transporte com TLS de verdade (autoridade de teste feita na hora em Node puro, sem `openssl`), com redirecionamento, prazos, corte e cancelamento.
+    - O ambiente sem efeito no transporte, num processo à parte, com o `fetch` como controle; também no Node do Electron, entre os testes de ponta a ponta.
+    - As travas do Cérebro, num processo à parte.
+    - O caminho inteiro com o AI SDK de verdade: a chave só aparece na saída, `container` e `mcpServers` são recusados, imagem por URL não sai, modelo por nome cai no substituto do gateway e o bloqueio corta no meio.
+    - Ponta a ponta (20 no total, também no pacote de teste): o app aberto com uma chave falsa e variáveis de proxy e TLS no ambiente; o ambiente do Cérebro e do `jesus-next` (lido de `/proc/<pid>/environ`) não tem nada disso; o Cérebro volta sozinho se cair; o registro tem `brain.ready` e `brain.exited`.
+  - **Conferido aqui:** lint, tipos, todos os testes, integração, ponta a ponta no build de teste e no pacote de teste, e a conferência do pacote de produção como usuário comum.
+  - **Para o dono:** o teto padrão é US$ 1 por dia (dez vezes o uso típico estimado). Ele pode pedir outro valor, e uma configuração pode vir na tela.
 
 **Falta (nesta ordem):**
 1. **Fase 1, conforme o [plano da fase 1](rascunhos/plano-fase-1.md)** (14 etapas, montado em 13/10/2026 por pesquisa, planejador e crítico): Electron (`apps/desktop`) com o servidor do Next num utilityProcess, sem porta; empacotamento e `.exe` no `windows-latest`; registro; eventos do Windows; cofre da chave; Cérebro e saída para a API; chat com o Claude Haiku 5.5; Porteiro mínimo para leituras; ferramentas de leitura; tela do registro. **Feito:** etapas 0 a 8 (veja "Fase 1: andamento"). **Próxima:** etapa 9 (`jesus-brain` e a saída para a API pelo principal, com o corpo conferido e a chave injetada só no principal). **Pendente do dono:** testar o `.exe` do artefato `jesus-windows-x64` no PC dele. As revisões independentes #1 e #2 ficaram incompletas (limite de uso; os achados que vieram foram corrigidos): recomendar ao dono rodar de novo com o ultracode, de preferência depois das etapas 8 e 9 (cofre e saída com a chave).

@@ -63,6 +63,7 @@ flowchart LR
 | **Execução contida** | em nada | rodar comandos na pasta do projeto | ver tokens ou a pasta do Jesus (no modo padrão, a rede depende do Porteiro) |
 
 - Cérebro, Porteiro/Executor e Voz rodam como `utilityProcess` do Electron, conversando por `MessagePort` ([Electron utilityProcess](https://electronjs.org/docs/latest/api/utility-process)).
+- **O Cérebro não fala com a rede ([decisão 0023](decisoes/0023-cerebro-e-saida-para-a-api.md)):** cada pedido aos provedores vai ao processo principal, que confere o pedido, põe a chave do cofre e manda. Na fase 1, a única saída é a API da Anthropic, com teto de gasto do dia no próprio principal.
 - **Defesa em profundidade:** o Executor **não confia** no cérebro. Ele só executa chamadas com uma aprovação válida, assinada (HMAC) e amarrada ao identificador da chamada + hash dos parâmetros (seção [3.4.7](03-seguranca.md)).
 
 ## 2.3 O loop do agente, passo a passo

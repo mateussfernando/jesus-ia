@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getModelCard, localDayKey } from '@jesus/models';
 import { createLogger, formatTextLine, maskSecrets } from '@jesus/shared';
 import { AuditWriter } from '@jesus/shared/audit';
 import type { AuditEvent } from '@jesus/shared/audit';
@@ -11,10 +12,16 @@ import { APP_PARTITION, lockDownDefaultSession, setupAppSession } from './app-se
 import { createAppWindow, guardWebContents } from './app-window';
 import type { Violation } from './app-window';
 import { fileAnchorStore, vaultAnchorStore } from './audit-anchor';
+import { startBrainProcess } from './brain-process';
 import { TEST_BUILD } from './build-flags';
 import { buildChildEnv } from './child-env';
 import type { HostLockReason } from '../bridge/protocol';
 import { CookieJar } from './cookie-jar';
+import { readApiKey } from './egress/api-key';
+import { BRAIN_MODEL_KEY, PHASE1_TOOL_NAMES } from './egress/api-policy';
+import { createEgress } from './egress/egress';
+import { createSpendScan, DailySpend, DEFAULT_DAILY_LIMIT_PUSD } from './egress/spend';
+import { ANTHROPIC_TARGET, createTransport, ignoredEgressEnvironment } from './egress/transport';
 import { checkElevation, systemWhoamiPath } from './elevation';
 import { LockSignals } from './lock-signals';
 import { APP_ID, APP_NAME, appPaths, TEST_APP_ID } from './paths';
@@ -22,15 +29,17 @@ import { ViolationBreaker } from './policy/breaker';
 import { phase1PermissionPolicy } from './policy/permissions';
 import { APP_DISABLED_FEATURES, HOST_RESOLVER_RULES, mergeFeatureList, unexpectedArguments, unexpectedEnvironment } from './policy/switches';
 import { APP_ORIGIN } from './policy/url';
+import type { SupervisorEvent } from './supervisor';
 import { startUiServer, statusPage } from './ui-server';
 import type { UiServerEvent } from './ui-server';
 import { Vault } from './vault';
 import { handleVaultRequest } from './vault-requests';
 
 /**
- * Processo principal do Jesus (fase 1, etapa 3; seção 3.12; decisões 0016 e 0017). Abre uma janela só, que carrega
- * `https://jesus.invalid/` numa sessão em memória; cada pedido dela vai ao servidor da interface (utilityProcess
- * `jesus-next`) pela ponte. Nenhuma porta é aberta e nada sai para a rede.
+ * Processo principal do Jesus (fase 1, etapa 3; seção 3.12; decisões 0016, 0017 e 0023). Abre uma janela só, que
+ * carrega `https://jesus.invalid/` numa sessão em memória; cada pedido dela vai ao servidor da interface
+ * (utilityProcess `jesus-next`) pela ponte. Nenhuma porta é aberta. A única saída para a rede é a da API da Anthropic,
+ * feita aqui, para o Cérebro (utilityProcess `jesus-brain`), com a chave do cofre.
  */
 
 const APP_HOME = `${APP_ORIGIN}/`;
@@ -54,6 +63,7 @@ const frameBreaker = new ViolationBreaker({ limit: 8, windowMs: 10_000 });
 // Só o build de teste guarda as violações (para os testes lerem); a produção só registra no log, cortado.
 const violations: Violation[] = [];
 const serverEvents: UiServerEvent[] = [];
+const brainEvents: SupervisorEvent[] = [];
 
 /**
  * Volta a janela para o início. O `loadURL` rejeita quando outra navegação interrompe esta (por exemplo, a página de
@@ -101,12 +111,12 @@ function testIdleMs(): number | undefined {
   return Number.isSafeInteger(value) && value >= 1_000 ? value : undefined;
 }
 
-/** Saída do servidor da interface: vai para o stderr do principal, marcada, com segredos mascarados, cortada. */
-function forwardOutput(child: UtilityProcess): void {
+/** Saída de um processo filho: vai para o stderr do principal, marcada, com segredos mascarados, cortada. */
+function forwardOutput(child: UtilityProcess, label: string): void {
   for (const stream of [child.stdout, child.stderr]) {
     stream?.on('data', (chunk: Buffer) => {
       for (const line of chunk.toString('utf8').split('\n')) {
-        if (line.trim() !== '') process.stderr.write(`[jesus-next] ${maskSecrets(line).text.slice(0, 2_000)}\n`);
+        if (line.trim() !== '') process.stderr.write(`[${label}] ${maskSecrets(line).text.slice(0, 2_000)}\n`);
       }
     });
   }
@@ -144,8 +154,11 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   if (vaultProblem !== null) log.warn('cofre.indisponivel', { motivo: vaultProblem });
   const legacyAnchors = fileAnchorStore(join(paths.dataDir, 'audit-anchor.json'));
   const anchors = vaultProblem === null ? vaultAnchorStore(vault, legacyAnchors) : legacyAnchors;
+  // O gasto do dia vem do registro (decisão 0023): reabrir o app não zera o teto.
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const spendScan = createSpendScan(localDayKey(Date.now(), timeZone), timeZone);
   try {
-    const opened = await AuditWriter.open({ path: join(paths.dataDir, 'audit.jsonl'), anchors });
+    const opened = await AuditWriter.open({ path: join(paths.dataDir, 'audit.jsonl'), anchors, visit: (entry) => spendScan.add(entry) });
     audit = opened.writer;
     if (opened.verdict.status !== 'ok' || opened.verdict.tornTail) {
       log.warn('registro.conferencia', { status: opened.verdict.status, linhaIncompleta: opened.verdict.tornTail, separado: opened.quarantined });
@@ -154,6 +167,8 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     log.error('registro.nao_abriu', { error });
   }
   record({ type: 'app.opened', version: app.getVersion(), testBuild: TEST_BUILD });
+  const ignoredEnv = ignoredEgressEnvironment(process.env);
+  if (ignoredEnv.length > 0) log.info('saida.ambiente_ignorado', { variaveis: ignoredEnv.join(' ') });
 
   const cookies = new CookieJar();
   jar = cookies;
@@ -165,7 +180,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   const uiServer = startUiServer({
     fork: () => {
       const child = utilityProcess.fork(paths.nextHostEntry, [], { serviceName: 'jesus-next', stdio: 'pipe', env: childEnv });
-      forwardOutput(child);
+      forwardOutput(child, 'jesus-next');
       currentChild = child;
       return child;
     },
@@ -191,6 +206,41 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     },
   });
 
+  // Saída para a API da Anthropic e o Cérebro (decisão 0023). A chave sai do cofre só na hora de cada pedido; o teto do
+  // dia começa do que o registro mostra; sem registro de auditoria, nenhum pedido sai.
+  const card = getModelCard(BRAIN_MODEL_KEY);
+  if (card === null) throw new Error('o modelo do Cérebro não está no catálogo');
+  const spend = new DailySpend({ limitPUsd: DEFAULT_DAILY_LIMIT_PUSD, timeZone, start: spendScan.result() });
+  const transport = createTransport(ANTHROPIC_TARGET);
+  const egress = createEgress({
+    transport,
+    readKey: () => readApiKey(vault),
+    spend,
+    card,
+    audit: (event) => (audit === null ? Promise.reject(new Error('registro de auditoria indisponível')) : audit.append(event)),
+    toolNames: PHASE1_TOOL_NAMES,
+    userAgent: `Jesus/${app.getVersion()}`,
+  });
+  const brainEnv = buildChildEnv(process.env, { fixed: { NODE_ENV: 'production' } });
+  let brainChild: UtilityProcess | null = null;
+  const brain = startBrainProcess({
+    fork: () => {
+      const child = utilityProcess.fork(paths.brainEntry, [], { serviceName: 'jesus-brain', stdio: 'pipe', env: brainEnv });
+      forwardOutput(child, 'jesus-brain');
+      brainChild = child;
+      return child;
+    },
+    egress,
+    onEvent: (event) => {
+      if (TEST_BUILD) brainEvents.push(event);
+      log.info('cerebro', event);
+      if (event.type === 'ready') record({ type: 'brain.ready', attempt: event.attempt, prepareMs: event.prepareMs });
+      if (event.type === 'exited') record({ type: 'brain.exited', code: event.code });
+      if (event.type === 'failed') record({ type: 'brain.failed', reason: event.reason, message: event.message.slice(0, 500) });
+      if (event.type === 'gave-up') record({ type: 'brain.gave_up', failures: event.failures });
+    },
+  });
+
   const signals = new LockSignals({
     notify: (message) => uiServer.notify(message),
     // Com o tempo sem uso curto do build de teste, o aviso de uso precisa ser mais frequente que o prazo.
@@ -213,6 +263,8 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     log.info('bloqueio.do_sistema', { motivo: reason, origem: source });
     record({ type: 'app.locked', reason, source });
     cookies.clear();
+    // O que estava saindo para a API para aqui: o Cérebro recebe `locked`.
+    egress.cancelAll('locked');
     signals.lock(reason);
     void goHome(window, 'bloqueio do sistema');
   };
@@ -272,7 +324,11 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     if (window.isMinimized()) window.restore();
     window.focus();
   });
-  app.on('before-quit', () => uiServer.stop());
+  app.on('before-quit', () => {
+    uiServer.stop();
+    brain.stop();
+    transport.close();
+  });
 
   if (TEST_BUILD) {
     // Ganchos só do build de teste (somem do bundle de produção): os testes de ponta a ponta leem daqui.
@@ -290,6 +346,10 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
         emitPower: (name: string) => powerHandlers[name]?.(),
         auditAnchor: () => anchors.read(),
         vaultProblem: () => vault.problem(),
+        brainEvents,
+        brainPid: () => brainChild?.pid,
+        restartBrain: () => brain.restart(),
+        spend: () => spend.snapshot(),
       },
     });
   }
