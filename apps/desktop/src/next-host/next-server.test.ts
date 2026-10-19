@@ -51,12 +51,13 @@ describe('fetch do servidor da interface', () => {
 
 describe('ambiente do servidor da interface', () => {
   it('vem da configuração recebida por mensagem, com https e telemetria desligada', () => {
-    const env = serverEnv(CONFIG, { trailingSlash: true, compress: false });
+    const env = serverEnv(CONFIG, { trailingSlash: true, compress: false }, 'Y2hhdmU=');
     expect(env).toEqual({
       NODE_ENV: 'production',
       NEXT_TELEMETRY_DISABLED: '1',
       JESUS_HTTPS: '1',
       JESUS_DATA_DIR: '/dados/jesus',
+      NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: 'Y2hhdmU=',
       __NEXT_PRIVATE_STANDALONE_CONFIG: '{"trailingSlash":true,"compress":false}',
       __NEXT_PRIVATE_ORIGIN: 'https://jesus.invalid',
     });

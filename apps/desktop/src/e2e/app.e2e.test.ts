@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,12 @@ const executable = process.env['JESUS_E2E_EXECUTABLE'];
 const packaged = executable !== undefined && executable !== '';
 const uiDir = join(desktopDir, 'stage', 'ui', 'apps', 'ui');
 const PASSWORD = 'cavalo bateria grampo correto 42';
+/**
+ * No pacote, um módulo deixado em `resources/node_modules` (fora do `app.asar`) no caminho de um `require` opcional do
+ * Next não pode rodar no servidor da interface. Se rodasse, ele deixaria esta marca na pasta de dados.
+ */
+const plantedModules = packaged ? join(dirname(executable ?? ''), 'resources', 'node_modules') : undefined;
+const PLANTED_MARK = 'modulo-plantado-rodou';
 
 let app: RunningApp;
 let page: Page;
@@ -50,6 +56,18 @@ beforeAll(async () => {
   for (const [path, how] of needed) {
     if (!existsSync(path)) throw new Error(`Falta ${path}. Rode: ${how}`);
   }
+  if (plantedModules !== undefined) {
+    if (existsSync(plantedModules)) throw new Error(`${plantedModules} já existe no pacote de teste`);
+    const moduleDir = join(plantedModules, '@opentelemetry', 'api');
+    await mkdir(moduleDir, { recursive: true });
+    await writeFile(join(moduleDir, 'package.json'), JSON.stringify({ name: '@opentelemetry/api', main: 'index.js' }));
+    await writeFile(
+      join(moduleDir, 'index.js'),
+      `require('node:fs').writeFileSync(require('node:path').join(process.env.JESUS_DATA_DIR, '${PLANTED_MARK}'), 'rodou');\n` +
+        // Se rodar, pelo menos o Next segue com a cópia embutida e o resto dos testes continua.
+        "throw new Error('módulo plantado');\n",
+    );
+  }
   userData = await mkdtemp(join(tmpdir(), 'jesus-e2e-'));
   app = await launchApp({ mainEntry, userData, executable });
   page = app.page;
@@ -59,6 +77,7 @@ afterAll(async () => {
   await app?.close();
   // No Windows, arquivos recém-soltos ainda podem estar presos por um instante.
   await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  if (plantedModules !== undefined) await rm(plantedModules, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 });
 
 describe('app de desktop: janela sem porta', () => {
@@ -67,6 +86,8 @@ describe('app de desktop: janela sem porta', () => {
     await page.getByRole('heading', { name: 'Crie a senha do Jesus' }).waitFor();
     expect(await hooks<number>('h.uiServerPid()')).toBeGreaterThan(0);
     expect(await hooks<boolean>("h.serverEvents.some((e) => e.type === 'ready')")).toBe(true);
+    // O servidor já subiu (e o Next já tentou o módulo opcional): o plantado não rodou.
+    if (plantedModules !== undefined) expect(existsSync(join(userData, 'data', PLANTED_MARK))).toBe(false);
   });
 
   it('a página não tem Node; sandbox e isolamento ligados', async () => {

@@ -11,7 +11,7 @@ import { TEST_BUILD } from './build-flags';
 import { buildChildEnv } from './child-env';
 import { CookieJar } from './cookie-jar';
 import { checkElevation } from './elevation';
-import { APP_NAME, appPaths } from './paths';
+import { APP_ID, APP_NAME, appPaths, TEST_APP_ID } from './paths';
 import { ViolationBreaker } from './policy/breaker';
 import { phase1PermissionPolicy } from './policy/permissions';
 import { APP_DISABLED_FEATURES, HOST_RESOLVER_RULES, mergeFeatureList, unexpectedArguments, unexpectedEnvironment } from './policy/switches';
@@ -99,7 +99,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
       app.exit(3);
       return;
     }
-    app.setAppUserModelId('dev.jesus.desktop');
+    app.setAppUserModelId(TEST_BUILD ? TEST_APP_ID : APP_ID);
   }
 
   Menu.setApplicationMenu(null);

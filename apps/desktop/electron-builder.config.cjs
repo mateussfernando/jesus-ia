@@ -5,16 +5,20 @@
 // Build de produção: fusíveis travados (sem RunAsNode, sem NODE_OPTIONS, sem --inspect; integridade do asar e só
 // carregar o app de dentro do asar). Build de teste (JESUS_TEST_BUILD=1 na hora de empacotar): o bundle dist-test e
 // os fusíveis padrão, porque os testes de ponta a ponta precisam do inspetor do Node. O build de teste nunca é
-// publicado: ele sai em release-test/ e só serve ao CI.
+// publicado: ele sai em release-test/, só como pasta, e só serve ao CI. Tem identidade própria (appId e nome, os mesmos
+// de src/main/paths.ts) e nenhum instalador sai dele: um instalador com o appId do Jesus substituiria a instalação de
+// verdade por um app sem fusíveis.
 const checksums = require('electron/checksums.json');
 
 const testBuild = process.env.JESUS_TEST_BUILD === '1';
 const bundleDir = testBuild ? 'dist-test' : 'dist';
 
+const productName = testBuild ? 'Jesus (teste)' : 'Jesus';
+
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
-  appId: 'dev.jesus.desktop',
-  productName: 'Jesus',
+  appId: testBuild ? 'dev.jesus.desktop.test' : 'dev.jesus.desktop',
+  productName,
   executableName: 'Jesus',
   copyright: 'Uso pessoal',
   directories: { output: testBuild ? 'release-test' : 'release' },
@@ -28,7 +32,7 @@ module.exports = {
     // O electron-builder ignora pastas node_modules por padrão; as do standalone do Next são parte da interface.
     'stage/ui/**/node_modules/**/*',
   ],
-  extraMetadata: { main: `${bundleDir}/main.mjs` },
+  extraMetadata: { main: `${bundleDir}/main.mjs`, productName },
   asar: true,
   // Nada de compilar módulo nativo no empacotamento: o app não tem nenhum (o stage-ui.mjs recusa .node).
   npmRebuild: false,
@@ -71,4 +75,12 @@ module.exports = {
   },
   linux: { target: ['dir'] },
   publish: null,
+  // Todo instalador ou pacote (NSIS, zip, AppImage…) passa por aqui; a pasta *-unpacked, não.
+  ...(testBuild
+    ? {
+        artifactBuildStarted() {
+          throw new Error('o build de teste não gera instalador nem pacote: só a pasta *-unpacked (package.mjs --test --dir)');
+        },
+      }
+    : {}),
 };

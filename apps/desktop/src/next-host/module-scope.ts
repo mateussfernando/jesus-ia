@@ -1,0 +1,34 @@
+import { registerHooks } from 'node:module';
+import { sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/**
+ * Só código de dentro do app carrega no servidor da interface (seção 3.13). A busca de módulos do Node sobe as pastas a
+ * partir de quem pede: dentro do `app.asar`, um `require` que não acha o módulo lá dentro chega a
+ * `<instalação>/resources/node_modules`, fora da integridade do asar (o Electron corta a busca só fora de
+ * `resources`). O Next faz isso no começo: tenta `require('@opentelemetry/api')` antes da cópia embutida. Sem esta trava,
+ * um arquivo deixado ali por qualquer programa do usuário rodaria a cada abertura dentro do `jesus-next`.
+ */
+
+/** O módulo resolvido pode carregar: um módulo do Node (`node:`) ou um arquivo dentro da raiz do app. */
+export function isModuleInside(root: string, url: string, separator: string = sep): boolean {
+  if (url.startsWith('node:')) return true;
+  if (!url.startsWith('file:')) return false;
+  const path = fileURLToPath(url, { windows: separator === '\\' });
+  const base = root.endsWith(separator) ? root : root + separator;
+  return path === root || path.startsWith(base);
+}
+
+/** Liga a trava para tudo o que carregar daqui em diante, por `require` ou `import`. */
+export function confineModules(root: string): void {
+  registerHooks({
+    resolve(specifier, context, nextResolve) {
+      const resolved = nextResolve(specifier, context);
+      if (!isModuleInside(root, resolved.url)) {
+        // O mesmo código do "não achei": quem tenta um módulo opcional (como o Next) segue com a cópia embutida.
+        throw Object.assign(new Error(`módulo de fora do app recusado: ${specifier}`), { code: 'MODULE_NOT_FOUND' });
+      }
+      return resolved;
+    },
+  });
+}

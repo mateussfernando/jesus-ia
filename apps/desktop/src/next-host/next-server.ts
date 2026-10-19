@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -22,14 +23,20 @@ interface NextServer {
 
 type CreateNextServer = (options: { dir: string; dev: boolean; hostname: string; port: number }) => NextServer;
 
-/** Ambiente que o servidor da interface precisa, montado aqui a partir da configuração recebida por mensagem. */
-export function serverEnv(config: ConfigMessage, nextConfig: Record<string, unknown>): Record<string, string> {
+/**
+ * Ambiente que o servidor da interface precisa, montado aqui a partir da configuração recebida por mensagem.
+ * `actionKey` é a chave (AES-256, base64) com que o Next cifra os valores capturados pelas Server Actions: sem ela, ele
+ * usaria a do build, que vai igual dentro de todo `.exe` publicado. Uma por processo basta, porque a sessão cai junto
+ * quando o servidor reinicia.
+ */
+export function serverEnv(config: ConfigMessage, nextConfig: Record<string, unknown>, actionKey: string): Record<string, string> {
   return {
     NODE_ENV: 'production',
     NEXT_TELEMETRY_DISABLED: '1',
     // O app roda em https://jesus.invalid: cookie `Secure` e lista de Host só com esse nome (apps/ui/src/server).
     JESUS_HTTPS: '1',
     JESUS_DATA_DIR: config.dataDir,
+    NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: actionKey,
     __NEXT_PRIVATE_STANDALONE_CONFIG: JSON.stringify(nextConfig),
     // O repasse de Server Action entre páginas vai para a própria origem, atendido em memória (installServerFetch).
     __NEXT_PRIVATE_ORIGIN: APP_ORIGIN,
@@ -68,7 +75,7 @@ export async function loadNextServer(config: ConfigMessage): Promise<LoadedServe
   const raw: unknown = JSON.parse(await readFile(join(config.uiDir, '.next', 'required-server-files.json'), 'utf8'));
   // A janela não aceita compressão (o adaptador tira o `accept-encoding`); desligar evita o trabalho à toa.
   const nextConfig = { ...RequiredServerFilesSchema.parse(raw).config, compress: false };
-  Object.assign(process.env, serverEnv(config, nextConfig));
+  Object.assign(process.env, serverEnv(config, nextConfig, randomBytes(32).toString('base64')));
 
   let serve: Serve | null = null;
   globalThis.fetch = createServerFetch((request) => {

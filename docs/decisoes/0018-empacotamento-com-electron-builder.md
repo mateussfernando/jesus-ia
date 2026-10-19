@@ -28,12 +28,13 @@ A prova de 13/10/2026 mostrou que funciona o app empacotado com asar, fusíveis 
 
 - **Dois builds, decididos na compilação:**
   - **Produção:** `dist/`, fusíveis travados.
-  - **Teste:** `dist-test/` e fusíveis padrão, porque os testes de ponta a ponta usam o inspetor do Node e o CDP. Sai em `release-test/` e nunca é publicado. Ele também não recusa rodar como administrador, só registra (os runners Windows do GitHub rodam elevados). A produção recusa.
+  - **Teste:** `dist-test/` e fusíveis padrão, porque os testes de ponta a ponta usam o inspetor do Node e o CDP. Sai em `release-test/`, só como pasta, e nunca é publicado. Tem identidade própria (`dev.jesus.desktop.test`, "Jesus (teste)"), e a configuração recusa gerar instalador ou pacote dele: um instalador com o appId do Jesus substituiria a instalação de verdade. Ele também não recusa rodar como administrador, só registra (os runners Windows do GitHub rodam elevados). A produção recusa.
   - O build de produção falha se sobrar código de teste no bundle, e o pacote é conferido de novo.
 
 - **Conferência do pacote** (`scripts/check-package.mjs`, em todo empacotamento e no CI):
   - fusíveis um a um (`@electron/fuses`);
-  - conteúdo do `app.asar`: o bundle certo, a interface montada, nenhum `node_modules` do projeto, nenhum arquivo que o `stage-ui.mjs` recusaria e nenhum código de teste;
+  - conteúdo do `app.asar`: o bundle certo, a interface montada, nenhum `node_modules` do projeto, nenhum arquivo que o `stage-ui.mjs` recusaria ou deixaria de fora, nenhum binário (`.node`, `.dll`, `.exe`, `.so`, `.dylib`) e nenhum código de teste;
+  - no build de teste: o nome próprio e nenhum instalador ao lado;
   - as variáveis `ELECTRON_*` que o app aceita por serem só das ferramentas de build não podem aparecer no executável;
   - na produção, abrindo o app de verdade: ele sai com 2 diante de `--remote-debugging-port` e de `ELECTRON_DISABLE_SANDBOX` (também em minúsculas) e ignora `ELECTRON_RUN_AS_NODE`.
 

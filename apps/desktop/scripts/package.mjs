@@ -3,9 +3,9 @@
 // Gera o bundle (dist/ ou dist-test/), confere que a interface montada existe (npm run stage:ui), chama o
 // electron-builder e confere o pacote (check-package.mjs). Sem --win/--linux, empacota para o sistema atual: o
 // instalador NSIS (.exe) só sai no Windows (no Linux o electron-builder precisaria do wine). Com --dir, só a pasta
-// *-unpacked, sem instalador (o pacote de teste do CI).
+// *-unpacked, sem instalador. O build de teste (o do CI) só sai assim: --test exige --dir.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,10 @@ const args = process.argv.slice(2);
 const testBuild = args.includes('--test');
 const platform = args.includes('--win') ? 'win' : args.includes('--linux') ? 'linux' : process.platform === 'win32' ? 'win' : 'linux';
 const dirOnly = args.includes('--dir');
+if (testBuild && !dirOnly) {
+  console.error('O build de teste só sai como pasta (--test --dir): um instalador dele ocuparia o lugar do Jesus instalado.');
+  process.exit(1);
+}
 
 function run(script, scriptArgs) {
   const result = spawnSync(process.execPath, [join(desktopDir, 'scripts', script), ...scriptArgs], { stdio: 'inherit' });
@@ -36,12 +40,14 @@ const targets =
   platform === 'win'
     ? Platform.WINDOWS.createTarget([dirOnly ? 'dir' : 'nsis'], Arch.x64)
     : Platform.LINUX.createTarget(['dir'], Arch.x64);
+// Pasta de saída limpa: a conferência olha só o que este empacotamento gerou.
+const outDir = join(desktopDir, testBuild ? 'release-test' : 'release');
+rmSync(outDir, { recursive: true, force: true });
 await build({ projectDir: desktopDir, config, targets, publish: 'never' });
 
-const outDir = join(desktopDir, testBuild ? 'release-test' : 'release');
-const unpacked = readdirSync(outDir).find((name) => name.endsWith('-unpacked'));
-if (unpacked === undefined) {
-  console.error(`o electron-builder não gerou a pasta *-unpacked em ${outDir}`);
+const unpacked = join(outDir, `${platform}-unpacked`);
+if (!existsSync(unpacked)) {
+  console.error(`o electron-builder não gerou ${unpacked}`);
   process.exit(1);
 }
-run('check-package.mjs', [join(outDir, unpacked), ...(testBuild ? ['--test'] : [])]);
+run('check-package.mjs', [unpacked, ...(testBuild ? ['--test'] : [])]);

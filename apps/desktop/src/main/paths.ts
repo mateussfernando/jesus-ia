@@ -28,6 +28,9 @@ export interface AppPathsOptions {
 export const APP_NAME = 'Jesus';
 /** O build de teste nunca usa a pasta do app de verdade (nem a senha do dono). */
 export const TEST_APP_NAME = 'Jesus (teste)';
+/** Identidade do app no Windows (a mesma do `electron-builder.config.cjs`); o build de teste tem a dele. */
+export const APP_ID = 'dev.jesus.desktop';
+export const TEST_APP_ID = 'dev.jesus.desktop.test';
 
 export function appPaths(options: AppPathsOptions): AppPaths {
   let userData = join(options.appData, options.testBuild ? TEST_APP_NAME : APP_NAME);
