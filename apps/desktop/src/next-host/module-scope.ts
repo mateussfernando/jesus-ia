@@ -10,13 +10,18 @@ import { fileURLToPath } from 'node:url';
  * um arquivo deixado ali por qualquer programa do usuário rodaria a cada abertura dentro do `jesus-next`.
  */
 
-/** O módulo resolvido pode carregar: um módulo do Node (`node:`) ou um arquivo dentro da raiz do app. */
+/**
+ * O módulo resolvido pode carregar: um módulo do Node (`node:`) ou um arquivo dentro da raiz do app. No Windows, o
+ * sistema de arquivos não diferencia maiúsculas, e a comparação também não.
+ */
 export function isModuleInside(root: string, url: string, separator: string = sep): boolean {
   if (url.startsWith('node:')) return true;
   if (!url.startsWith('file:')) return false;
-  const path = fileURLToPath(url, { windows: separator === '\\' });
-  const base = root.endsWith(separator) ? root : root + separator;
-  return path === root || path.startsWith(base);
+  const windows = separator === '\\';
+  const fold = (text: string) => (windows ? text.toLowerCase() : text);
+  const path = fold(fileURLToPath(url, { windows }));
+  const base = fold(root.endsWith(separator) ? root : root + separator);
+  return path === fold(root) || path.startsWith(base);
 }
 
 /** Liga a trava para tudo o que carregar daqui em diante, por `require` ou `import`. */
