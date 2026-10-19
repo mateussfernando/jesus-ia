@@ -88,6 +88,8 @@ describe('app de desktop: janela sem porta', () => {
     expect(await hooks<boolean>("h.serverEvents.some((e) => e.type === 'ready')")).toBe(true);
     // O servidor já subiu (e o Next já tentou o módulo opcional): o plantado não rodou.
     if (plantedModules !== undefined) expect(existsSync(join(userData, 'data', PLANTED_MARK))).toBe(false);
+    // No Windows, a conferência de administrador rodou de verdade (o build de teste só registra o resultado).
+    if (process.platform === 'win32') expect(app.output.join('')).toMatch(/elevação: (elevated|not-elevated) /);
   });
 
   it('a página não tem Node; sandbox e isolamento ligados', async () => {

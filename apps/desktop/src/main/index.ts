@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, dialog, Menu, MessageChannelMain, session, utilityProcess } from 'electron';
 import type { BrowserWindow, UtilityProcess } from 'electron';
@@ -10,7 +10,7 @@ import type { Violation } from './app-window';
 import { TEST_BUILD } from './build-flags';
 import { buildChildEnv } from './child-env';
 import { CookieJar } from './cookie-jar';
-import { checkElevation } from './elevation';
+import { checkElevation, systemWhoamiPath } from './elevation';
 import { APP_ID, APP_NAME, appPaths, TEST_APP_ID } from './paths';
 import { ViolationBreaker } from './policy/breaker';
 import { phase1PermissionPolicy } from './policy/permissions';
@@ -84,11 +84,12 @@ function forwardOutput(child: UtilityProcess): void {
 async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   await app.whenReady();
   if (process.platform === 'win32') {
-    const elevation = await checkElevation(process.env['SystemRoot'] ?? process.env['SYSTEMROOT']);
-    if (elevation !== 'not-elevated' && TEST_BUILD) {
+    const elevation = await checkElevation(systemWhoamiPath());
+    if (TEST_BUILD) {
       // Só no build de teste (nunca publicado): os runners Windows do GitHub rodam como administrador, e os testes de
-      // ponta a ponta precisam abrir o app. A regra fica no build de produção e nos testes de unidade.
-      log(`build de teste rodando com elevação "${elevation}"; o de produção recusaria abrir`);
+      // ponta a ponta precisam abrir o app. Ele registra o resultado (os testes conferem que a conferência rodou); a
+      // regra fica no build de produção e nos testes de unidade.
+      log(`elevação: ${elevation} (o build de produção só abre com "not-elevated")`);
     } else if (elevation !== 'not-elevated') {
       dialog.showErrorBox(
         APP_NAME,
@@ -181,6 +182,16 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   await goHome(win, 'abertura');
 }
 
+/**
+ * Onde fica a pasta de dados: no Windows, `%LOCALAPPDATA%` (por máquina, como o Chromium; a `Roaming` iria para o
+ * servidor num perfil móvel), com a pasta do usuário como reserva; no Linux (testes), `~/.config`.
+ */
+function dataRoot(): string {
+  if (process.platform !== 'win32') return app.getPath('appData');
+  const local = process.env['LOCALAPPDATA'];
+  return local !== undefined && isAbsolute(local) ? local : join(app.getPath('home'), 'AppData', 'Local');
+}
+
 function start(): void {
   // O app de produção não aceita nenhum argumento nem variável ELECTRON_* (seção 3.13). Rodando pelo Electron de
   // desenvolvimento, o segundo argumento é o caminho do app.
@@ -204,7 +215,7 @@ function start(): void {
 
   app.setName(APP_NAME);
   const paths = appPaths({
-    appData: app.getPath('appData'),
+    dataRoot: dataRoot(),
     bundleDir,
     testBuild: TEST_BUILD,
     e2eUserData: TEST_BUILD ? process.env['JESUS_E2E_USER_DATA'] : undefined,
