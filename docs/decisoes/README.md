@@ -23,7 +23,8 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0017](0017-servidor-do-next-num-utilityprocess.md) | Servidor do Next num utilityProcess, falando com o principal por uma ponte | aceita |
 | [0018](0018-empacotamento-com-electron-builder.md) | Empacotamento com electron-builder: fusíveis, asar e instalador por usuário | aceita |
 | [0019](0019-bloqueio-pelos-eventos-do-windows.md) | Bloqueio pelos eventos do Windows e ponte do servidor da interface com o principal | aceita |
-| [0022](0022-registro-de-auditoria-e-mascaramento.md) | Registro de auditoria encadeado, mascaramento de segredos e logger com redação | aceita (números 0020 e 0021 reservados no plano da fase 1) |
+| [0020](0020-cofre-da-chave-no-processo-principal.md) | Cofre da chave no processo principal e tela Configurações | aceita |
+| [0022](0022-registro-de-auditoria-e-mascaramento.md) | Registro de auditoria encadeado, mascaramento de segredos e logger com redação | aceita (âncora no cofre pela 0020; número 0021 reservado no plano da fase 1) |
 
 ## Modelo
 

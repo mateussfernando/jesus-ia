@@ -24,6 +24,9 @@ const executable = process.env['JESUS_E2E_EXECUTABLE'];
 const packaged = executable !== undefined && executable !== '';
 const uiDir = join(desktopDir, 'stage', 'ui', 'apps', 'ui');
 const PASSWORD = 'cavalo bateria grampo correto 42';
+// Chaves falsas, montadas por partes (nenhum padrão de token inteiro no código-fonte).
+const FAKE_KEY = ['sk-', 'ant-', 'api03-', 'q7Lm2Xv9Rt4Kp8Zw3Nd6Hs1Bf5Gy0Jcu', 'e2eChaveFalsa'].join('');
+const FAKE_ADMIN = ['sk-', 'ant-', 'admin01-', 'q7Lm2Xv9Rt4Kp8Zw3Nd6Hs1Bf5Gy0Jcu'].join('');
 /**
  * No pacote, um módulo deixado em `resources/node_modules` (fora do `app.asar`) no caminho de um `require` opcional do
  * Next não pode rodar no servidor da interface. Se rodasse, ele deixaria esta marca na pasta de dados.
@@ -262,6 +265,39 @@ describe('app de desktop: janela sem porta', () => {
     expect(await hooks<boolean>("h.serverEvents.some((e) => e.type === 'failed')")).toBe(false);
   });
 
+  it('Configurações: a chave vai para o cofre do principal e nunca volta para a tela', async () => {
+    await page.goto(`${APP}/configuracoes/`);
+    await page.getByRole('heading', { name: 'Chave da API da Anthropic' }).waitFor();
+    const state = page.locator('.settings-state');
+    const field = page.locator('#anthropic-key');
+    const message = page.getByRole('status');
+    await field.fill(FAKE_ADMIN);
+    await page.getByRole('button', { name: 'Guardar' }).click();
+    await expect.poll(() => message.textContent()).toContain('administrador');
+    const vaultProblem = await hooks<string | null>('h.vaultProblem()');
+    await field.fill(FAKE_KEY);
+    await page.getByRole('button', { name: 'Guardar' }).click();
+    if (vaultProblem === null) {
+      // Windows (DPAPI) ou Linux com chaveiro: guardou.
+      await expect.poll(() => state.textContent()).toBe('Guardada no cofre.');
+      await page.getByRole('button', { name: 'Apagar chave' }).click();
+      await expect.poll(() => state.textContent()).toBe('Nenhuma chave guardada.');
+    } else {
+      // Linux sem chaveiro (contêiner, CI): o cofre recusa (sem cifra, ou com a senha embutida) e não guarda nada.
+      await expect.poll(() => message.textContent()).toMatch(/cofre do sistema não está disponível|chaveiro seguro/);
+      expect(await state.textContent()).toBe('Nenhuma chave guardada.');
+    }
+    // A chave não aparece na tela, no registro de texto do principal nem nos arquivos de dados.
+    expect(await page.content()).not.toContain(FAKE_KEY);
+    expect(await field.inputValue()).toBe('');
+    expect(app.output.join('')).not.toContain(FAKE_KEY);
+    for (const name of await readdir(join(userData, 'data'))) {
+      const content = await readFile(join(userData, 'data', name), 'utf8').catch(() => '');
+      expect(content, name).not.toContain(FAKE_KEY);
+      expect(content, name).not.toContain(FAKE_ADMIN);
+    }
+  });
+
   it('se o servidor da interface cair, ele volta sozinho e o Jesus volta bloqueado', async () => {
     const before = await hooks<number>('h.uiServerPid()');
     await hooks('h.killUiServer()');
@@ -274,18 +310,17 @@ describe('app de desktop: janela sem porta', () => {
 
   it('o registro de auditoria fica encadeado, confere com a âncora e guarda os eventos de segurança', async () => {
     const auditFile = join(userData, 'data', 'audit.jsonl');
-    const anchorFile = join(userData, 'data', 'audit-anchor.json');
-    const check = async () => {
-      const anchor = JSON.parse(await readFile(anchorFile, 'utf8')) as AuditAnchor;
-      return verifyChain(await readFile(auditFile, 'utf8'), anchor).status;
-    };
+    // A âncora fica no cofre (Windows) ou, sem cofre, num arquivo ao lado: o principal diz qual é.
+    const check = async () => verifyChain(await readFile(auditFile, 'utf8'), await hooks<AuditAnchor | null>('h.auditAnchor()')).status;
     await expect.poll(check).toBe('ok');
     const events = (await readFile(auditFile, 'utf8'))
       .trimEnd()
       .split('\n')
       .map((line) => (JSON.parse(line) as { event: { type: string; kind?: string } }).event);
     const types = events.map((event) => event.type);
-    for (const type of ['app.opened', 'ui_server.ready', 'window.violation', 'app.locked', 'ui_server.exited']) expect(types).toContain(type);
+    for (const type of ['app.opened', 'ui_server.ready', 'window.violation', 'app.locked', 'vault.key_refused', 'ui_server.exited']) {
+      expect(types).toContain(type);
+    }
     expect(events.some((event) => event.type === 'window.violation' && event.kind === 'frame-origin')).toBe(true);
   });
 

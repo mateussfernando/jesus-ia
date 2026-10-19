@@ -4,13 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { createLogger, formatTextLine, maskSecrets } from '@jesus/shared';
 import { AuditWriter } from '@jesus/shared/audit';
 import type { AuditEvent } from '@jesus/shared/audit';
-import { app, dialog, Menu, MessageChannelMain, powerMonitor, session, utilityProcess } from 'electron';
+import { app, dialog, Menu, MessageChannelMain, powerMonitor, safeStorage, session, utilityProcess } from 'electron';
 import type { BrowserWindow, UtilityProcess } from 'electron';
 import { handleAppRequest } from './app-protocol';
 import { APP_PARTITION, lockDownDefaultSession, setupAppSession } from './app-session';
 import { createAppWindow, guardWebContents } from './app-window';
 import type { Violation } from './app-window';
-import { fileAnchorStore } from './audit-anchor';
+import { fileAnchorStore, vaultAnchorStore } from './audit-anchor';
 import { TEST_BUILD } from './build-flags';
 import { buildChildEnv } from './child-env';
 import type { HostLockReason } from '../bridge/protocol';
@@ -24,6 +24,8 @@ import { APP_DISABLED_FEATURES, HOST_RESOLVER_RULES, mergeFeatureList, unexpecte
 import { APP_ORIGIN } from './policy/url';
 import { startUiServer, statusPage } from './ui-server';
 import type { UiServerEvent } from './ui-server';
+import { Vault } from './vault';
+import { handleVaultRequest } from './vault-requests';
 
 /**
  * Processo principal do Jesus (fase 1, etapa 3; seção 3.12; decisões 0016 e 0017). Abre uma janela só, que carrega
@@ -136,11 +138,14 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   app.on('web-contents-created', (_event, contents) => guardWebContents(contents, onViolation));
   await lockDownDefaultSession(session.defaultSession);
   mkdirSync(paths.dataDir, { recursive: true, mode: 0o700 });
+  // Cofre (decisão 0020): a chave da API e a âncora do registro, cifradas pelo safeStorage (no Windows, DPAPI).
+  const vault = new Vault(join(paths.dataDir, 'vault.json'), safeStorage);
+  const vaultProblem = vault.problem();
+  if (vaultProblem !== null) log.warn('cofre.indisponivel', { motivo: vaultProblem });
+  const legacyAnchors = fileAnchorStore(join(paths.dataDir, 'audit-anchor.json'));
+  const anchors = vaultProblem === null ? vaultAnchorStore(vault, legacyAnchors) : legacyAnchors;
   try {
-    const opened = await AuditWriter.open({
-      path: join(paths.dataDir, 'audit.jsonl'),
-      anchors: fileAnchorStore(join(paths.dataDir, 'audit-anchor.json')),
-    });
+    const opened = await AuditWriter.open({ path: join(paths.dataDir, 'audit.jsonl'), anchors });
     audit = opened.writer;
     if (opened.verdict.status !== 'ok' || opened.verdict.tornTail) {
       log.warn('registro.conferencia', { status: opened.verdict.status, linhaIncompleta: opened.verdict.tornTail, separado: opened.quarantined });
@@ -167,6 +172,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     createChannel: () => new MessageChannelMain(),
     config: { uiDir: paths.uiDir, dataDir: paths.dataDir, ...(idleMs === undefined ? {} : { idleMs }) },
     onLockAck: (seq) => lockSignals?.ack(seq),
+    onVaultRequest: (request) => Promise.resolve(handleVaultRequest(request, vault, record)),
     onEvent: (event) => {
       serverEvents.push(event);
       log.info('servidor_interface', event);
@@ -282,6 +288,8 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
         uiServerPid: () => currentChild?.pid,
         killUiServer: () => currentChild?.kill(),
         emitPower: (name: string) => powerHandlers[name]?.(),
+        auditAnchor: () => anchors.read(),
+        vaultProblem: () => vault.problem(),
       },
     });
   }

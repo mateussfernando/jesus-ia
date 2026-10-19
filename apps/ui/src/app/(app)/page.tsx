@@ -19,6 +19,10 @@ export default async function HomePage() {
           <strong>Cenários</strong>
           <span>O laboratório do holograma, com cenários roteirizados e dados falsos.</span>
         </Link>
+        <Link href="/configuracoes/" className="home-card">
+          <strong>Configurações</strong>
+          <span>A chave da API da Anthropic, guardada no cofre do Windows.</span>
+        </Link>
       </nav>
     </main>
   );

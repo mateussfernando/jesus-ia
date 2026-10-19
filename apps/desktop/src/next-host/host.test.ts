@@ -143,6 +143,33 @@ describe('servidor da interface: configuração e pedidos pelo parentPort', () =
     expect(idleAtLoad).toBe(3_000);
   });
 
+  it('cofre: o pedido vai ao principal e a resposta volta para quem pediu; sem resposta a tempo, falha', async () => {
+    const host = createHostBridge({ vaultTimeoutMs: 50 });
+    const child = new FakeUtilityChild((parent) => runNextHost(parent, () => new Promise(() => undefined), () => undefined, host));
+    const requests: { type: string; id: number; op: string; key?: string }[] = [];
+    child.on('message', (message: { type: string; id: number; op: string; key?: string }) => {
+      if (message.type !== 'vault') return;
+      requests.push(message);
+      if (message.op === 'status') child.postMessage({ type: 'vault-reply', id: message.id, ok: true, anthropicKey: 'absent' });
+    });
+    await settle();
+    expect(await host.bridge.vault.status()).toEqual({ ok: true, anthropicKey: 'absent' });
+    // O principal não responde a este: o pedido falha pelo prazo.
+    expect(await host.bridge.vault.setAnthropicKey('chave')).toEqual({ ok: false, anthropicKey: 'unknown', problem: 'failed' });
+    expect(requests.map((request) => [request.op, request.key])).toEqual([
+      ['status', undefined],
+      ['set-anthropic-key', 'chave'],
+    ]);
+    // Resposta atrasada, de um pedido que já falhou, não faz nada.
+    child.postMessage({ type: 'vault-reply', id: requests[1]?.id ?? 0, ok: true, anthropicKey: 'present' });
+    await settle();
+  });
+
+  it('cofre sem ligação com o principal: falha na hora', async () => {
+    const host = createHostBridge();
+    expect(await host.bridge.vault.clearAnthropicKey()).toEqual({ ok: false, anthropicKey: 'unknown', problem: 'failed' });
+  });
+
   it('a ponte é congelada e aceita um só ouvinte de cada', () => {
     const { bridge } = createHostBridge();
     expect(Object.isFrozen(bridge)).toBe(true);

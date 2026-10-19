@@ -46,6 +46,7 @@ function refuse(port: MessagePortLike): void {
 export function runNextHost(parent: ParentPortLike, load: LoadServer, log: HostLog = writeToStderr, host: HostBridge = createHostBridge()): void {
   let phase: 'waiting-config' | 'loading' | 'ready' | 'failed' = 'waiting-config';
   let serve: Serve | null = null;
+  host.connect((message) => parent.postMessage(message));
 
   parent.on('message', (event) => {
     const message = parseToServer(event.data);
@@ -72,6 +73,11 @@ export function runNextHost(parent: ParentPortLike, load: LoadServer, log: HostL
     if (message.type === 'activity') {
       port?.close();
       host.activity();
+      return;
+    }
+    if (message.type === 'vault-reply') {
+      port?.close();
+      host.vaultReply(message);
       return;
     }
     if (message.type === 'config') {

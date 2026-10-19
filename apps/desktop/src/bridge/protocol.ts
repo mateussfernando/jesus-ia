@@ -99,12 +99,37 @@ export const ActivityMessageSchema = z.strictObject({ type: z.literal('activity'
 export type LockMessage = z.infer<typeof LockMessageSchema>;
 export type ActivityMessage = z.infer<typeof ActivityMessageSchema>;
 
+/** Cofre (decisão 0020): o que o servidor da interface pede ao principal. A chave só passa, nunca fica no servidor. */
+export const VAULT_OPS = ['status', 'set-anthropic-key', 'clear-anthropic-key'] as const;
+export const VAULT_PROBLEMS = ['unavailable', 'insecure_backend', 'admin', 'format', 'failed'] as const;
+export type VaultProblemCode = (typeof VAULT_PROBLEMS)[number];
+export const KEY_STATES = ['absent', 'present', 'unknown'] as const;
+
+export const VaultRequestSchema = z.strictObject({
+  type: z.literal('vault'),
+  id: pingSeq,
+  op: z.enum(VAULT_OPS),
+  /** Só ao salvar. */
+  key: z.string().min(1).max(512).optional(),
+});
+export type VaultRequest = z.infer<typeof VaultRequestSchema>;
+
+export const VaultReplySchema = z.strictObject({
+  type: z.literal('vault-reply'),
+  id: pingSeq,
+  ok: z.boolean(),
+  anthropicKey: z.enum(KEY_STATES),
+  problem: z.enum(VAULT_PROBLEMS).optional(),
+});
+export type VaultReply = z.infer<typeof VaultReplySchema>;
+
 export const ToServerMessageSchema = z.discriminatedUnion('type', [
   ConfigMessageSchema,
   RequestMessageSchema,
   PingMessageSchema,
   LockMessageSchema,
   ActivityMessageSchema,
+  VaultReplySchema,
 ]);
 export type ToServerMessage = z.infer<typeof ToServerMessageSchema>;
 
@@ -125,6 +150,7 @@ export const FromServerMessageSchema = z.discriminatedUnion('type', [
   FailedMessageSchema,
   PongMessageSchema,
   LockAckMessageSchema,
+  VaultRequestSchema,
 ]);
 export type FromServerMessage = z.infer<typeof FromServerMessageSchema>;
 

@@ -1,11 +1,13 @@
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import type { AnchorStore, AuditAnchor } from '@jesus/shared/audit';
 import { z } from 'zod';
+import type { Vault } from './vault';
 
 /**
- * Âncora do registro de auditoria num arquivo ao lado do registro (decisão 0022). **Provisória:** na etapa 8 ela passa
- * para o cofre (DPAPI). Num arquivo comum, quem consegue mexer no registro também mexe na âncora; o que ela já pega
- * aqui é o corte do fim e a troca do registro por quem não sabe dela.
+ * Âncora do registro de auditoria (decisão 0022): no cofre (decisão 0020), cifrada pelo DPAPI; num arquivo ao lado do
+ * registro só onde o cofre não funciona (Linux sem chaveiro, nos testes) e como origem da migração. Num arquivo comum,
+ * quem consegue mexer no registro também mexe na âncora; o que ela pega aí é o corte do fim e a troca do registro por
+ * quem não sabe dela.
  */
 
 const AnchorFileSchema = z.strictObject({
@@ -13,7 +15,20 @@ const AnchorFileSchema = z.strictObject({
   hash: z.string().regex(/^[0-9a-f]{64}$/),
 });
 
-export function fileAnchorStore(path: string): AnchorStore {
+export interface FileAnchorStore extends AnchorStore {
+  remove(): Promise<void>;
+}
+
+function parseAnchor(raw: string): AuditAnchor | null {
+  try {
+    const parsed = AnchorFileSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+export function fileAnchorStore(path: string): FileAnchorStore {
   return {
     async read(): Promise<AuditAnchor | null> {
       let raw: string;
@@ -24,18 +39,31 @@ export function fileAnchorStore(path: string): AnchorStore {
         throw error;
       }
       // Âncora estragada vale como ausente: o registro que existir vai para o lado e um novo começa.
-      try {
-        const parsed = AnchorFileSchema.safeParse(JSON.parse(raw));
-        return parsed.success ? parsed.data : null;
-      } catch {
-        return null;
-      }
+      return parseAnchor(raw);
     },
     async write(anchor): Promise<void> {
       // Troca atômica: a âncora nunca fica pela metade.
       const temporary = `${path}.novo`;
       await writeFile(temporary, JSON.stringify(anchor), { mode: 0o600 });
       await rename(temporary, path);
+    },
+    remove: () => rm(path, { force: true }),
+  };
+}
+
+/**
+ * Âncora no cofre. Migração: enquanto o cofre não tem âncora, vale a do arquivo antigo (uma vez); a primeira gravação
+ * vai para o cofre e apaga o arquivo.
+ */
+export function vaultAnchorStore(vault: Pick<Vault, 'get' | 'set'>, legacy: FileAnchorStore): AnchorStore {
+  return {
+    async read(): Promise<AuditAnchor | null> {
+      const raw = vault.get('audit_anchor');
+      return raw === null ? legacy.read() : parseAnchor(raw);
+    },
+    async write(anchor): Promise<void> {
+      vault.set('audit_anchor', JSON.stringify(anchor));
+      await legacy.remove();
     },
   };
 }

@@ -6,8 +6,22 @@
 
 export type HostLockReason = 'os_locked' | 'suspend';
 
+/** Resposta do cofre do processo principal (decisão 0020): só se há chave guardada, nunca a chave. */
+export interface VaultResult {
+  readonly ok: boolean;
+  readonly anthropicKey: 'absent' | 'present' | 'unknown';
+  readonly problem?: 'unavailable' | 'insecure_backend' | 'admin' | 'format' | 'failed';
+}
+
+export interface DesktopVault {
+  status(): Promise<VaultResult>;
+  setAnthropicKey(key: string): Promise<VaultResult>;
+  clearAnthropicKey(): Promise<VaultResult>;
+}
+
 export interface DesktopBridge {
   readonly idleMs: number | undefined;
+  readonly vault: DesktopVault;
   onLock(listener: (reason: HostLockReason) => void): void;
   onActivity(listener: () => void): void;
 }
@@ -20,6 +34,11 @@ export function desktopBridge(): DesktopBridge | null {
   const onLock: unknown = Reflect.get(value, 'onLock');
   const onActivity: unknown = Reflect.get(value, 'onActivity');
   if (typeof onLock !== 'function' || typeof onActivity !== 'function') return null;
+  const vault: unknown = Reflect.get(value, 'vault');
+  if (vault === null || typeof vault !== 'object') return null;
+  for (const method of ['status', 'setAnthropicKey', 'clearAnthropicKey']) {
+    if (typeof Reflect.get(vault, method) !== 'function') return null;
+  }
   const idleMs: unknown = Reflect.get(value, 'idleMs');
   if (idleMs !== undefined && (typeof idleMs !== 'number' || !Number.isSafeInteger(idleMs) || idleMs < 1_000)) return null;
   return value as DesktopBridge;

@@ -55,9 +55,15 @@ describe('bloqueio por tempo sem uso', () => {
     expect(page.url()).toBe(`${APP}/`);
     expect(await page.evaluate(async () => (await fetch('/')).url)).toBe(`${APP}/`);
 
-    // Só eventos criados por script: a página avisa o servidor, mas no app esse aviso não conta como uso.
+    // Só o que a página consegue fazer sozinha: eventos criados por script (a página avisa o servidor) e páginas pedidas
+    // sem parar. No app, nada disso conta como uso.
     const synthetic = setInterval(() => {
-      void page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }))).catch(() => undefined);
+      void page
+        .evaluate(async () => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+          await fetch('/', { redirect: 'manual' });
+        })
+        .catch(() => undefined);
     }, 300);
     try {
       await page.waitForURL(`${APP}/entrar/`, { timeout: 20_000 });

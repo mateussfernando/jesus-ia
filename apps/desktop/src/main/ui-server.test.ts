@@ -247,6 +247,50 @@ describe('ponte do principal com o servidor da interface', () => {
     expect(children[0]?.exited).toBe(false);
   });
 
+  it('pedido ao cofre: o principal responde ao mesmo processo; sem quem atenda, falha', async () => {
+    const replies: unknown[] = [];
+    const answering = (parent: ParentPortLike) => {
+      parent.on('message', (event) => {
+        const data = event.data as { type?: string };
+        if (data.type === 'config') {
+          parent.postMessage({ type: 'ready', prepareMs: 1 });
+          parent.postMessage({ type: 'vault', id: 7, op: 'status' });
+        }
+        if (data.type === 'vault-reply') replies.push(data);
+      });
+    };
+    const children: FakeUtilityChild[] = [];
+    const server = startUiServer({
+      fork: () => {
+        const child = new FakeUtilityChild(answering);
+        children.push(child);
+        return child;
+      },
+      createChannel: createFakeChannel,
+      config: { uiDir: '/app/ui', dataDir: '/dados' },
+      timing: FAST,
+      onVaultRequest: (request) => Promise.resolve({ ok: true, anthropicKey: request.op === 'status' ? 'present' : 'absent' }),
+    });
+    running.push(server);
+    await until(() => replies.length === 1);
+    expect(replies).toEqual([{ type: 'vault-reply', id: 7, ok: true, anthropicKey: 'present' }]);
+    const { server: plain } = setup({
+      run: (parent) => {
+        parent.on('message', (event) => {
+          const data = event.data as { type?: string };
+          if (data.type === 'config') {
+            parent.postMessage({ type: 'ready', prepareMs: 1 });
+            parent.postMessage({ type: 'vault', id: 1, op: 'status' });
+          }
+          if (data.type === 'vault-reply') replies.push(data);
+        });
+      },
+    });
+    await plain.whenReady();
+    await until(() => replies.length === 2);
+    expect(replies[1]).toEqual({ type: 'vault-reply', id: 1, ok: false, anthropicKey: 'unknown', problem: 'failed' });
+  });
+
   it('pong fora de ordem é fuga do protocolo: o processo cai e sobe de novo', async () => {
     const children: FakeUtilityChild[] = [];
     const { server, events } = setup({

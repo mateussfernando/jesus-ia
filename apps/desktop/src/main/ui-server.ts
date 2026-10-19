@@ -1,6 +1,15 @@
 import { BRIDGE_METHODS, CREDIT_WINDOW, MAX_HEADER_BYTES, MAX_HEADERS, MAX_REQUEST_BODY_BYTES, MAX_URL_LENGTH } from '../bridge/protocol';
 import { parseFromServer, parseRequestPortOut } from '../bridge/protocol';
-import type { ActivityMessage, BridgeMethod, ConfigMessage, HeaderList, LockMessage, RequestMeta } from '../bridge/protocol';
+import type {
+  ActivityMessage,
+  BridgeMethod,
+  ConfigMessage,
+  HeaderList,
+  LockMessage,
+  RequestMeta,
+  VaultReply,
+  VaultRequest,
+} from '../bridge/protocol';
 import { wrapPort } from '../bridge/ports';
 import type { ChannelLike, UtilityChildLike } from '../bridge/ports';
 import { isAppUrl } from './policy/url';
@@ -72,6 +81,8 @@ export interface UiServerOptions {
   readonly onEvent?: (event: UiServerEvent) => void;
   /** O servidor confirmou um bloqueio mandado com `notify` (decisão 0019). */
   readonly onLockAck?: (seq: number) => void;
+  /** Pedido do servidor ao cofre (decisão 0020). Sem quem atenda, a resposta é falha. */
+  readonly onVaultRequest?: (request: VaultRequest) => Promise<Omit<VaultReply, 'type' | 'id'>>;
   readonly timing?: Partial<UiServerTiming>;
   readonly now?: () => number;
 }
@@ -297,6 +308,23 @@ export function startUiServer(options: UiServerOptions): UiServer {
       }
       if (message.type === 'lock-ack') {
         if (record.ready) options.onLockAck?.(message.seq);
+        return;
+      }
+      if (message.type === 'vault') {
+        // Só de um servidor pronto; a resposta volta para o mesmo processo, se ele ainda for o atual.
+        if (!record.ready) return;
+        const failed: Omit<VaultReply, 'type' | 'id'> = { ok: false, anthropicKey: 'unknown', problem: 'failed' };
+        const answer = options.onVaultRequest?.(message) ?? Promise.resolve(failed);
+        void answer
+          .catch(() => failed)
+          .then((result) => {
+            if (current !== record) return;
+            try {
+              child.postMessage({ type: 'vault-reply', id: message.id, ...result });
+            } catch {
+              // O processo saiu; o pedido do outro lado falha pelo prazo.
+            }
+          });
         return;
       }
       if (message.type === 'pong') {

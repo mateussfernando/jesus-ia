@@ -90,6 +90,16 @@ describe('protocolo da ponte com o servidor da interface', () => {
     expect(parseFromServer({ type: 'lock-ack', seq: 0 })).toBeNull();
   });
 
+  it('cofre: pedido do servidor e resposta do principal, sem campos a mais', () => {
+    expect(parseFromServer({ type: 'vault', id: 1, op: 'status' })).toEqual({ type: 'vault', id: 1, op: 'status' });
+    expect(parseFromServer({ type: 'vault', id: 2, op: 'set-anthropic-key', key: 'x' })?.type).toBe('vault');
+    expect(parseFromServer({ type: 'vault', id: 2, op: 'set-anthropic-key', key: 'x'.repeat(513) })).toBeNull();
+    expect(parseFromServer({ type: 'vault', id: 3, op: 'get-anthropic-key' })).toBeNull();
+    expect(parseToServer({ type: 'vault-reply', id: 1, ok: true, anthropicKey: 'present' })?.type).toBe('vault-reply');
+    expect(parseToServer({ type: 'vault-reply', id: 1, ok: true, anthropicKey: 'present', key: 'x' })).toBeNull();
+    expect(parseToServer({ type: 'vault-reply', id: 1, ok: false, anthropicKey: 'unknown', problem: 'admin' })?.type).toBe('vault-reply');
+  });
+
   it('configuração: tempo sem uso só dentro da faixa', () => {
     const config = { type: 'config', uiDir: '/app/ui', dataDir: '/dados' };
     expect(parseToServer({ ...config, idleMs: 3_000 })).toEqual({ ...config, idleMs: 3_000 });
