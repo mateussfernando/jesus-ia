@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyChain } from '@jesus/shared/audit';
+import type { AuditAnchor } from '@jesus/shared/audit';
 import type { Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { APP, launchApp } from './harness';
@@ -89,7 +91,7 @@ describe('app de desktop: janela sem porta', () => {
     // O servidor já subiu (e o Next já tentou o módulo opcional): o plantado não rodou.
     if (plantedModules !== undefined) expect(existsSync(join(userData, 'data', PLANTED_MARK))).toBe(false);
     // No Windows, a conferência de administrador rodou de verdade (o build de teste só registra o resultado).
-    if (process.platform === 'win32') expect(app.output.join('')).toMatch(/elevação: (elevated|not-elevated) /);
+    if (process.platform === 'win32') expect(app.output.join('')).toMatch(/admin\.elevacao \{"elevacao":"(elevated|not-elevated)"/);
   });
 
   it('a página não tem Node; sandbox e isolamento ligados', async () => {
@@ -254,6 +256,23 @@ describe('app de desktop: janela sem porta', () => {
       .toBe(2);
     expect(await hooks<number>('h.uiServerPid()')).not.toBe(before);
     await unlock();
+  });
+
+  it('o registro de auditoria fica encadeado, confere com a âncora e guarda os eventos de segurança', async () => {
+    const auditFile = join(userData, 'data', 'audit.jsonl');
+    const anchorFile = join(userData, 'data', 'audit-anchor.json');
+    const check = async () => {
+      const anchor = JSON.parse(await readFile(anchorFile, 'utf8')) as AuditAnchor;
+      return verifyChain(await readFile(auditFile, 'utf8'), anchor).status;
+    };
+    await expect.poll(check).toBe('ok');
+    const events = (await readFile(auditFile, 'utf8'))
+      .trimEnd()
+      .split('\n')
+      .map((line) => (JSON.parse(line) as { event: { type: string; kind?: string } }).event);
+    const types = events.map((event) => event.type);
+    for (const type of ['app.opened', 'ui_server.ready', 'window.violation', 'ui_server.exited']) expect(types).toContain(type);
+    expect(events.some((event) => event.type === 'window.violation' && event.kind === 'frame-origin')).toBe(true);
   });
 
   it('nenhuma violação de CSP no caminho todo', async () => {

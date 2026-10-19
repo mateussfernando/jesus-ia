@@ -19,6 +19,7 @@
   "devDependencies": {
     "@electron/asar": "3.4.1",
     "@electron/fuses": "1.8.0",
+    "@jesus/shared": "*",
     "@types/node": "^24.19.1",
     "electron": "44.7.0",
     "electron-builder": "26.17.0",

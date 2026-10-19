@@ -1,12 +1,16 @@
 import { mkdirSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createLogger, formatTextLine, maskSecrets } from '@jesus/shared';
+import { AuditWriter } from '@jesus/shared/audit';
+import type { AuditEvent } from '@jesus/shared/audit';
 import { app, dialog, Menu, MessageChannelMain, session, utilityProcess } from 'electron';
 import type { BrowserWindow, UtilityProcess } from 'electron';
 import { handleAppRequest } from './app-protocol';
 import { APP_PARTITION, lockDownDefaultSession, setupAppSession } from './app-session';
 import { createAppWindow, guardWebContents } from './app-window';
 import type { Violation } from './app-window';
+import { fileAnchorStore } from './audit-anchor';
 import { TEST_BUILD } from './build-flags';
 import { buildChildEnv } from './child-env';
 import { CookieJar } from './cookie-jar';
@@ -28,8 +32,15 @@ import type { UiServerEvent } from './ui-server';
 const APP_HOME = `${APP_ORIGIN}/`;
 const bundleDir = dirname(fileURLToPath(import.meta.url));
 
-function log(message: string): void {
-  process.stderr.write(`[jesus] ${message}\n`);
+/** Registro de texto do principal, com redação (segredos mascarados): vai para o stderr. */
+const log = createLogger({ sink: (record) => process.stderr.write(`${formatTextLine(record, 'jesus')}\n`) });
+
+/** Registro de auditoria (decisão 0022). Aberto depois da conferência de administrador: elevado, nada se grava. */
+let audit: AuditWriter | null = null;
+
+/** Na fase 1 (ainda sem ferramentas), uma falha do registro de auditoria não derruba o app: fica no log. */
+function record(event: AuditEvent): void {
+  audit?.append(event).catch((error: unknown) => log.error('registro.falhou', { error }));
 }
 
 let window: BrowserWindow | null = null;
@@ -47,7 +58,7 @@ const serverEvents: UiServerEvent[] = [];
 function goHome(win: BrowserWindow | null, reason: string): Promise<void> {
   if (win === null || win.isDestroyed()) return Promise.resolve();
   return win.loadURL(APP_HOME).catch((error: unknown) => {
-    log(`início não carregou (${reason}): ${error instanceof Error ? error.message : String(error)}`);
+    log.warn('janela.inicio_nao_carregou', { motivo: reason, erro: error instanceof Error ? error.message : String(error) });
   });
 }
 
@@ -57,12 +68,15 @@ function goHome(win: BrowserWindow | null, reason: string): Promise<void> {
  * disjuntor fecha o app se isso se repetir demais (laço de recargas).
  */
 function onViolation(violation: Violation): void {
-  if (TEST_BUILD) violations.push({ kind: violation.kind, url: violation.url.slice(0, 200) });
-  log(`recusado (${violation.kind}): ${violation.url.slice(0, 200)}`);
+  const url = violation.url.slice(0, 200);
+  if (TEST_BUILD) violations.push({ kind: violation.kind, url });
+  log.warn('janela.recusado', { tipo: violation.kind, url });
+  record({ type: 'window.violation', kind: violation.kind, url });
   if (violation.kind !== 'frame-origin') return;
   jar?.clear();
   if (frameBreaker.record()) {
-    log('quadros de fora demais em pouco tempo: o app vai fechar');
+    log.error('janela.disjuntor', { motivo: 'quadros de fora demais em pouco tempo: o app vai fechar' });
+    record({ type: 'window.breaker_tripped' });
     dialog.showErrorBox(APP_NAME, 'O Jesus encontrou várias vezes conteúdo que não é dele e fechou por segurança.');
     app.exit(4);
     return;
@@ -70,12 +84,12 @@ function onViolation(violation: Violation): void {
   void goHome(window, 'quadro de fora');
 }
 
-/** Saída do servidor da interface: vai para o stderr do principal, marcada, cortada em linhas razoáveis. */
+/** Saída do servidor da interface: vai para o stderr do principal, marcada, com segredos mascarados, cortada. */
 function forwardOutput(child: UtilityProcess): void {
   for (const stream of [child.stdout, child.stderr]) {
     stream?.on('data', (chunk: Buffer) => {
       for (const line of chunk.toString('utf8').split('\n')) {
-        if (line.trim() !== '') process.stderr.write(`[jesus-next] ${line.slice(0, 2_000)}\n`);
+        if (line.trim() !== '') process.stderr.write(`[jesus-next] ${maskSecrets(line).text.slice(0, 2_000)}\n`);
       }
     });
   }
@@ -89,7 +103,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
       // Só no build de teste (nunca publicado): os runners Windows do GitHub rodam como administrador, e os testes de
       // ponta a ponta precisam abrir o app. Ele registra o resultado (os testes conferem que a conferência rodou); a
       // regra fica no build de produção e nos testes de unidade.
-      log(`elevação: ${elevation} (o build de produção só abre com "not-elevated")`);
+      log.info('admin.elevacao', { elevacao: elevation, producao: 'só abre com "not-elevated"' });
     } else if (elevation !== 'not-elevated') {
       dialog.showErrorBox(
         APP_NAME,
@@ -107,6 +121,19 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   app.on('web-contents-created', (_event, contents) => guardWebContents(contents, onViolation));
   await lockDownDefaultSession(session.defaultSession);
   mkdirSync(paths.dataDir, { recursive: true, mode: 0o700 });
+  try {
+    const opened = await AuditWriter.open({
+      path: join(paths.dataDir, 'audit.jsonl'),
+      anchors: fileAnchorStore(join(paths.dataDir, 'audit-anchor.json')),
+    });
+    audit = opened.writer;
+    if (opened.verdict.status !== 'ok' || opened.verdict.tornTail) {
+      log.warn('registro.conferencia', { status: opened.verdict.status, linhaIncompleta: opened.verdict.tornTail, separado: opened.quarantined });
+    }
+  } catch (error) {
+    log.error('registro.nao_abriu', { error });
+  }
+  record({ type: 'app.opened', version: app.getVersion(), testBuild: TEST_BUILD });
 
   const cookies = new CookieJar();
   jar = cookies;
@@ -124,7 +151,12 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     config: { uiDir: paths.uiDir, dataDir: paths.dataDir },
     onEvent: (event) => {
       serverEvents.push(event);
-      log(`servidor da interface: ${JSON.stringify(event).slice(0, 500)}`);
+      log.info('servidor_interface', event);
+      if (event.type === 'ready') record({ type: 'ui_server.ready', attempt: event.attempt, prepareMs: event.prepareMs });
+      if (event.type === 'exited') record({ type: 'ui_server.exited', code: event.code, inflight: event.inflight });
+      if (event.type === 'failed') record({ type: 'ui_server.failed', reason: event.reason, message: event.message.slice(0, 500) });
+      if (event.type === 'gave-up') record({ type: 'ui_server.gave_up', failures: event.failures });
+      if (event.type === 'invalid-response') record({ type: 'ui_server.invalid_response' });
       // O estado de acesso morreu com o processo: a sessão antiga não vale mais.
       if (event.type === 'exited') cookies.clear();
       // O servidor novo começa bloqueado: a janela volta para o início (que leva à tela de entrada).
@@ -151,7 +183,8 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     window = null;
   });
   win.webContents.on('render-process-gone', (_event, details) => {
-    log(`a página caiu (${details.reason}); recarregando o início`);
+    log.warn('janela.pagina_caiu', { motivo: details.reason });
+    record({ type: 'window.renderer_gone', reason: details.reason });
     setTimeout(() => void goHome(window, 'página caiu'), 1_000);
   });
   app.on('second-instance', () => {
@@ -204,7 +237,7 @@ function start(): void {
   ];
   for (const [what, items] of refusals) {
     if (items.length === 0) continue;
-    log(`${what}: ${items.join(' ').slice(0, 200)}`);
+    log.warn('inicio.recusado', { motivo: what, itens: items.join(' ').slice(0, 200) });
     app.exit(2);
     return;
   }
@@ -230,7 +263,7 @@ function start(): void {
   }
   app.on('window-all-closed', () => app.quit());
   main(paths).catch((error: unknown) => {
-    log(`falha ao abrir: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+    log.error('inicio.falhou', { error });
     app.exit(1);
   });
 }

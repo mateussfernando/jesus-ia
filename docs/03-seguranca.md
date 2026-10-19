@@ -430,10 +430,12 @@ O Jesus **nunca** faz o que está abaixo, mesmo que você peça, mesmo com todos
 - **Onde ficam:** chaves de API dos modelos e tokens OAuth ficam criptografados com o `safeStorage` do Electron (DPAPI no Windows) ou no Gerenciador de Credenciais. **Nunca** em texto puro, no PostgreSQL sem criptografia, em `.env` do repositório ou em variáveis de ambiente de processos que o agente controla.
 - **Limite importante do DPAPI:** ele protege contra **outros usuários** do PC, mas **qualquer programa rodando como você** consegue pedir a descriptografia. A documentação do Electron diz isso explicitamente ([Electron safeStorage](https://electronjs.org/docs/latest/api/safe-storage)). Consequências: comandos do agente **não podem rodar como você no Windows** com acesso livre (por isso a sandbox da seção 3.6), e tokens devem ser de curta duração e revogáveis sempre que possível.
 - **Quem usa os tokens:** só o Executor. Ele injeta o token na chamada HTTP no último momento, o mesmo desenho do proxy de GitHub das sessões na nuvem do Claude Code. Nem a IA nem a sandbox veem o token.
-- **Mascarar segredos:** antes de mandar qualquer texto para um modelo, para o registro ou para a memória, um filtro procura e mascara padrões de segredo:
-  - chaves `sk-…`, `ghp_…`/`github_pat_…`, `AIza…`, `xox…`;
-  - JWTs e chaves privadas (`-----BEGIN … PRIVATE KEY-----`);
-  - strings de conexão.
+- **Mascarar segredos:** antes de mandar qualquer texto para um modelo, para o registro, para os logs ou para a memória, um filtro procura e mascara padrões de segredo (`maskSecrets`, em `packages/shared`; [decisão 0022](decisoes/0022-registro-de-auditoria-e-mascaramento.md)):
+  - chaves `sk-…`/`sk-ant-…`, `ghp_…`/`ghs_…`/`github_pat_…`, `AIza…`/`GOCSPX-…`, `xox…`, AWS, Stripe, npm e outras com prefixo;
+  - `Bearer`, JWTs e chaves privadas (`-----BEGIN … PRIVATE KEY-----`);
+  - senha em string de conexão, senha por atribuição ou por proximidade de palavra-chave, códigos de verificação e de login, código de segurança e número de cartão (fica o final);
+  - tokens de alta entropia.
+  - É idempotente (mascarar de novo não muda nada). O logger também tira campos com nome de segredo (`password`, `token`, `cookie`…) inteiros.
   - Se encontrar um segredo num parâmetro de ação com destino externo → **bloqueio**.
 - **Sua senha:** o Jesus nunca pede, guarda ou digita. O login é sempre você, na página oficial (OAuth).
 - **A senha do próprio Jesus** (para abrir o app, seção 3.20) é outra coisa: fica só como hash bcrypt e nunca é usada com nenhum provedor.
@@ -622,6 +624,8 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 - **Botão de emergência:** atalho global + "Jesus, pare" → cancela o modelo, mata os comandos em execução e congela a fila.
 
 ## 3.16 Auditoria
+
+**Formato ([decisão 0022](decisoes/0022-registro-de-auditoria-e-mascaramento.md)):** JSONL só de acréscimo, cada linha com o SHA-256 do JSON canônico dela e o hash da anterior; uma âncora fora do arquivo (o fim conhecido) pega o corte do fim e a troca do arquivo. Ao abrir, o registro inteiro é conferido; se estiver adulterado, vai para o lado como prova e um registro novo começa ligado à última âncora boa. Cada linha vai ao disco antes de a âncora avançar. Limite: quem roda como o usuário consegue reescrever registro e âncora juntos (seção 3.5); contra o agente, valem as regras de negação das pastas do Jesus.
 
 Cada ação registra:
 

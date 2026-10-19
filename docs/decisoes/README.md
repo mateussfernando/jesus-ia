@@ -22,6 +22,7 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0016](0016-nextjs-com-servidor-dentro-do-electron.md) | Next.js com servidor dentro do Electron: rotas e Server Actions como back-end, sem porta | aceita (onde o servidor roda: 0017) |
 | [0017](0017-servidor-do-next-num-utilityprocess.md) | Servidor do Next num utilityProcess, falando com o principal por uma ponte | aceita |
 | [0018](0018-empacotamento-com-electron-builder.md) | Empacotamento com electron-builder: fusíveis, asar e instalador por usuário | aceita |
+| [0022](0022-registro-de-auditoria-e-mascaramento.md) | Registro de auditoria encadeado, mascaramento de segredos e logger com redação | aceita (números 0019 a 0021 reservados no plano da fase 1) |
 
 ## Modelo
 
