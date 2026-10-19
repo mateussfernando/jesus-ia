@@ -4,9 +4,9 @@
 // - app.asar: tem o bundle certo e a interface montada; nada de dist-test na produção, nenhum arquivo que o
 //   stage-ui.mjs recusaria, nenhum código de teste no bundle de produção;
 // - só na produção, quando dá para abrir o app aqui (mesmo sistema, sem ser root no Linux): ele recusa qualquer
-//   argumento (sai com 2) e ignora ELECTRON_RUN_AS_NODE.
+//   argumento e as variáveis ELECTRON_* que mudam o executável (sai com 2) e ignora ELECTRON_RUN_AS_NODE.
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import asar from '@electron/asar';
 import fuses from '@electron/fuses';
@@ -54,6 +54,19 @@ if (testBuild && wire[FuseV1Options.EnableNodeCliInspectArguments] === FuseState
   problems.push('o build de teste precisa do --inspect (os testes de ponta a ponta usam o inspetor)');
 }
 
+// Variáveis ELECTRON_* que o app de produção aceita por serem só das ferramentas de build: o executável não pode
+// lê-las (os nomes que ele lê aparecem no binário, em ASCII ou UTF-16).
+const electronEnvironment = JSON.parse(readFileSync(new URL('../src/main/policy/electron-environment.json', import.meta.url), 'utf8'));
+const binary = readFileSync(executable);
+const readByExecutable = new Set(
+  [binary.toString('latin1'), binary.toString('utf16le')].flatMap((text) => text.match(/ELECTRON_[A-Z0-9_]{3,}/g) ?? []),
+);
+for (const name of readByExecutable) {
+  if (electronEnvironment.toolNames.includes(name) || electronEnvironment.toolPrefixes.some((prefix) => name.startsWith(prefix))) {
+    problems.push(`o executável lê ${name}, que o app aceita como variável só de build (src/main/policy/electron-environment.json)`);
+  }
+}
+
 // Conteúdo do app.asar.
 const asarPath = join(dir, 'resources', 'app.asar');
 if (!existsSync(asarPath)) problems.push(`falta ${asarPath}`);
@@ -82,13 +95,28 @@ else {
 const samePlatform = executable.endsWith('.exe') === (process.platform === 'win32');
 const asRoot = process.getuid?.() === 0;
 if (!testBuild && samePlatform && !asRoot) {
-  const run = (args, env) => spawnSync(executable, args, { env: { ...process.env, ...env }, encoding: 'utf8', timeout: 60_000 });
+  // Sem as ELECTRON_* de quem roda a conferência, para cada recusa vir só do que está sendo testado.
+  const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith('ELECTRON_')));
+  const run = (args, env) => {
+    const result = spawnSync(executable, args, { env: { ...cleanEnv, ...env }, encoding: 'utf8', timeout: 60_000 });
+    return { ...result, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
+  };
   const debugging = run(['--remote-debugging-port=9222'], {});
-  if (debugging.status !== 2) problems.push(`com --remote-debugging-port o app devia sair com 2 e saiu com ${String(debugging.status)} (${String(debugging.signal)})`);
+  if (debugging.status !== 2 || !debugging.output.includes('argumentos recusados')) {
+    problems.push(`com --remote-debugging-port o app devia sair com 2 e saiu com ${String(debugging.status)} (${String(debugging.signal)})`);
+  }
   // A marca só aparece se o código rodar (o app registra os argumentos recusados, e lá ela vem partida).
   const asNode = run(['-e', "console.log('rodou' + '-como-node')"], { ELECTRON_RUN_AS_NODE: '1' });
-  if (`${asNode.stdout}${asNode.stderr}`.includes('rodou-como-node')) problems.push('ELECTRON_RUN_AS_NODE fez o app rodar como Node');
+  if (asNode.output.includes('rodou-como-node')) problems.push('ELECTRON_RUN_AS_NODE fez o app rodar como Node');
   if (asNode.status !== 2) problems.push(`com ELECTRON_RUN_AS_NODE o app devia sair com 2 e saiu com ${String(asNode.status)}`);
+  // Variáveis que o executável lê sozinho (ELECTRON_DISABLE_SANDBOX desliga a sandbox de todas as páginas). No
+  // Windows, o nome não diferencia maiúsculas.
+  for (const name of ['ELECTRON_DISABLE_SANDBOX', 'electron_disable_sandbox', 'ELECTRON_ENABLE_LOGGING']) {
+    const result = run([], { [name]: '1' });
+    if (result.status !== 2 || !result.output.includes('variáveis de ambiente recusadas')) {
+      problems.push(`com ${name} o app devia sair com 2 e saiu com ${String(result.status)} (${String(result.signal)})`);
+    }
+  }
 } else if (!testBuild) {
   console.log('(abertura do app não conferida aqui: outro sistema ou root no Linux; o CI confere)');
 }

@@ -139,6 +139,14 @@ describe('app de desktop: janela sem porta', () => {
     })()`);
     for (const proxy of proxies) expect(proxy).toMatch(/SOCKS5? 0\.0\.0\.0:9/);
     expect(await page.evaluate(() => fetch('https://example.com/').then(() => 'saiu', () => 'barrado'))).toBe('barrado');
+    // Nenhum nome resolve pelo Chromium: a pré-resolução de DNS da página (`<link rel="dns-prefetch">`) não passa pelo
+    // proxy e iria direto ao DNS do sistema.
+    const resolved = await app.mainEval<string[]>(`(async () => {
+      const { session } = require('electron');
+      return Promise.all([session.fromPartition('jesus'), session.defaultSession].map((ses) =>
+        ses.resolveHost('example.com').then(() => 'resolveu', (error) => String(error.message))));
+    })()`);
+    expect(resolved).toEqual([expect.stringMatching(/ERR_NAME_NOT_RESOLVED/), expect.stringMatching(/ERR_NAME_NOT_RESOLVED/)]);
   });
 
   it('permissões negadas e sem ferramentas de desenvolvedor', async () => {
@@ -189,6 +197,23 @@ describe('app de desktop: janela sem porta', () => {
       document.head.append(meta);
     });
     await expect.poll(blanks).toBe(2);
+    await unlock();
+  });
+
+  it('um beforeunload da página não segura o vigia: a janela volta bloqueada mesmo assim', async () => {
+    // Com ativação do usuário (a senha digitada já conta), o beforeunload cancelaria a navegação pedida pelo principal.
+    await page.evaluate(() => {
+      window.addEventListener('beforeunload', (event) => {
+        event.preventDefault();
+      });
+    });
+    await page.keyboard.press('a');
+    const frames = () => hooks<number>("h.violations.filter((v) => v.kind === 'frame-origin').length");
+    const before = await frames();
+    await page.evaluate(() => {
+      document.body.insertAdjacentHTML('beforeend', '<iframe sandbox srcdoc="<p>de fora</p>"></iframe>');
+    });
+    await expect.poll(frames).toBe(before + 1);
     await unlock();
   });
 

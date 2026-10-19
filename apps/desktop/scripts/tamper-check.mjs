@@ -53,7 +53,8 @@ try {
   console.log(`intacto: saída ${String(control.status)}; adulterado: saída ${String(attack.status)} (${String(attack.signal)})`);
   const problems = [];
   if (control.status !== 2) problems.push(`a cópia intacta devia sair com 2 (argumento recusado) e saiu com ${String(control.status)}`);
-  if (attack.status === 2 || attack.output.includes('argumentos recusados')) {
+  // Qualquer linha "[jesus]" no registro quer dizer que o código do app rodou.
+  if (attack.status === 2 || attack.output.includes('[jesus]')) {
     problems.push('o app adulterado rodou o código do app (a integridade do asar não barrou)');
   }
   if (problems.length > 0) {

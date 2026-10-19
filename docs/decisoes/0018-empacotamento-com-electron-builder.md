@@ -24,7 +24,7 @@ A prova de 13/10/2026 mostrou que funciona o app empacotado com asar, fusíveis 
 - **Fusíveis do Electron no build de produção:**
   - desligados: `RunAsNode`, `NODE_OPTIONS`, `--inspect` e afins, o snapshot V8 do processo principal e os privilégios extras de `file:`;
   - ligados: cookies cifrados, integridade do asar embutida no executável (Windows) e "só carregar o app de dentro do asar".
-  - Os fusíveis não cobrem `--remote-debugging-port`, e para isso o app recusa qualquer argumento (seção 3.13).
+  - Os fusíveis não cobrem `--remote-debugging-port` nem as variáveis `ELECTRON_*` que o executável lê sozinho (`ELECTRON_DISABLE_SANDBOX` desliga a sandbox). Para isso, o app de produção recusa qualquer argumento e essas variáveis (seção 3.13).
 
 - **Dois builds, decididos na compilação:**
   - **Produção:** `dist/`, fusíveis travados.
@@ -34,7 +34,8 @@ A prova de 13/10/2026 mostrou que funciona o app empacotado com asar, fusíveis 
 - **Conferência do pacote** (`scripts/check-package.mjs`, em todo empacotamento e no CI):
   - fusíveis um a um (`@electron/fuses`);
   - conteúdo do `app.asar`: o bundle certo, a interface montada, nenhum `node_modules` do projeto, nenhum arquivo que o `stage-ui.mjs` recusaria e nenhum código de teste;
-  - na produção, abrindo o app de verdade: ele sai com 2 diante de `--remote-debugging-port` e ignora `ELECTRON_RUN_AS_NODE`.
+  - as variáveis `ELECTRON_*` que o app aceita por serem só das ferramentas de build não podem aparecer no executável;
+  - na produção, abrindo o app de verdade: ele sai com 2 diante de `--remote-debugging-port` e de `ELECTRON_DISABLE_SANDBOX` (também em minúsculas) e ignora `ELECTRON_RUN_AS_NODE`.
 
 - **Instalador NSIS por usuário, sem administrador:**
   - um clique, em `%LOCALAPPDATA%\Programs\Jesus`;

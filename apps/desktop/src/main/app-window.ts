@@ -29,6 +29,9 @@ export function guardWebContents(contents: WebContents, onViolation: (violation:
     event.preventDefault();
     onViolation({ kind: 'redirect', url: event.url });
   });
+  // Um `beforeunload` da página não segura nada: sem isto, ele cancelaria a volta ao início pelo vigia e o fechamento
+  // da janela (o app não pede confirmação para sair de página nenhuma).
+  contents.on('will-prevent-unload', (event) => event.preventDefault());
   contents.on('will-attach-webview', (event) => {
     event.preventDefault();
     onViolation({ kind: 'webview', url: '' });

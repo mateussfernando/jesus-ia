@@ -14,7 +14,7 @@ import { checkElevation } from './elevation';
 import { APP_NAME, appPaths } from './paths';
 import { ViolationBreaker } from './policy/breaker';
 import { phase1PermissionPolicy } from './policy/permissions';
-import { APP_DISABLED_FEATURES, mergeFeatureList, unexpectedArguments } from './policy/switches';
+import { APP_DISABLED_FEATURES, HOST_RESOLVER_RULES, mergeFeatureList, unexpectedArguments, unexpectedEnvironment } from './policy/switches';
 import { APP_ORIGIN } from './policy/url';
 import { startUiServer, statusPage } from './ui-server';
 import type { UiServerEvent } from './ui-server';
@@ -36,6 +36,7 @@ let window: BrowserWindow | null = null;
 let jar: CookieJar | null = null;
 // Mais de 8 quadros de fora em 10 s: algo está muito errado (ou em laço), e o app fecha.
 const frameBreaker = new ViolationBreaker({ limit: 8, windowMs: 10_000 });
+// Só o build de teste guarda as violações (para os testes lerem); a produção só registra no log, cortado.
 const violations: Violation[] = [];
 const serverEvents: UiServerEvent[] = [];
 
@@ -56,7 +57,7 @@ function goHome(win: BrowserWindow | null, reason: string): Promise<void> {
  * disjuntor fecha o app se isso se repetir demais (laço de recargas).
  */
 function onViolation(violation: Violation): void {
-  violations.push(violation);
+  if (TEST_BUILD) violations.push({ kind: violation.kind, url: violation.url.slice(0, 200) });
   log(`recusado (${violation.kind}): ${violation.url.slice(0, 200)}`);
   if (violation.kind !== 'frame-origin') return;
   jar?.clear();
@@ -181,18 +182,25 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
 }
 
 function start(): void {
-  // O app de produção não aceita nenhum argumento (seção 3.13). Rodando pelo Electron de desenvolvimento, o segundo
-  // argumento é o caminho do app.
+  // O app de produção não aceita nenhum argumento nem variável ELECTRON_* (seção 3.13). Rodando pelo Electron de
+  // desenvolvimento, o segundo argumento é o caminho do app.
   const argv = process.defaultApp === true ? [process.argv[0] ?? '', ...process.argv.slice(2)] : process.argv;
-  const unexpected = unexpectedArguments(argv, { testBuild: TEST_BUILD });
-  if (unexpected.length > 0) {
-    log(`argumentos recusados: ${unexpected.join(' ').slice(0, 200)}`);
+  const refusals: [string, string[]][] = [
+    ['argumentos recusados', unexpectedArguments(argv, { testBuild: TEST_BUILD })],
+    ['variáveis de ambiente recusadas', unexpectedEnvironment(process.env, { testBuild: TEST_BUILD })],
+    // Sem sandbox por algo que escapou das duas listas: a produção nunca abre assim.
+    ['chave recusada', !TEST_BUILD && app.commandLine.hasSwitch('no-sandbox') ? ['--no-sandbox'] : []],
+  ];
+  for (const [what, items] of refusals) {
+    if (items.length === 0) continue;
+    log(`${what}: ${items.join(' ').slice(0, 200)}`);
     app.exit(2);
     return;
   }
 
   const disabled = app.commandLine.getSwitchValue('disable-features').split(',');
   app.commandLine.appendSwitch('disable-features', mergeFeatureList(disabled, APP_DISABLED_FEATURES));
+  app.commandLine.appendSwitch('host-resolver-rules', HOST_RESOLVER_RULES);
 
   app.setName(APP_NAME);
   const paths = appPaths({
@@ -203,7 +211,8 @@ function start(): void {
   });
   // Antes da trava de instância única: a trava fica na pasta de dados.
   app.setPath('userData', paths.userData);
-  if (!app.commandLine.hasSwitch('no-sandbox')) app.enableSandbox();
+  // Como root (contêiner), o Chromium exige --no-sandbox, que só o build de teste aceita.
+  if (!TEST_BUILD || !app.commandLine.hasSwitch('no-sandbox')) app.enableSandbox();
   if (!app.requestSingleInstanceLock()) {
     app.quit();
     return;
