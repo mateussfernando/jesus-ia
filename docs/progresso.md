@@ -325,6 +325,7 @@ Roteiro: [plano da fase 1](rascunhos/plano-fase-1.md). Cada etapa é um commit c
 - Recomendar o ultracode só quando valer (regra no `CLAUDE.md`); preferir sessão nova por etapa.
 - **Login (12/10/2026):** o dono considerou o NextAuth (Auth.js) e escolheu **manter o login próprio** (decisões 0015 e 0016). Motivo apresentado: o NextAuth v5 ainda é beta e está só em manutenção de segurança desde que passou para a equipe do Better Auth; o login próprio já passou por duas revisões independentes. Não reabrir sem pedido dele.
 - **Autonomia (12/10/2026):** seguir trabalhando sozinho e só parar quando ele precisar decidir algo ou fazer algo à mão (testar no Windows, criar conta, colar chave). O limite de uso às vezes acaba no meio; ele retoma a sessão depois. Por isso: commit e push a cada passo que passa nos testes, e o diário sempre em dia.
+- **Conversas sem prazo (21/10/2026):** as conversas ficam guardadas para sempre, não só 90 dias ([decisão 0027](decisoes/0027-conversas-guardadas-sem-prazo.md)). Vale a partir da fase 4 (hoje a conversa fica só na memória); "Esquecer" e apagar conversa continuam apagando de verdade.
 
 ## Pendências do dono do projeto
 

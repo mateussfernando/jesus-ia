@@ -545,7 +545,7 @@ appendWindowsPath = false
 - **Criptografia em repouso:** ligar a criptografia do dispositivo/BitLocker no Windows; campos muito sensíveis criptografados pela aplicação (AES-256-GCM, chave no cofre); backups criptografados.
 - **O que vai para a nuvem:** só o necessário para a tarefa vai para o provedor de IA. Política por categoria: dados de saúde, documentos pessoais e finanças vão **só para modelo local** (Ollama) por padrão, ou para a nuvem com sua confirmação.
 - **Minimização:** o cérebro recebe trechos, não caixas de e-mail inteiras.
-- **Retenção:** você define por quanto tempo guardar conversas, resultados de ferramentas e registros. "Esquecer" apaga de verdade e sai dos backups seguintes.
+- **Retenção:** você define por quanto tempo guardar conversas, resultados de ferramentas e registros (o padrão das conversas é sem prazo, [decisão 0027](decisoes/0027-conversas-guardadas-sem-prazo.md)). "Esquecer" apaga de verdade e sai dos backups seguintes.
 - **Embeddings também são dados pessoais:** vetores podem vazar informação do texto original, então recebem a mesma proteção.
 - **Provedores:** escolha provedores e planos cujas políticas de uso e retenção de dados você aceita, e confira a política de cada um.
 

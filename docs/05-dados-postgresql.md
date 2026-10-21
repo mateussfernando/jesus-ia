@@ -287,10 +287,11 @@ LIMIT 8;
 
 | Dado | Retenção padrão (ajustável) |
 |---|---|
-| Mensagens e resultados de ferramentas | 90 dias (depois, só o resumo) |
+| Mensagens e resultados de ferramentas | sem prazo: ficam até você apagar ([decisão 0027](decisoes/0027-conversas-guardadas-sem-prazo.md); antes, 90 dias) |
 | Auditoria | 1 ano (exportável) |
 | Memórias | até você apagar; `expira_em` para coisas temporárias |
 | Checkpoints | 30 dias |
 
 - "Esquecer X" apaga a memória e as mensagens relacionadas; um `VACUUM` periódico limpa o espaço; backups antigos são rotacionados.
+- Apagar uma conversa, ou todas, também apaga de verdade; com as conversas sem prazo, é assim que elas saem do banco. A tela das conversas mostra o espaço usado.
 - "Exportar tudo": JSON legível + dump criptografado.

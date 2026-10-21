@@ -10,7 +10,7 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0004](0004-postgresql-local.md) | PostgreSQL local embutido + pgvector | aceita |
 | [0005](0005-hardware-alvo.md) | Alvo de 8 a 16 GB de RAM, sem GPU dedicada | aceita |
 | [0006](0006-comandos-direto-no-windows.md) | Comandos direto no Windows, WSL2 opcional | aceita |
-| [0007](0007-padroes-iniciais.md) | Padrões iniciais (nomes, uso pessoal, contas, retenção, voz) | aceita |
+| [0007](0007-padroes-iniciais.md) | Padrões iniciais (nomes, uso pessoal, contas, retenção, voz) | aceita (retenção das conversas substituída pela 0027) |
 | [0008](0008-holograma-como-pacote-e-laboratorio.md) | Holograma como pacote próprio, com laboratório web | aceita (pnpm substituído pela 0009; laboratório em Vite, pela 0013) |
 | [0009](0009-npm-em-vez-de-pnpm.md) | npm workspaces em vez de pnpm | aceita |
 | [0010](0010-primeiro-modelo-deepseek-via-deepinfra.md) | Primeiro modelo: DeepSeek V4.1-Flash na DeepInfra | substituída por 0011 |
@@ -30,6 +30,7 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0024](0024-laco-da-conversa-no-cerebro.md) | Laço da conversa no Cérebro: conversa só na memória, histórico sem raciocínio e limite pelo orçamento | aceita |
 | [0025](0025-tela-de-conversa.md) | Tela de conversa: texto puro, turno por rota com conferência de origem e parada ao bloquear | aceita |
 | [0026](0026-ferramentas-de-leitura-e-pastas-liberadas.md) | Ferramentas de leitura (`file_read`, `file_list`, `file_search`) e pastas liberadas: links conferidos antes de seguidos, busca literal no texto já mascarado e pastas pessoais só por subpasta | aceita |
+| [0027](0027-conversas-guardadas-sem-prazo.md) | Conversas guardadas sem prazo, até o dono apagar (substitui os 90 dias da 0007) | aceita |
 
 ## Modelo
 

@@ -1588,7 +1588,7 @@ Se o Porteiro mudar, rode a coleção de ataques.
 5. **Fase 9:** começar só com papéis de leitura (`researcher`, `reader`, `inbox_reader`, `explorer`, `synthesizer`). `coder` e `verifier` entram depois, com a decisão e os testes de contenção no Windows.
 6. **Campo novo no snapshot** (fila, papéis): a recomendação é não mexer agora. O texto (`describeSubagentsPtBr`) já mostra; mudar exige alterar `packages/hologram` e uma nova aprovação visual.
 7. **Rotinas com subagentes:** só papéis de leitura, com as regras do caso 12.
-8. **Transcrição completa de cada filho:** a recomendação é guardar 90 dias, como as conversas (5.7 do doc 05). Ajuda a revisar suspeitos; o "esquecer" apaga junto.
+8. **Transcrição completa de cada filho:** a recomendação é guardar como as conversas, que ficam sem prazo desde a [decisão 0027](../decisoes/0027-conversas-guardadas-sem-prazo.md) (5.7 do doc 05). Ajuda a revisar suspeitos; o "esquecer" apaga junto.
 9. **Relatório de calibração periódico** (sem mudar valores sozinho): a recomendação é mensal.
 10. **Limites com DeepSeek** (8 por tarefa, 40 por sessão, confirmação acima de max(50% do restante, US$ 0,25)): bons para começar. Com os preços atuais, quem limita na prática são os passos, não o dinheiro.
 11. **Modo "economia" na bateria** (1 subagente): a recomendação é deixar como opção da interface, desligada por padrão.

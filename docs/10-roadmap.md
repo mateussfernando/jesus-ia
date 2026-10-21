@@ -43,7 +43,7 @@
 - **Uso pessoal** por enquanto: cada usuário cria o próprio projeto no Google; sem assinatura de código.
 - Nome **"Jesus"**, ativação por **"Ei, Jesus" + tecla** de segurar-para-falar.
 - Primeiras contas: **Google e GitHub**.
-- Conversas guardadas por **90 dias** (seção [5.7](05-dados-postgresql.md)).
+- Conversas guardadas por 90 dias; **mudou em 21/10/2026: sem prazo**, até você apagar ([decisão 0027](decisoes/0027-conversas-guardadas-sem-prazo.md), seção [5.7](05-dados-postgresql.md)).
 - Voz local: **Parakeet** (STT) e **Piper** (TTS).
 
 **Decidido em 08/10/2026:** primeiro cérebro = **Claude Haiku 5.5** ([decisão 0011](decisoes/0011-primeiro-modelo-claude-haiku.md)), o mais barato com privacidade entre as opções comparadas. A primeira escolha, o DeepSeek na DeepInfra ([0010](decisoes/0010-primeiro-modelo-deepseek-via-deepinfra.md)), saiu mais cara que o esperado.

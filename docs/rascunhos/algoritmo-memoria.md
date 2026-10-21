@@ -1,4 +1,6 @@
 > **Rascunho revisado de 08/10/2026: Memória automática.** Escrito por um agente projetista e reescrito por um agente crítico (segurança, qualidade e testabilidade). Ainda não é decisão: a implementação confere cada ponto contra as invariantes (docs/03-seguranca.md, seção 3.0). Andamento em [docs/progresso.md](../progresso.md).
+>
+> **Nota de 21/10/2026 ([decisão 0027](../decisoes/0027-conversas-guardadas-sem-prazo.md)):** as conversas passaram a ficar sem prazo. Onde este rascunho fala da retenção de 90 dias das mensagens (a purga, a fila antes dela, "igual às mensagens"), vale a decisão: as mensagens só saem quando o dono apaga. A validade de 90 dias do fato observado (`observed`) é outra regra (por quanto tempo um fato lido fora vale, não por quanto tempo a conversa fica guardada) e segue como proposta, com a pergunta 1 da seção 21.
 
 # Memória automática do Jesus: especificação revisada
 
