@@ -24,6 +24,7 @@ import { createEgress } from './egress/egress';
 import { carriedSpendEvent, createSpendScan, DailySpend, DEFAULT_DAILY_LIMIT_PUSD } from './egress/spend';
 import { ANTHROPIC_TARGET, createTransport, ignoredEgressEnvironment } from './egress/transport';
 import { checkElevation, systemWhoamiPath } from './elevation';
+import { createEntryGuard } from './entry-guard';
 import { LockSignals } from './lock-signals';
 import { APP_ID, APP_NAME, appPaths, TEST_APP_ID } from './paths';
 import { ViolationBreaker } from './policy/breaker';
@@ -46,6 +47,7 @@ import { createVaultRequests } from './vault-requests';
  */
 
 const APP_HOME = `${APP_ORIGIN}/`;
+const APP_ENTRY = `${APP_ORIGIN}/entrar/`;
 const bundleDir = dirname(fileURLToPath(import.meta.url));
 
 /** Registro de texto do principal, com redação (segredos mascarados): vai para o stderr. */
@@ -72,10 +74,30 @@ const brainEvents: SupervisorEvent[] = [];
  * Volta a janela para o início. O `loadURL` rejeita quando outra navegação interrompe esta (por exemplo, a página de
  * 503 se recarregando sozinha): isso não é erro do app, só fica registrado.
  */
-function goHome(win: BrowserWindow | null, reason: string): Promise<void> {
+function goHome(win: BrowserWindow | null, reason: string, url = APP_HOME): Promise<void> {
   if (win === null || win.isDestroyed()) return Promise.resolve();
-  return win.loadURL(APP_HOME).catch((error: unknown) => {
+  return win.loadURL(url).catch((error: unknown) => {
     log.warn('janela.inicio_nao_carregou', { motivo: reason, erro: error instanceof Error ? error.message : String(error) });
+  });
+}
+
+/** Se a janela não passar pela entrada logo depois de um bloqueio, ela vai direto para lá (`entry-guard.ts`). */
+const entryGuard = createEntryGuard({
+  entryUrl: APP_ENTRY,
+  onRetry: (stuckAt) => {
+    log.warn('janela.bloqueio_sem_entrada', { url: stuckAt.slice(0, 200) });
+    record({ type: 'window.entry_retry' });
+  },
+});
+
+/** Bloqueou sem a página pedir: a janela volta para o início (que leva à entrada), com o guarda de olho. */
+function leaveForEntry(win: BrowserWindow | null, reason: string): void {
+  if (win === null || win.isDestroyed()) return;
+  void goHome(win, reason);
+  entryGuard.afterLock({
+    isDestroyed: () => win.isDestroyed(),
+    url: () => win.webContents.getURL(),
+    load: (url) => void goHome(win, 'guarda da entrada', url),
   });
 }
 
@@ -98,7 +120,7 @@ function onViolation(violation: Violation): void {
     app.exit(4);
     return;
   }
-  void goHome(window, 'quadro de fora');
+  leaveForEntry(window, 'quadro de fora');
 }
 
 /** Entrada de verdade na janela (do sistema, não de script da página) que conta como uso do Jesus (decisão 0019). */
@@ -309,7 +331,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     // O que estava saindo para a API para aqui: o Cérebro recebe `locked`.
     egress.cancelAll('locked');
     signals.lock(reason);
-    void goHome(window, 'bloqueio do sistema');
+    leaveForEntry(window, 'bloqueio do sistema');
   };
   const powerHandlers: Readonly<Record<string, () => void>> = {
     'lock-screen': () => {
@@ -353,6 +375,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   win.on('closed', () => {
     window = null;
   });
+  win.webContents.on('did-navigate', (_event, url) => entryGuard.navigated(url));
   // Uso de verdade: só a entrada que o sistema entrega à janela (um script da página não gera estes eventos).
   win.webContents.on('input-event', (_event, input) => {
     if (USER_INPUT.has(input.type)) signals.activity();
@@ -394,6 +417,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
         restartBrain: () => brain.restart(),
         spend: () => spend.snapshot(),
         useTestApi: (port: number, ca: string, key: string) => testApi?.useTestApi(port, ca, key),
+        entryRetries: () => entryGuard.retries,
       },
     });
   }

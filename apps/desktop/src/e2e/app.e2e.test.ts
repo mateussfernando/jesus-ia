@@ -293,6 +293,11 @@ describe('app de desktop: janela sem porta', () => {
     // O servidor da interface confirmou cada bloqueio a tempo (sem confirmação em 2 s, ele seria reiniciado).
     await page.waitForTimeout(2_500);
     expect(await hooks<boolean>("h.serverEvents.some((e) => e.type === 'failed')")).toBe(false);
+    // Se o guarda da entrada precisou agir (a navegação para a entrada se perdeu), o log mostra o porquê.
+    const retries = await hooks<number>('h.entryRetries()');
+    if (retries > 0) {
+      console.warn(`[diagnóstico] a janela foi direto para a entrada ${String(retries)} vez(es):\n${app.output.join('').split('\n').slice(-80).join('\n')}`);
+    }
   });
 
   it('Configurações: a chave vai para o cofre do principal e nunca volta para a tela', async () => {

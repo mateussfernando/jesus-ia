@@ -37,7 +37,7 @@ Até aqui, o "uso" que adiava o bloqueio vinha da própria página, por uma Serv
 - **Três camadas a cada bloqueio:**
   1. o principal apaga o pote de cookies, e a página perde a sessão na hora;
   2. avisa o servidor da interface;
-  3. volta a janela para o início, que leva à tela de entrada.
+  3. volta a janela para o início, que leva à tela de entrada. Desde 21/10/2026 (etapa 11), um guarda confere: se em 3 s a janela não passou pela entrada (a navegação se perdeu, visto uma vez no CI do Windows), ela vai direto para lá, com aviso no log e `window.entry_retry` no registro (`src/main/entry-guard.ts`). O início agora mostra a conversa, e o que já estava desenhado não pode ficar na tela.
   - Sem `lock-ack` em 2 s, o principal derruba o servidor da interface, que sobe de novo bloqueado.
   - Cada bloqueio vai para o registro de auditoria (`app.locked`).
 
