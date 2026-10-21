@@ -7,7 +7,7 @@ import { verifyChain } from '@jesus/shared/audit';
 import type { AuditAnchor } from '@jesus/shared/audit';
 import type { Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { APP, launchApp } from './harness';
+import { APP, launchApp, reportFailures } from './harness';
 import type { RunningApp } from './harness';
 
 /**
@@ -59,6 +59,8 @@ async function unlock(): Promise<void> {
   await page.getByRole('button', { name: 'Desbloquear' }).click();
   await page.waitForURL(`${APP}/`);
 }
+
+reportFailures(() => app);
 
 beforeAll(async () => {
   const needed: (readonly [string, string])[] = packaged
@@ -284,7 +286,9 @@ describe('app de desktop: janela sem porta', () => {
       await hooks(`h.emitPower(${JSON.stringify(event)})`);
       // O pote de cookies do principal já foi apagado; a página vai para a entrada.
       expect(await hooks<number>('h.cookieCount()')).toBe(0);
-      await unlock();
+      await unlock().catch((error: unknown) => {
+        throw new Error(`depois de ${event}: ${error instanceof Error ? error.message : String(error)}`);
+      });
     }
     // O servidor da interface confirmou cada bloqueio a tempo (sem confirmação em 2 s, ele seria reiniciado).
     await page.waitForTimeout(2_500);

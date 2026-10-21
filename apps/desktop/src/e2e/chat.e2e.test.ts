@@ -10,7 +10,7 @@ import { createTestPki } from '../test-support/certs';
 import type { TestPki } from '../test-support/certs';
 import { startTlsServer } from '../test-support/tls-server';
 import type { TestServer } from '../test-support/tls-server';
-import { APP, launchApp } from './harness';
+import { APP, launchApp, reportFailures } from './harness';
 import type { RunningApp } from './harness';
 
 /**
@@ -55,6 +55,8 @@ async function ask(question: string): Promise<void> {
   await input().fill(question);
   await page.getByRole('button', { name: 'Enviar' }).click();
 }
+
+reportFailures(() => app);
 
 beforeAll(async () => {
   const entry = executable !== undefined && executable !== '' ? executable : mainEntry;

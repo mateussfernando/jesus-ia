@@ -3,6 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright-core';
 import type { Browser, Page } from 'playwright-core';
+import { afterEach } from 'vitest';
 
 /**
  * Abre o build de teste do app e conecta nos dois lados (só o build de teste aceita essas chaves; o de produção recusa
@@ -193,4 +194,23 @@ export async function launchApp(options: {
       }
     },
   };
+}
+
+/**
+ * Quando um teste falha, mostra onde a janela parou e o fim da saída do app (o log do principal, com a do servidor da
+ * interface e a do Cérebro marcadas). Ajuda nas falhas que só acontecem no CI, como as do Windows. A saída já sai com
+ * segredos mascarados (e os testes só usam chaves falsas).
+ */
+export function reportFailures(current: () => RunningApp | undefined, lines = 80): void {
+  afterEach(async (context) => {
+    if (context.task.result?.state !== 'fail') return;
+    const running = current();
+    if (running === undefined) return;
+    const headings = await running.page
+      .locator('h1')
+      .allTextContents()
+      .catch(() => []);
+    const tail = running.output.join('').split('\n').slice(-lines).join('\n');
+    console.error(`[diagnóstico] ${context.task.name}\njanela em ${running.page.url()} (h1: ${JSON.stringify(headings)})\nfim da saída do app:\n${tail}`);
+  });
 }
