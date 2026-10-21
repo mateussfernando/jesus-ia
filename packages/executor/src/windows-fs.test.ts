@@ -70,7 +70,8 @@ describe.runIf(isWindows)('Executor no Windows de verdade', () => {
     expect(calls.some((call) => call.startsWith('open ') || call.startsWith('realpath '))).toBe(false);
   });
 
-  it('nome curto 8.3 é recusado pelo texto, sem tocar o disco', async () => {
+  // O PowerShell que lê o nome curto é lento para abrir: no CI, o caso já passou dos 5 s padrão.
+  it('nome curto 8.3 é recusado pelo texto, sem tocar o disco', { timeout: 30_000 }, async () => {
     const long = join(box.released, 'Pasta Com Nome Bem Comprido');
     await mkdir(long);
     await box.write(join(long, 'b.txt'), 'dentro');

@@ -2,12 +2,15 @@ import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createReadPolicy } from '@jesus/gate';
+import { createReadPolicy, hostPlatform } from '@jesus/gate';
 import type { AuditEvent } from '@jesus/shared/audit';
 import { FolderStore } from './folders';
 import type { FolderStoreOptions } from './folders';
 import { confirmText, releaseFolderFlow } from './release-folder';
 import type { ConfirmText } from './release-folder';
+
+/** Uma pasta do sistema de cada sistema: as pastas do teste vêm do `tmpdir()`, que no Windows é `C:\…`. */
+const systemFolder = process.platform === 'win32' ? 'C:\\Windows' : '/etc';
 
 let base: string;
 let home: string;
@@ -32,9 +35,9 @@ function options(extra: Partial<FolderStoreOptions> = {}): FolderStoreOptions {
   return {
     path: file,
     policy: createReadPolicy({
-      platform: 'posix',
+      platform: hostPlatform(process.platform),
       released: [],
-      places: { home, localAppData: join(home, '.config'), roamingAppData: join(home, '.config'), personal: [join(home, 'Documentos')], system: ['/etc', '/usr'] },
+      places: { home, localAppData: join(home, '.config'), roamingAppData: join(home, '.config'), personal: [join(home, 'Documentos')], system: [systemFolder] },
     }),
     audit: async (event) => {
       events.push(event);
@@ -42,7 +45,6 @@ function options(extra: Partial<FolderStoreOptions> = {}): FolderStoreOptions {
     auditHealthy: true,
     now: () => 1_000,
     newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
-    platform: 'linux',
     ...extra,
   };
 }
@@ -95,7 +97,7 @@ describe('pastas liberadas', () => {
         folders: [
           { id: '00000000-0000-4000-8000-000000000001', path: join(home, 'projetos'), releasedAt: 1 },
           { id: '00000000-0000-4000-8000-000000000002', path: home, releasedAt: 2 },
-          { id: '00000000-0000-4000-8000-000000000003', path: '/etc', releasedAt: 3 },
+          { id: '00000000-0000-4000-8000-000000000003', path: systemFolder, releasedAt: 3 },
         ],
       }),
     );
