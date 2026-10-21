@@ -26,6 +26,8 @@ interface Pending {
 export interface ChatRelayOptions {
   /** Manda ao Cérebro pronto; `false` se não há. */
   readonly postToBrain: (message: ToBrainChatMessage) => boolean;
+  /** As pastas liberadas agora, que vão com cada pergunta para as instruções do Cérebro (decisão 0026). */
+  readonly folders?: () => readonly string[];
 }
 
 export interface ChatRelay {
@@ -37,6 +39,8 @@ export interface ChatRelay {
   brainGone(): void;
   /** Um servidor da interface saiu: os turnos que ele pediu param (ninguém mais vai ler). */
   uiGone(owner: object): void;
+  /** Há um turno em andamento com este `id` do lado do Cérebro (uma ferramenta só roda dentro de um). */
+  isSending(id: number): boolean;
   readonly pending: number;
 }
 
@@ -87,6 +91,7 @@ export function createChatRelay(options: ChatRelayOptions): ChatRelay {
             id,
             conversationId: request.conversationId ?? '',
             text: request.text ?? '',
+            folders: [...(options.folders?.() ?? [])],
           }));
           return;
         case 'stop':
@@ -157,6 +162,9 @@ export function createChatRelay(options: ChatRelayOptions): ChatRelay {
           // O Cérebro também saiu.
         }
       }
+    },
+    isSending(id) {
+      return pending.get(id)?.kind === 'send';
     },
     get pending() {
       return pending.size;

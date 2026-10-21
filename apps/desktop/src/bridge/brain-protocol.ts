@@ -2,6 +2,7 @@ import { EGRESS_FAILURES } from '@jesus/core/chat';
 import { z } from 'zod';
 import { FromBrainChatSchemas, ToBrainChatSchemas } from './chat-protocol';
 import { bytes, FailedMessageSchema, headerName, headerValue, PingMessageSchema, PongMessageSchema, pingSeq } from './protocol';
+import { FromBrainToolSchemas, ToBrainToolSchemas } from './tool-protocol';
 
 /**
  * Protocolo da ponte entre o processo principal e o Cérebro (`jesus-brain`, um utilityProcess; decisão 0023). Tudo
@@ -70,6 +71,7 @@ export const FromBrainMessageSchema = z.discriminatedUnion('type', [
   ApiRequestMessageSchema,
   ApiCancelMessageSchema,
   ...FromBrainChatSchemas,
+  ...FromBrainToolSchemas,
 ]);
 export type FromBrainMessage = z.infer<typeof FromBrainMessageSchema>;
 
@@ -102,6 +104,7 @@ export const ToBrainMessageSchema = z.discriminatedUnion('type', [
   ApiEndMessageSchema,
   ApiErrorMessageSchema,
   ...ToBrainChatSchemas,
+  ...ToBrainToolSchemas,
 ]);
 export type ToBrainMessage = z.infer<typeof ToBrainMessageSchema>;
 export type ToBrainApiMessage = Extract<ToBrainMessage, { type: 'api-head' | 'api-chunk' | 'api-end' | 'api-error' }>;

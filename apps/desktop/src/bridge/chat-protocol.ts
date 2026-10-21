@@ -61,7 +61,15 @@ export type ChatDone = z.infer<typeof ChatDoneSchema>;
 
 export const BrainChatGetSchema = z.strictObject({ type: z.literal('chat-get'), id: chatId });
 export const BrainChatResetSchema = z.strictObject({ type: z.literal('chat-reset'), id: chatId });
-export const BrainChatSendSchema = z.strictObject({ type: z.literal('chat-send'), id: chatId, conversationId, text: question });
+/** Pastas liberadas no momento do turno (para as instruções do Cérebro; quem confere cada leitura é o principal). */
+export const MAX_TURN_FOLDERS = 32;
+export const BrainChatSendSchema = z.strictObject({
+  type: z.literal('chat-send'),
+  id: chatId,
+  conversationId,
+  text: question,
+  folders: z.array(z.string().min(1).max(4_096)).max(MAX_TURN_FOLDERS),
+});
 /** Para o turno daquele `id` (se ainda estiver em andamento). */
 export const BrainChatStopSchema = z.strictObject({ type: z.literal('chat-stop'), id: chatId });
 export const ToBrainChatSchemas = [BrainChatGetSchema, BrainChatResetSchema, BrainChatSendSchema, BrainChatStopSchema] as const;
