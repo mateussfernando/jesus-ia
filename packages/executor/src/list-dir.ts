@@ -75,24 +75,35 @@ export async function listDirectory(input: FileListInput, context: ExecutorConte
   const lines: string[] = [];
   const secrets: SecretKind[] = [];
   let total = 0;
+  let chars = 0;
+  let full = false;
+  const add = (line: string) => {
+    // O primeiro item sempre vai (um nome tem no máximo 255 caracteres); os outros param no teto da resposta.
+    if (lines.length > 0 && chars + line.length + 1 > context.limits.responseChars) {
+      full = true;
+      return;
+    }
+    lines.push(line);
+    chars += line.length + 1;
+  };
   for (const name of names) {
     const child = childPath(directory.real, name);
     if (child !== null && isJesusPath(child, context.policy.places)) continue;
     total += 1;
-    if (lines.length >= context.limits.listEntries) continue;
+    if (full || lines.length >= context.limits.listEntries) continue;
     const shown = maskName(name, secrets);
     if (child === null) {
-      lines.push(`[não lido] ${shown} (nome que o Jesus não lê)`);
+      add(`[não lido] ${shown} (nome que o Jesus não lê)`);
       continue;
     }
     if (sensitiveKind(child, context.policy.places) !== null) {
-      lines.push(`[sensível] ${shown} (o Jesus não lê)`);
+      add(`[sensível] ${shown} (o Jesus não lê)`);
       continue;
     }
     try {
-      lines.push(describeEntry(shown, await context.fs.lstat(child.text)));
+      add(describeEntry(shown, await context.fs.lstat(child.text)));
     } catch {
-      lines.push(`[não lido] ${shown} (não deu para ver o que é)`);
+      add(`[não lido] ${shown} (não deu para ver o que é)`);
     }
   }
 

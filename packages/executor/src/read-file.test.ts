@@ -93,7 +93,7 @@ describe('file_read', () => {
 
   it('linha longa é cortada sem partir um emoji; a resposta para no teto de caracteres', async () => {
     const path = await box.write(join(box.released, 'longa.txt'), `${'a'.repeat(9)}😀fim\n${'b'.repeat(30)}\n${'c'.repeat(30)}\n`);
-    const outcome = await read({ path }, { lineChars: 10, readChars: 100 });
+    const outcome = await read({ path }, { lineChars: 10, responseChars: 100 });
     expect(content(outcome).split('\n')[0]).toBe('1\taaaaaaaaa … [linha cortada: 14 caracteres]');
     expect(outcome.text.split('\n')[0]).toBe('Linhas 1 a 2 de 3. Para continuar, peça offset 3.');
   });

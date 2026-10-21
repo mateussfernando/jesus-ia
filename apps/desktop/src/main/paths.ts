@@ -15,6 +15,8 @@ export interface AppPaths {
   readonly nextHostEntry: string;
   /** Entrada do utilityProcess do Cérebro (decisão 0023). */
   readonly brainEntry: string;
+  /** Entrada do utilityProcess do Executor, que lê os arquivos (decisão 0026). */
+  readonly executorEntry: string;
 }
 
 export interface AppPathsOptions {
@@ -47,5 +49,6 @@ export function appPaths(options: AppPathsOptions): AppPaths {
     uiDir: join(appRoot, 'stage', 'ui', 'apps', 'ui'),
     nextHostEntry: join(options.bundleDir, 'next-host.mjs'),
     brainEntry: join(options.bundleDir, 'brain.mjs'),
+    executorEntry: join(options.bundleDir, 'executor.mjs'),
   };
 }

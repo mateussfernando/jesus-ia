@@ -46,7 +46,7 @@ export async function readFile(input: FileReadInput, context: ExecutorContext): 
   for (let number = first; number < first + wanted && number <= total; number++) {
     const line = `${number}\t${cutLine(lines[number - 1] ?? '', context.limits.lineChars)}`;
     // A primeira linha sempre vai (ela já foi cortada); as outras param no teto da resposta.
-    if (out.length > 0 && chars + line.length + 1 > context.limits.readChars) break;
+    if (out.length > 0 && chars + line.length + 1 > context.limits.responseChars) break;
     out.push(line);
     chars += line.length + 1;
     last = number;

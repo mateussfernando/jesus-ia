@@ -29,3 +29,23 @@ export function describeFailure(failure: ToolFailure): string {
       return 'A leitura foi interrompida.';
   }
 }
+
+/**
+ * A falha num código curto, sem caminho nem conteúdo, para o registro de auditoria: `not_found`, `binary`,
+ * `denied:outside:real`, `denied:path:unc:requested`, `denied:sensitive:ssh:real`, `denied:hardlink`.
+ */
+export function failureCode(failure: ToolFailure): string {
+  if (failure.reason !== 'denied') return failure.reason;
+  const { denial } = failure;
+  const which = 'which' in denial ? `:${denial.which}` : '';
+  switch (denial.reason) {
+    case 'path':
+      return `denied:path:${denial.problem}${which}`;
+    case 'sensitive':
+      return `denied:sensitive:${denial.kind}${which}`;
+    case 'kind':
+      return `denied:kind:${denial.actual}`;
+    default:
+      return `denied:${denial.reason}${which}`;
+  }
+}

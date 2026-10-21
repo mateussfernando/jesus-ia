@@ -271,7 +271,8 @@ Uma negação em qualquer nível vence uma liberação em qualquer outro (igual 
   - **Links:** antes de abrir, o Executor resolve os links nome a nome, sem deixar o sistema segui-los, e o Porteiro confere o alvo de cada um antes de ele ser tocado. Um link plantado para `\\servidor\pasta` (que no Windows mandaria a credencial do usuário ao servidor) nem é aberto.
   - **Depois de abrir:** confere que o arquivo aberto é o conferido (`dev` e `ino`, também depois do `realpath` nativo).
   - **Busca:** só literal; não segue links e para em cortes de níveis, itens, arquivos, bytes, resultados e tempo.
-  - **Liberar pasta:** só pelo diálogo nativo, com confirmação gerada por código. As pastas pessoais inteiras (Documentos, Downloads, Área de Trabalho, Imagens, Vídeos, Música) são recusadas; as subpastas delas podem.
+  - **Liberar pasta:** só pelo diálogo nativo, com confirmação gerada por código. As pastas pessoais inteiras (Documentos, Downloads, Área de Trabalho, Imagens, Vídeos, Música) são recusadas; as subpastas delas podem. A lista passa de novo pelo Porteiro a cada abertura do app e fica vazia se o registro de auditoria não abrir saudável.
+  - **Onde roda:** no utilityProcess `jesus-executor`, sem rede (as travas do Cérebro). O principal confere cada chamada e passa o caminho pelo Porteiro antes de repassar, e grava no registro antes de rodar (sem registro, não roda).
 
 ### 3.4.5 Camada 3 — Classificador de risco
 

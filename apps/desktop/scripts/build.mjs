@@ -1,5 +1,5 @@
-// Empacota em JavaScript o processo principal, o servidor da interface e o Cérebro, para o Electron rodar (decisões
-// 0017 e 0023).
+// Empacota em JavaScript o processo principal, o servidor da interface, o Cérebro e o Executor, para o Electron rodar
+// (decisões 0017, 0023 e 0026).
 //   node scripts/build.mjs          → dist/       (produção)
 //   node scripts/build.mjs --test   → dist-test/  (build de teste, com os ganchos dos testes de ponta a ponta)
 // O build de teste é decidido aqui, na compilação (constante __JESUS_TEST_BUILD__), nunca em tempo de execução. No de
@@ -18,7 +18,7 @@ const outDir = join(desktopDir, testBuild ? 'dist-test' : 'dist');
 rmSync(outDir, { recursive: true, force: true });
 await build({
   cwd: desktopDir,
-  input: { main: 'src/main/index.ts', 'next-host': 'src/next-host/main.ts', brain: 'src/brain-host/main.ts' },
+  input: { main: 'src/main/index.ts', 'next-host': 'src/next-host/main.ts', brain: 'src/brain-host/main.ts', executor: 'src/executor-host/main.ts' },
   platform: 'node',
   external: ['electron'],
   resolve: { alias: { '@ai-sdk/gateway': join(desktopDir, 'src', 'brain-host', 'gateway-stub.ts') } },

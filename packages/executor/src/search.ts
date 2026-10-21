@@ -92,12 +92,12 @@ function snippet(line: string, at: number, length: number, max: number): string 
   return `${start > 0 ? '…' : ''}${safeSlice(line, start, end).trim()}${end < line.length ? '…' : ''}`;
 }
 
-function stopText(stopped: SearchStop, context: ExecutorContext): string {
+function stopText(stopped: SearchStop, context: ExecutorContext, results: number): string {
   const { limits } = context;
   const advice = 'procure um texto mais específico ou numa subpasta.';
   switch (stopped) {
     case 'results':
-      return `A busca parou em ${formatCount(limits.searchResults)} resultados; ${advice}`;
+      return `A busca parou em ${formatCount(results)} ${results === 1 ? 'resultado' : 'resultados'}; ${advice}`;
     case 'files':
       return `A busca parou depois de ${formatCount(limits.searchFiles)} arquivos; ${advice}`;
     case 'bytes':
@@ -123,7 +123,18 @@ export async function searchFiles(input: FileSearchInput, context: ExecutorConte
   let bytes = 0;
   let entries = 0;
   let stopped: SearchStop | null = null;
-  const full = () => results.length >= limits.searchResults;
+  let chars = 0;
+  let overflow = false;
+  const full = () => overflow || results.length >= limits.searchResults;
+  const add = (line: string) => {
+    // O primeiro resultado sempre vai; os outros param no teto da resposta (caminhos longos não lotam a conversa).
+    if (results.length > 0 && chars + line.length + 1 > limits.responseChars) {
+      overflow = true;
+      return;
+    }
+    results.push(line);
+    chars += line.length + 1;
+  };
   const stack: Frame[] = [{ path: root.real, shown: '', depth: 0, names: null, next: 0, cut: false }];
 
   while (stopped === null && !full()) {
@@ -185,7 +196,7 @@ export async function searchFiles(input: FileSearchInput, context: ExecutorConte
     const maskedName = maskName(name, secrets);
     const shown = frame.shown === '' ? maskedName : `${frame.shown}${separator}${maskedName}`;
     // O nome também é comparado já mascarado.
-    if (fold(maskedName).includes(query)) results.push(`[nome] ${shown}${stats.isDirectory() ? separator : ''}`);
+    if (fold(maskedName).includes(query)) add(`[nome] ${shown}${stats.isDirectory() ? separator : ''}`);
     if (stats.isSymbolicLink()) {
       skipped.links += 1;
       continue;
@@ -234,7 +245,7 @@ export async function searchFiles(input: FileSearchInput, context: ExecutorConte
     for (let index = 0; index < lines.length && !full(); index++) {
       const line = lines[index] ?? '';
       const at = fold(line).indexOf(query);
-      if (at !== -1) results.push(`${shown}:${index + 1}: ${snippet(line, at, query.length, limits.snippetChars)}`);
+      if (at !== -1) add(`${shown}:${index + 1}: ${snippet(line, at, query.length, limits.snippetChars)}`);
     }
   }
   if (!(await stillSame(root, context.fs))) return fail({ reason: 'changed' });
@@ -247,7 +258,7 @@ export async function searchFiles(input: FileSearchInput, context: ExecutorConte
   ];
   const skips = (Object.keys(skipped) as Skip[]).filter((skip) => skipped[skip] > 0).map((skip) => SKIP_TEXT[skip](skipped[skip]));
   if (skips.length > 0) notes.push(`Pulados: ${skips.join(', ')}.`);
-  if (stopped !== null) notes.push(stopText(stopped, context));
+  if (stopped !== null) notes.push(stopText(stopped, context, results.length));
   return {
     ok: true,
     text: results.length === 0 ? notes.join(' ') : `${notes.join(' ')}\n${wrapUntrusted({ source: 'file_search', content: results.join('\n') })}`,

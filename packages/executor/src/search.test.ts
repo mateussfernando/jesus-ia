@@ -115,6 +115,9 @@ describe('file_search', () => {
     expect(results(byResults)).toHaveLength(3);
     expect(byResults).toMatchObject({ stats: { stopped: 'results' } });
     expect(byResults.text.split('\n')[0]).toBe('3 resultados (2 arquivos examinados). A busca parou em 3 resultados; procure um texto mais específico ou numa subpasta.');
+    const bySize = await search('alvo', { limits: { responseChars: 30 } });
+    expect(results(bySize)).toEqual(['f1.txt:1: alvo', 'f1.txt:2: alvo']);
+    expect(bySize).toMatchObject({ stats: { stopped: 'results', results: 2 } });
     expect(await search('alvo', { limits: { searchFiles: 2 } })).toMatchObject({ stats: { stopped: 'files', files: 2 } });
     expect(await search('alvo', { limits: { searchTotalBytes: 20 } })).toMatchObject({ stats: { stopped: 'bytes', files: 3 } });
     expect(await search('alvo', { limits: { searchEntries: 2 } })).toMatchObject({ stats: { stopped: 'entries', results: 4 } });

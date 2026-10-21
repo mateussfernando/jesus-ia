@@ -65,8 +65,11 @@ O dono mandou seguir, e a recomendação foi adotada (ele pode mudar as duas res
     - `AppData`, as pastas do sistema e dos programas;
     - as pastas do Jesus e as sensíveis.
   - **a confirmação:** vem depois, numa caixa nativa gerada por código. Mostra o caminho real e **sempre** avisa que o conteúdo lido vai para a Anthropic.
-  - **o registro:** a liberação e a remoção vão para o registro de auditoria, e a lista de pastas liberadas é refeita a partir dele. Com o registro em quarentena, nenhuma pasta fica liberada (falha fechada).
-  - **quando entra:** o fluxo no app chega com o `jesus-executor` e a tela (etapas 13c e 13d).
+  - **onde fica a lista:** num arquivo próprio da pasta de dados (`folders.json`, gravação atômica e durável). A liberação e a remoção vão também para o registro de auditoria, que guarda a história. A lista não é refeita pelo registro, porque lá o caminho passa pela máscara de segredos e sairia diferente (`relatorio_final_v2_2023-10-15` vira "token").
+  - **a cada abertura**, cada pasta da lista passa de novo pelo Porteiro (`checkReleaseFolder`, com os lugares de agora), e a recusada sai, com registro. Assim, nem um arquivo mexido à mão libera o que o Porteiro não deixa.
+  - **sem registro saudável, nenhuma pasta:** com o registro de auditoria posto de lado (adulterado, cortado, sem âncora) ou sem abrir, a lista é esvaziada e liberar fica desligado (falha fechada).
+  - **as chamadas no principal:** o nome e a entrada passam pelo esquema estrito; o caminho pedido passa pelo Porteiro ali mesmo, só pelo texto (um caminho de rede, de fora ou sensível nem chega ao Executor); o registro grava a chamada antes de ela rodar (sem registro, não roda) e o resultado depois, sem conteúdo (o resumo e os tipos de segredo mascarados).
+  - **o processo:** as leituras rodam no utilityProcess `jesus-executor`, com as travas de rede e de módulos do Cérebro e ambiente de lista. Cada chamada tem 30 s; depois do cancelamento, o processo tem 5 s para responder, senão está preso e sobe de novo. O bloqueio do app cancela as leituras em andamento.
 
 ## Consequências
 
@@ -87,4 +90,4 @@ O dono mandou seguir, e a recomendação foi adotada (ele pode mudar as duas res
 
 ## Detalhes
 
-`packages/executor/src/` · `packages/gate/src/read-gate.ts` (`checkLinkTarget`) e `release.ts` · `packages/shared/src/mask-secrets.ts` · `security/attack-corpus/` · seções [3.4.4](../03-seguranca.md), [3.5](../03-seguranca.md) e [3.17](../03-seguranca.md)
+`packages/executor/src/` · `packages/gate/src/read-gate.ts` (`checkLinkTarget`) e `release.ts` · `packages/shared/src/mask-secrets.ts` · `apps/desktop/src/executor-host/`, `src/bridge/executor-protocol.ts` e, em `src/main/`, `executor-process.ts`, `tool-relay.ts`, `folders.ts`, `release-folder.ts` e `places.ts` · `security/attack-corpus/` · seções [3.4.4](../03-seguranca.md), [3.5](../03-seguranca.md) e [3.17](../03-seguranca.md)

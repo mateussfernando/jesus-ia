@@ -79,7 +79,14 @@ if (!existsSync(asarPath)) problems.push(`falta ${asarPath}`);
 else {
   const files = asar.listPackage(asarPath, { isPack: false }).map((path) => path.replaceAll('\\', '/'));
   const bundle = testBuild ? 'dist-test' : 'dist';
-  for (const required of [`/${bundle}/main.mjs`, `/${bundle}/next-host.mjs`, `/${bundle}/brain.mjs`, '/package.json', '/stage/ui/apps/ui/.next/required-server-files.json']) {
+  for (const required of [
+    `/${bundle}/main.mjs`,
+    `/${bundle}/next-host.mjs`,
+    `/${bundle}/brain.mjs`,
+    `/${bundle}/executor.mjs`,
+    '/package.json',
+    '/stage/ui/apps/ui/.next/required-server-files.json',
+  ]) {
     if (!files.includes(required)) problems.push(`falta no app.asar: ${required}`);
   }
   if (!testBuild && files.some((path) => path.startsWith('/dist-test/'))) problems.push('o build de teste foi parar no pacote de produção');

@@ -14,13 +14,13 @@ export interface GatePlacesInput {
   readonly localAppData: string;
   readonly roamingAppData: string;
   /** `%SystemRoot%` (`C:\Windows`), quando se sabe. */
-  readonly systemRoot?: string;
+  readonly systemRoot?: string | undefined;
   /** Pastas do Jesus além das conhecidas (a pasta de dados e a da instalação de verdade, vistas pelo principal). */
-  readonly jesus?: readonly string[];
+  readonly jesus?: readonly string[] | undefined;
   /** Pastas pessoais (Documentos, Downloads, Área de Trabalho, Imagens, Vídeos, Música): não são liberadas inteiras. */
-  readonly personal?: readonly string[];
+  readonly personal?: readonly string[] | undefined;
   /** Pastas do sistema (Arquivos de Programas, ProgramData; no Linux, `/etc`, `/usr`…): nunca liberadas. */
-  readonly system?: readonly string[];
+  readonly system?: readonly string[] | undefined;
 }
 
 export interface GatePlaces {

@@ -77,6 +77,9 @@ describe('file_list', () => {
     const outcome = await list(box.released, { listEntries: 3 });
     expect(entries(outcome)).toEqual(['[arquivo] f1.txt (0 bytes)', '[arquivo] f2.txt (0 bytes)', '[arquivo] f3.txt (0 bytes)']);
     expect(outcome.text.split('\n')[0]).toBe('Pasta com 12 itens. Mostrando 3, em ordem de nome; para achar algo específico, use file_search.');
+    const bySize = await list(box.released, { responseChars: 60 });
+    expect(entries(bySize)).toEqual(['[arquivo] f1.txt (0 bytes)', '[arquivo] f2.txt (0 bytes)']);
+    expect(bySize).toMatchObject({ ok: true, stats: { shown: 2, total: 12 } });
     const scanned = await list(box.released, { listScan: 5, listEntries: 3 });
     expect(scanned).toMatchObject({ ok: true, stats: { shown: 3, total: 5, more: true } });
     expect(scanned.text.split('\n')[0]).toBe('A pasta tem mais de 5 itens. Mostrando 3, em ordem de nome; para achar algo específico, use file_search.');

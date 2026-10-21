@@ -84,3 +84,21 @@ describe('texto de arquivo', () => {
     expect(displayName('Relatório 😀.txt')).toBe('Relatório 😀.txt');
   });
 });
+
+describe('código da falha (para o registro)', () => {
+  it('curto, sem caminho, no formato conferido pela ponte', async () => {
+    const { failureCode } = await import('./describe');
+    const { FAILURE_CODE } = await import('./catalog');
+    const codes = [
+      failureCode({ reason: 'not_found' }),
+      failureCode({ reason: 'offset', lines: 3 }),
+      failureCode({ reason: 'denied', denial: { reason: 'outside', which: 'real' } }),
+      failureCode({ reason: 'denied', denial: { reason: 'path', which: 'requested', problem: 'unc' } }),
+      failureCode({ reason: 'denied', denial: { reason: 'sensitive', which: 'real', kind: 'env_file' } }),
+      failureCode({ reason: 'denied', denial: { reason: 'kind', expected: 'file', actual: 'directory' } }),
+      failureCode({ reason: 'denied', denial: { reason: 'hardlink', links: 2 } }),
+    ];
+    expect(codes).toEqual(['not_found', 'offset', 'denied:outside:real', 'denied:path:unc:requested', 'denied:sensitive:env_file:real', 'denied:kind:directory', 'denied:hardlink']);
+    for (const code of codes) expect(code).toMatch(FAILURE_CODE);
+  });
+});

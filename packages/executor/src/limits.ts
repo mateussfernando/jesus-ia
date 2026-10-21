@@ -5,8 +5,8 @@
 export interface ExecutorLimits {
   /** `file_read`: bytes lidos do começo do arquivo (o resto fica de fora, com aviso). */
   readonly readBytes: number;
-  /** `file_read`: caracteres na resposta (as linhas param antes). */
-  readonly readChars: number;
+  /** Caracteres do conteúdo na resposta de qualquer ferramenta (as linhas, os itens e os resultados param antes). */
+  readonly responseChars: number;
   /** Caracteres de uma linha na resposta (o resto da linha é cortado, com aviso). */
   readonly lineChars: number;
   /** `file_list`: itens lidos da pasta. */
@@ -35,7 +35,7 @@ export interface ExecutorLimits {
 
 export const DEFAULT_LIMITS: ExecutorLimits = Object.freeze({
   readBytes: 10 * 1024 * 1024,
-  readChars: 40_000,
+  responseChars: 40_000,
   lineChars: 2_000,
   listScan: 10_000,
   listEntries: 500,

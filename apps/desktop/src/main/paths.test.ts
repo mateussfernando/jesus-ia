@@ -11,6 +11,7 @@ describe('caminhos do app', () => {
       uiDir: join('/app/resources/app.asar', 'stage', 'ui', 'apps', 'ui'),
       nextHostEntry: join('/app/resources/app.asar/dist', 'next-host.mjs'),
       brainEntry: join('/app/resources/app.asar/dist', 'brain.mjs'),
+      executorEntry: join('/app/resources/app.asar/dist', 'executor.mjs'),
     });
   });
 

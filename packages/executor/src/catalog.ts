@@ -34,6 +34,9 @@ export interface ToolSummary {
   readonly detail: string;
 }
 
+/** O formato do código curto de uma falha (`failureCode`), para quem o recebe pela ponte conferir. */
+export const FAILURE_CODE = /^[a-z_]+(?::[a-z_]+){0,3}$/;
+
 /** Maior caminho aceito na entrada (o Porteiro confere de novo, com as regras dele). */
 export const MAX_PATH_INPUT = 4_096;
 /** Linhas por leitura (como o Read do Claude Code). */

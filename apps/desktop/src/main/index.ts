@@ -1,6 +1,7 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createReadPolicy, hostPlatform } from '@jesus/gate';
 import { getModelCard, localDayKey } from '@jesus/models';
 import { createLogger, formatTextLine, maskSecrets } from '@jesus/shared';
 import { AuditWriter } from '@jesus/shared/audit';
@@ -16,6 +17,7 @@ import { startBrainProcess } from './brain-process';
 import { createChatRelay } from './chat-relay';
 import { TEST_BUILD } from './build-flags';
 import { buildChildEnv } from './child-env';
+import type { PlacesInput } from '../bridge/executor-protocol';
 import type { HostLockReason } from '../bridge/protocol';
 import { CookieJar } from './cookie-jar';
 import { readApiKey } from './egress/api-key';
@@ -25,14 +27,18 @@ import { carriedSpendEvent, createSpendScan, DailySpend, DEFAULT_DAILY_LIMIT_PUS
 import { ANTHROPIC_TARGET, createTransport, ignoredEgressEnvironment } from './egress/transport';
 import { checkElevation, systemWhoamiPath } from './elevation';
 import { createEntryGuard } from './entry-guard';
+import { startExecutorProcess } from './executor-process';
+import { FolderStore } from './folders';
 import { LockSignals } from './lock-signals';
 import { APP_ID, APP_NAME, appPaths, TEST_APP_ID } from './paths';
+import { buildPlaces, LINUX_SYSTEM_FOLDERS, windowsSystemFolders } from './places';
 import { ViolationBreaker } from './policy/breaker';
 import { phase1PermissionPolicy } from './policy/permissions';
 import { APP_DISABLED_FEATURES, HOST_RESOLVER_RULES, mergeFeatureList, unexpectedArguments, unexpectedEnvironment } from './policy/switches';
 import { APP_ORIGIN } from './policy/url';
 import type { Supervisor, SupervisorEvent } from './supervisor';
 import { createTestApi } from './test-api';
+import { createToolRelay } from './tool-relay';
 import { startUiServer, statusPage } from './ui-server';
 import type { UiServerEvent } from './ui-server';
 import { Vault } from './vault';
@@ -69,6 +75,7 @@ const frameBreaker = new ViolationBreaker({ limit: 8, windowMs: 10_000 });
 const violations: Violation[] = [];
 const serverEvents: UiServerEvent[] = [];
 const brainEvents: SupervisorEvent[] = [];
+const executorEvents: SupervisorEvent[] = [];
 
 /**
  * Volta a janela para o início. O `loadURL` rejeita quando outra navegação interrompe esta (por exemplo, a página de
@@ -147,6 +154,42 @@ function forwardOutput(child: UtilityProcess, label: string): void {
   }
 }
 
+/** O caminho real (`realpath` nativo), ou `null` se não existe. */
+function realOrNull(path: string): string | null {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return null;
+  }
+}
+
+/** O caminho de uma pasta do sistema que o Electron conhece, ou nada (nem todo sistema tem todas). */
+function electronPath(name: Parameters<typeof app.getPath>[0]): string | undefined {
+  try {
+    return app.getPath(name);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Os lugares do sistema para o Porteiro (decisão 0026): pasta do usuário, dados, pessoais, sistema e o próprio Jesus. */
+function systemPlaces(paths: ReturnType<typeof appPaths>): PlacesInput {
+  const windows = process.platform === 'win32';
+  return buildPlaces(
+    {
+      home: app.getPath('home'),
+      localAppData: dataRoot(),
+      roamingAppData: app.getPath('appData'),
+      systemRoot: windows ? (process.env['SystemRoot'] ?? process.env['windir']) : undefined,
+      personal: (['documents', 'downloads', 'desktop', 'pictures', 'videos', 'music'] as const).map(electronPath),
+      system: windows ? windowsSystemFolders(process.env) : LINUX_SYSTEM_FOLDERS,
+      jesus: [paths.userData, dirname(process.execPath), process.resourcesPath],
+    },
+    hostPlatform(process.platform),
+    realOrNull,
+  );
+}
+
 async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   await app.whenReady();
   if (process.platform === 'win32') {
@@ -193,9 +236,12 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   // O gasto do dia vem do registro (decisão 0023): reabrir o app não zera o teto.
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const spendScan = createSpendScan(localDayKey(Date.now(), timeZone), timeZone);
+  // O registro abriu sem ir para o lado: só assim há pastas liberadas (decisão 0026).
+  let auditHealthy = false;
   try {
     const opened = await AuditWriter.open({ path: join(paths.dataDir, 'audit.jsonl'), anchors, visit: (entry) => spendScan.add(entry) });
     audit = opened.writer;
+    auditHealthy = opened.quarantined === null;
     if (opened.verdict.status !== 'ok' || opened.verdict.tornTail || opened.anchorUnreadable) {
       log.warn('registro.conferencia', {
         status: opened.verdict.status,
@@ -222,6 +268,39 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   /** Grava no registro e espera: sem registro, nem gasto nem mudança do teto. */
   const appendAudit = (event: AuditEvent) =>
     audit === null ? Promise.reject(new Error('registro de auditoria indisponível')) : audit.append(event);
+
+  // Leitura de arquivos (decisão 0026): os lugares do sistema, as pastas liberadas pelo dono e o Executor.
+  const places = systemPlaces(paths);
+  const folderStore = await FolderStore.open({
+    path: join(paths.dataDir, 'folders.json'),
+    policy: createReadPolicy({ released: [], places, platform: hostPlatform(process.platform) }),
+    audit: appendAudit,
+    auditHealthy: audit !== null && auditHealthy,
+    log: (message) => log.warn('pastas', { motivo: message }),
+  });
+  const executorEnv = buildChildEnv(process.env, { fixed: { NODE_ENV: 'production' } });
+  let executorChild: UtilityProcess | null = null;
+  const executor = startExecutorProcess({
+    fork: () => {
+      const child = utilityProcess.fork(paths.executorEntry, [], { serviceName: 'jesus-executor', stdio: 'pipe', env: executorEnv });
+      forwardOutput(child, 'jesus-executor');
+      executorChild = child;
+      return child;
+    },
+    onEvent: (event) => {
+      if (TEST_BUILD) executorEvents.push(event);
+      log.info('executor', event);
+      if (event.type === 'ready') record({ type: 'executor.ready', attempt: event.attempt, prepareMs: event.prepareMs });
+      if (event.type === 'exited') record({ type: 'executor.exited', code: event.code });
+      if (event.type === 'failed') record({ type: 'executor.failed', reason: event.reason, message: event.message.slice(0, 500) });
+      if (event.type === 'gave-up') record({ type: 'executor.gave_up', failures: event.failures });
+    },
+  });
+  const toolRelay = createToolRelay({
+    executor,
+    policy: () => (folderStore.available ? { released: folderStore.releasedPaths(), places } : null),
+    audit: appendAudit,
+  });
 
   const vaultRequests = createVaultRequests({ vault, record });
   // A conversa (decisão 0024) mora no Cérebro; o principal só repassa entre ele e o servidor da interface.
@@ -328,8 +407,9 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     log.info('bloqueio.do_sistema', { motivo: reason, origem: source });
     record({ type: 'app.locked', reason, source });
     cookies.clear();
-    // O que estava saindo para a API para aqui: o Cérebro recebe `locked`.
+    // O que estava saindo para a API para aqui: o Cérebro recebe `locked`. As leituras em andamento também param.
     egress.cancelAll('locked');
+    executor.cancelAll();
     signals.lock(reason);
     leaveForEntry(window, 'bloqueio do sistema');
   };
@@ -393,6 +473,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   app.on('before-quit', () => {
     uiServer.stop();
     brain.stop();
+    executor.supervisor.stop();
     transport.close();
   });
 
@@ -418,6 +499,13 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
         spend: () => spend.snapshot(),
         useTestApi: (port: number, ca: string, key: string) => testApi?.useTestApi(port, ca, key),
         entryRetries: () => entryGuard.retries,
+        executorEvents,
+        executorPid: () => executorChild?.pid,
+        restartExecutor: () => executor.supervisor.restart(),
+        // Liberar pasta sem o diálogo (os testes não clicam em diálogos nativos); a conferência do Porteiro vale igual.
+        releaseFolder: (path: string) => folderStore.add(realpathSync.native(path)),
+        folders: () => folderStore.list(),
+        runTool: (name: string, input: unknown) => toolRelay.call(name, input),
       },
     });
   }
