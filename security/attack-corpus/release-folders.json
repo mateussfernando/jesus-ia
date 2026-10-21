@@ -1,0 +1,58 @@
+{
+  "description": "Coleção de ataques do Porteiro para liberar pastas (decisão 0026). Cada caso é a pasta escolhida no diálogo (o caminho real) e o que o Porteiro decide antes da confirmação do dono. Toda mudança no Porteiro roda esta coleção (npm run attack-corpus).",
+  "places": {
+    "home": "C:\\Users\\Mateus",
+    "localAppData": "C:\\Users\\Mateus\\AppData\\Local",
+    "roamingAppData": "C:\\Users\\Mateus\\AppData\\Roaming",
+    "systemRoot": "C:\\Windows",
+    "jesus": ["C:\\Users\\Mateus\\AppData\\Local\\Jesus\\data", "E:\\JesusDados", "F:\\Apps\\JesusPortatil\\dados"],
+    "personal": [
+      "C:\\Users\\Mateus\\OneDrive\\Documentos",
+      "C:\\Users\\Mateus\\Downloads",
+      "C:\\Users\\Mateus\\OneDrive\\Área de Trabalho",
+      "C:\\Users\\Mateus\\Pictures",
+      "C:\\Users\\Mateus\\Videos",
+      "C:\\Users\\Mateus\\Music"
+    ],
+    "system": ["C:\\Program Files", "C:\\Program Files (x86)", "C:\\ProgramData"]
+  },
+  "cases": [
+    { "id": "allow-project", "folder": "C:\\Users\\Mateus\\Projetos\\site", "expect": "allow" },
+    { "id": "allow-personal-subfolder", "folder": "C:\\Users\\Mateus\\OneDrive\\Documentos\\Faculdade", "expect": "allow", "note": "subpasta de Documentos pode" },
+    { "id": "allow-downloads-subfolder", "folder": "C:\\Users\\Mateus\\Downloads\\livros", "expect": "allow" },
+    { "id": "allow-onedrive-other", "folder": "C:\\Users\\Mateus\\OneDrive\\Trabalho", "expect": "allow", "note": "pasta do OneDrive que não é pessoal" },
+    { "id": "allow-other-drive", "folder": "D:\\Fotos", "expect": "allow" },
+    { "id": "allow-repo", "folder": "D:\\Projetos\\jesus-ia", "expect": "allow" },
+
+    { "id": "root-c", "folder": "C:\\", "expect": "deny", "reason": "root", "note": "a unidade inteira" },
+    { "id": "root-d", "folder": "D:\\", "expect": "deny", "reason": "root" },
+    { "id": "root-with-jesus", "folder": "E:\\", "expect": "deny", "reason": "root" },
+    { "id": "users", "folder": "C:\\Users", "expect": "deny", "reason": "too_broad", "note": "acima da pasta do usuário" },
+    { "id": "home", "folder": "C:\\Users\\Mateus", "expect": "deny", "reason": "too_broad" },
+    { "id": "home-case", "folder": "c:\\users\\MATEUS", "expect": "deny", "reason": "too_broad" },
+    { "id": "onedrive-root", "folder": "C:\\Users\\Mateus\\OneDrive", "expect": "deny", "reason": "personal", "note": "contém Documentos e a Área de Trabalho" },
+    { "id": "documents", "folder": "C:\\Users\\Mateus\\OneDrive\\Documentos", "expect": "deny", "reason": "personal" },
+    { "id": "downloads", "folder": "C:\\Users\\Mateus\\Downloads", "expect": "deny", "reason": "personal" },
+    { "id": "pictures", "folder": "C:\\Users\\Mateus\\Pictures", "expect": "deny", "reason": "personal" },
+    { "id": "windows", "folder": "C:\\Windows", "expect": "deny", "reason": "system" },
+    { "id": "windows-inside", "folder": "C:\\Windows\\System32", "expect": "deny", "reason": "system" },
+    { "id": "program-files", "folder": "C:\\Program Files\\Algum Programa", "expect": "deny", "reason": "system" },
+    { "id": "program-data", "folder": "C:\\ProgramData\\Microsoft", "expect": "deny", "reason": "system" },
+    { "id": "app-data", "folder": "C:\\Users\\Mateus\\AppData", "expect": "deny", "reason": "app_data", "note": "dados de todos os programas, com a pasta do Jesus" },
+    { "id": "app-data-local", "folder": "C:\\Users\\Mateus\\AppData\\Local", "expect": "deny", "reason": "app_data" },
+    { "id": "app-data-roaming", "folder": "C:\\Users\\Mateus\\AppData\\Roaming", "expect": "deny", "reason": "app_data" },
+    { "id": "app-data-program", "folder": "C:\\Users\\Mateus\\AppData\\Local\\Google", "expect": "deny", "reason": "app_data", "note": "dados de programa (pode guardar sessões)" },
+    { "id": "app-data-locallow", "folder": "C:\\Users\\Mateus\\AppData\\LocalLow\\Jogo", "expect": "deny", "reason": "app_data" },
+    { "id": "jesus-data", "folder": "C:\\Users\\Mateus\\AppData\\Local\\Jesus", "expect": "deny", "reason": "jesus" },
+    { "id": "jesus-install", "folder": "C:\\Users\\Mateus\\AppData\\Local\\Programs\\Jesus", "expect": "deny", "reason": "jesus" },
+    { "id": "jesus-other-drive", "folder": "E:\\JesusDados\\sub", "expect": "deny", "reason": "jesus" },
+    { "id": "jesus-parent", "folder": "F:\\Apps", "expect": "deny", "reason": "jesus", "note": "contém uma pasta do Jesus fora do AppData" },
+    { "id": "jesus-data-parent", "folder": "D:\\Dados", "expect": "allow", "note": "não contém pasta do Jesus neste contexto" },
+    { "id": "jesus-dev", "folder": "D:\\Projetos\\jesus-ia\\apps\\ui\\.jesus-dev", "expect": "deny", "reason": "jesus" },
+    { "id": "sensitive-ssh", "folder": "D:\\Projetos\\site\\.ssh", "expect": "deny", "reason": "sensitive:ssh" },
+    { "id": "sensitive-aws", "folder": "C:\\Users\\Mateus\\.aws", "expect": "deny", "reason": "sensitive:credentials" },
+    { "id": "unc", "folder": "\\\\servidor\\compartilhada", "expect": "deny", "reason": "path:unc", "note": "pasta de rede" },
+    { "id": "short-name", "folder": "C:\\Users\\MATEUS~1\\Projetos", "expect": "deny", "reason": "path:short_name" },
+    { "id": "trailing-dot", "folder": "C:\\Users\\Mateus\\Projetos\\site.", "expect": "deny", "reason": "path:trailing_dot_space" }
+  ]
+}

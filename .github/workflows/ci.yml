@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, tipos, testes e build (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # PostgreSQL com pgvector para os testes de integração do @jesus/db (decisão 0014). Só existe durante o job.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # O Node 24.18+ traz o npm 11.16+ exigido pelo package.json (engines e devEngines).
+      # Hoje o toolcache do runner tem o Node 24.21.0, com o npm 11.19.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Instala exatamente o package-lock.json, sem rodar scripts de dependências (docs/03-seguranca.md, seção 3.14).
+      - run: npm ci
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+        env:
+          JESUS_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # O build da interface sai também no formato do app de desktop (standalone; decisão 0017), que os testes de
+      # integração abaixo usam: o servidor do Next de verdade atrás da ponte, sem porta.
+      - run: npm run build
+        env:
+          JESUS_DESKTOP_BUILD: '1'
+      - run: npm run stage:ui -w @jesus/desktop
+      - run: npm run test:integration -w @jesus/desktop
+
+      # Ponta a ponta com o Electron de verdade (etapa 3 da fase 1). O binário é baixado e conferido pelo
+      # checksums.json do pacote electron, fixado no package-lock.json (o npm não roda o script de instalação).
+      - run: node node_modules/electron/install.js
+      - run: npm run build:test -w @jesus/desktop
+      # Sandbox do Chromium ligada: o Ubuntu 24.04 restringe os namespaces de usuário sem privilégio (AppArmor), e
+      # sem eles a sandbox não sobe. O teste confere que a página roda com o filtro seccomp.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: xvfb-run -a npm run test:e2e -w @jesus/desktop
+
+      # Empacotamento (etapa 4, decisão 0018): o pacote de produção é conferido (fusíveis, app.asar e, abrindo o app,
+      # a recusa de argumentos e do ELECTRON_RUN_AS_NODE); os testes de ponta a ponta rodam de novo no pacote de teste,
+      # com a interface de dentro do app.asar.
+      - run: xvfb-run -a npm run package -w @jesus/desktop
+      - run: npm run package:test -w @jesus/desktop
+      - run: xvfb-run -a npm run test:e2e -w @jesus/desktop
+        env:
+          JESUS_E2E_EXECUTABLE: ${{ github.workspace }}/apps/desktop/release-test/linux-unpacked/Jesus
+
+  windows:
+    # Etapa 5 da fase 1: o app no Windows de verdade e o instalador .exe (decisão 0018). Um gatilho só (o mesmo do
+    # job acima): cada envio para a branch do PR roda os dois jobs uma vez. O repositório é público, então os minutos
+    # do Windows não pesam no limite do Actions.
+    name: Testes, pacote e instalador (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      # Os testes de unidade também no Windows (caminhos, nomes de variáveis sem maiúsculas, arquivos). Os do banco
+      # são pulados (sem PostgreSQL neste job).
+      - run: npm test
+      - run: npm run build
+        env:
+          JESUS_DESKTOP_BUILD: '1'
+      - run: npm run stage:ui -w @jesus/desktop
+      - run: npm run test:integration -w @jesus/desktop
+
+      # O runner do Windows roda como administrador: o build de teste só registra isso e segue (o de produção recusaria
+      # abrir). Os testes de ponta a ponta rodam no pacote de teste, com a interface de dentro do app.asar.
+      - run: node node_modules/electron/install.js
+      - run: npm run package:test -w @jesus/desktop
+      - run: npm run test:e2e -w @jesus/desktop
+        env:
+          JESUS_E2E_EXECUTABLE: ${{ github.workspace }}/apps/desktop/release-test/win-unpacked/Jesus.exe
+
+      # Instalador de produção (NSIS por usuário, sem elevação), conferido: fusíveis, app.asar, recusa de argumentos e
+      # do ELECTRON_RUN_AS_NODE. Depois, o teste de adulteração do app.asar (a integridade é conferida no Windows).
+      - run: npm run package -w @jesus/desktop
+      - run: node apps/desktop/scripts/tamper-check.mjs apps/desktop/release/win-unpacked
+
+      - name: Hash do instalador no resumo
+        run: node apps/desktop/scripts/installer-summary.mjs
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: jesus-windows-x64
+          path: apps/desktop/release/Jesus-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14

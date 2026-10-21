@@ -1,0 +1,36 @@
+{
+  "description": "Coleção de ataques do Porteiro para os alvos de link (decisão 0026). O Executor resolve os links nome a nome e, antes de seguir cada um, entrega ao Porteiro o caminho a que ele leva (o alvo junto com o resto do caminho pedido). Um link plantado numa pasta liberada (num repositório baixado, por exemplo) não pode levar à rede, a um dispositivo, ao sensível, à pasta do Jesus nem para fora das pastas liberadas. Toda mudança no Porteiro roda esta coleção (npm run attack-corpus).",
+  "places": {
+    "home": "C:\\Users\\Mateus",
+    "localAppData": "C:\\Users\\Mateus\\AppData\\Local",
+    "roamingAppData": "C:\\Users\\Mateus\\AppData\\Roaming"
+  },
+  "released": ["C:\\Users\\Mateus\\Projetos\\site", "D:\\Documentos\\Faculdade"],
+  "cases": [
+    {"id": "inside", "target": "C:\\Users\\Mateus\\Projetos\\site\\docs\\a.txt", "expect": "allow"},
+    {"id": "inside-dotdot", "target": "C:\\Users\\Mateus\\Projetos\\site\\docs\\..\\b.txt", "expect": "allow", "note": "o .. é resolvido pelo texto, como o Windows faz com o alvo relativo"},
+    {"id": "other-released", "target": "D:\\Documentos\\Faculdade\\x.txt", "expect": "allow", "note": "de uma pasta liberada para outra"},
+    {"id": "smb", "target": "\\\\servidor\\pasta\\a.txt", "expect": "deny", "reason": "path:unc", "note": "abrir mandaria a credencial do usuário (NTLM) ao servidor"},
+    {"id": "webdav", "target": "\\\\atacante.example@SSL\\DavWWWRoot\\a.txt", "expect": "deny", "reason": "path:unc", "note": "WebDAV por HTTPS: passa por firewall que bloqueia o SMB"},
+    {"id": "unc-ip", "target": "\\\\10.0.0.5\\c$\\Windows\\win.ini", "expect": "deny", "reason": "path:unc"},
+    {"id": "unc-forward-slashes", "target": "//servidor/pasta/a.txt", "expect": "deny", "reason": "path:unc"},
+    {"id": "device-unc", "target": "\\\\?\\UNC\\servidor\\pasta\\a.txt", "expect": "deny", "reason": "path:device_namespace"},
+    {"id": "volume-guid", "target": "\\\\?\\Volume{0b1c2d3e-0000-0000-0000-100000000000}\\a.txt", "expect": "deny", "reason": "path:device_namespace", "note": "ponto de montagem de outro volume"},
+    {"id": "pipe", "target": "\\\\.\\pipe\\algum", "expect": "deny", "reason": "path:device_namespace", "note": "abrir um pipe pode travar ou conversar com um serviço"},
+    {"id": "nt-namespace", "target": "\\??\\C:\\Users\\Mateus\\Projetos\\site\\a.txt", "expect": "deny", "reason": "path:device_namespace"},
+    {"id": "root-relative", "target": "\\Users\\Mateus\\Projetos\\site\\a.txt", "expect": "deny", "reason": "path:not_absolute", "note": "relativo à unidade atual: ambíguo"},
+    {"id": "drive-relative", "target": "C:site\\a.txt", "expect": "deny", "reason": "path:not_absolute"},
+    {"id": "outside", "target": "C:\\Users\\Mateus\\Projetos\\outro\\a.txt", "expect": "deny", "reason": "outside"},
+    {"id": "outside-dotdot", "target": "C:\\Users\\Mateus\\Projetos\\site\\..\\..\\Desktop\\a.txt", "expect": "deny", "reason": "outside"},
+    {"id": "outside-prefix", "target": "C:\\Users\\Mateus\\Projetos\\site2\\a.txt", "expect": "deny", "reason": "outside", "note": "o nome começa igual, mas é outra pasta"},
+    {"id": "sensitive-ssh", "target": "C:\\Users\\Mateus\\.ssh\\id_ed25519", "expect": "deny", "reason": "sensitive:ssh"},
+    {"id": "sensitive-inside", "target": "C:\\Users\\Mateus\\Projetos\\site\\.env", "expect": "deny", "reason": "sensitive:env_file", "note": "o alvo fica dentro da pasta liberada, mas é sensível"},
+    {"id": "browser", "target": "C:\\Users\\Mateus\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Login Data", "expect": "deny", "reason": "sensitive:browser"},
+    {"id": "jesus", "target": "C:\\Users\\Mateus\\AppData\\Local\\Jesus\\data\\vault.bin", "expect": "deny", "reason": "jesus"},
+    {"id": "jesus-install", "target": "C:\\Users\\Mateus\\AppData\\Local\\Programs\\Jesus\\resources\\app.asar", "expect": "deny", "reason": "jesus"},
+    {"id": "reserved", "target": "C:\\Users\\Mateus\\Projetos\\site\\CON", "expect": "deny", "reason": "path:reserved_name"},
+    {"id": "short-name", "target": "C:\\Users\\Mateus\\PROJET~1\\site\\a.txt", "expect": "deny", "reason": "path:short_name"},
+    {"id": "stream", "target": "C:\\Users\\Mateus\\Projetos\\site\\a.txt:escondido", "expect": "deny", "reason": "path:stream"},
+    {"id": "hidden-direction", "target": "C:\\Users\\Mateus\\Projetos\\site\\fatura\u202Etxt.exe", "expect": "deny", "reason": "path:control_char"}
+  ]
+}

