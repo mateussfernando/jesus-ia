@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_API_BODY_BYTES, parseFromBrain } from '../bridge/brain-protocol';
 import { ApiFetchBridge, EgressError } from './api-fetch';
 
 function setup() {
@@ -40,6 +41,22 @@ describe('ApiFetchBridge', () => {
     bridge.handle({ type: 'api-end', id: 1 });
     expect(await response.text()).toBe('data: 1\n\ndata: 2\n\n');
     expect(bridge.pending).toBe(0);
+  });
+
+  it('corpo acima do limite da ponte é recusado aqui, sem virar mensagem fora do protocolo (que derrubaria o Cérebro)', async () => {
+    const { bridge, posted } = setup();
+    // No limite exato, em bytes (com acento, menos caracteres que bytes): sai, e a ponte aceita.
+    const edge = `"${'á'.repeat((MAX_API_BODY_BYTES - 2) / 2)}"`;
+    expect(Buffer.byteLength(edge)).toBe(MAX_API_BODY_BYTES);
+    void bridge.fetch('https://api.anthropic.com/v1/messages', { method: 'POST', body: edge });
+    expect(posted).toHaveLength(1);
+    expect(parseFromBrain(posted[0])).not.toBeNull();
+    for (const body of [`${edge} `, 'a'.repeat(MAX_API_BODY_BYTES + 1)]) {
+      const error = await bridge.fetch('https://api.anthropic.com/v1/messages', { method: 'POST', body }).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(EgressError);
+      expect((error as EgressError).reason).toBe('too_large');
+    }
+    expect(posted).toHaveLength(1);
   });
 
   it('recusa antes do cabeçalho vira EgressError com o motivo', async () => {

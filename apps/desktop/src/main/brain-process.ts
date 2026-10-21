@@ -10,9 +10,36 @@ import type { Supervisor, SupervisorEvent, SupervisorTiming } from './supervisor
  * processo, e cada `api-request` vai para a saída (`egress`), que confere, põe a chave e responde pelas mensagens
  * `api-*` com o mesmo `id`. Pedido com `id` repetido é fuga do protocolo e derruba o Cérebro. Se o Cérebro sair, o que
  * estava em andamento com ele é cancelado.
+ *
+ * Ritmo: cada pedido custa ao principal a conferência de até 2 MB de JSON. Um Cérebro de verdade espera cada resposta
+ * do modelo (segundos) e nunca manda pedido fora da lista; pedidos demais em pouco tempo, ou recusas pela lista em
+ * série, são laço ou ataque, e derrubam o Cérebro como fuga do protocolo (o supervisor desiste depois de quedas
+ * seguidas).
  */
 
 type WorkMessage = Extract<FromBrainMessage, { readonly type: 'api-request' | 'api-cancel' }>;
+
+export interface BrainRateLimits {
+  /** Pedidos aceitos numa janela de `windowMs`. */
+  readonly maxRequests: number;
+  readonly windowMs: number;
+  /** Pedidos recusados pela lista (fora do que o Jesus manda) aceitos numa janela de `refusalWindowMs`. */
+  readonly maxRefusals: number;
+  readonly refusalWindowMs: number;
+}
+
+export const DEFAULT_BRAIN_RATE: BrainRateLimits = { maxRequests: 10, windowMs: 5_000, maxRefusals: 3, refusalWindowMs: 60_000 };
+
+/** Conta eventos numa janela deslizante; `true` se este passou do limite. */
+function windowCounter(max: number, windowMs: number, now: () => number): () => boolean {
+  const times: number[] = [];
+  return () => {
+    const at = now();
+    while (times.length > 0 && at - (times[0] ?? at) >= windowMs) times.shift();
+    times.push(at);
+    return times.length > max;
+  };
+}
 
 export interface BrainProcessOptions {
   /** Sobe o utilityProcess (no app: `utilityProcess.fork` com ambiente de lista e `serviceName: 'jesus-brain'`). */
@@ -20,12 +47,20 @@ export interface BrainProcessOptions {
   readonly egress: Pick<Egress, 'send' | 'cancelAll'>;
   readonly onEvent?: (event: SupervisorEvent) => void;
   readonly timing?: Partial<SupervisorTiming>;
+  readonly rate?: Partial<BrainRateLimits>;
   readonly now?: () => number;
 }
 
 export function startBrainProcess(options: BrainProcessOptions): Supervisor {
-  // Pedidos em andamento do processo atual (id → cancelar). Um processo novo começa com um mapa novo.
+  const rate: BrainRateLimits = { ...DEFAULT_BRAIN_RATE, ...options.rate };
+  const now = options.now ?? (() => performance.now());
+  // Pedidos em andamento do processo atual (id → cancelar) e o ritmo dele. Um processo novo começa do zero.
   let open = new Map<number, () => void>();
+  const newCounters = () => ({
+    request: windowCounter(rate.maxRequests, rate.windowMs, now),
+    refusal: windowCounter(rate.maxRefusals, rate.refusalWindowMs, now),
+  });
+  let counters = newCounters();
 
   return startSupervisor<WorkMessage>({
     fork: options.fork,
@@ -41,7 +76,12 @@ export function startBrainProcess(options: BrainProcessOptions): Supervisor {
         link.violation('pedido à API com id repetido');
         return;
       }
+      if (counters.request()) {
+        link.violation('pedidos à API demais em pouco tempo');
+        return;
+      }
       const requests = open;
+      const limits = counters;
       const { id } = message;
       let finished = false;
       const done = () => {
@@ -58,6 +98,7 @@ export function startBrainProcess(options: BrainProcessOptions): Supervisor {
         fail: (reason) => {
           done();
           link.post({ type: 'api-error', id, reason });
+          if (reason === 'refused' && limits.refusal()) link.violation('pedidos à API fora da lista em série');
         },
       });
       // Recusa na hora (fora da lista, sem chave, teto do dia): já terminou.
@@ -65,10 +106,11 @@ export function startBrainProcess(options: BrainProcessOptions): Supervisor {
     },
     onExit: () => {
       open = new Map();
+      counters = newCounters();
       options.egress.cancelAll('brain_gone');
     },
     ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
     ...(options.timing === undefined ? {} : { timing: options.timing }),
-    ...(options.now === undefined ? {} : { now: options.now }),
+    now,
   });
 }

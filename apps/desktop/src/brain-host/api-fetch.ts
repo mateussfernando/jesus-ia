@@ -1,3 +1,4 @@
+import { MAX_API_BODY_BYTES } from '../bridge/brain-protocol';
 import type { EgressFailure, ToBrainApiMessage } from '../bridge/brain-protocol';
 
 /**
@@ -65,6 +66,9 @@ export class ApiFetchBridge {
     }
     const body = init?.body;
     if (typeof body !== 'string') return Promise.reject(new TypeError('o fetch do Cérebro só manda corpo em texto'));
+    // Corpo acima do limite da ponte: recusa aqui mesmo. Mandado, ele seria mensagem fora do protocolo e derrubaria o
+    // Cérebro (uma conversa longa, de verdade, cairia em laço até o supervisor desistir).
+    if (Buffer.byteLength(body, 'utf8') > MAX_API_BODY_BYTES) return Promise.reject(new EgressError('too_large'));
     const signal = init?.signal ?? null;
     if (signal?.aborted === true) return Promise.reject(abortReason(signal));
 

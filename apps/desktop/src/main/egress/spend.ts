@@ -1,5 +1,6 @@
 import { createSpendLedger, effectiveDayKey, estimatePreflightCost, localDayKey, reserveSpend, rollDay, settleSpend } from '@jesus/models';
 import type { ModelCard, SpendLedger } from '@jesus/models';
+import { MAX_OUTPUT_TOKENS } from './api-policy';
 
 /**
  * Teto de gasto do dia no próprio processo principal (decisão 0023), com o livro de gastos do `packages/models`: antes
@@ -7,7 +8,9 @@ import type { ModelCard, SpendLedger } from '@jesus/models';
  * comprometido pedindo sem parar: o que não cabe na sobra do dia é recusado antes de sair.
  *
  * O dia é o local (fuso do sistema) e só avança. O gasto do dia é reconstruído do registro de auditoria ao abrir o app
- * (`createSpendScan`): reiniciar não zera o dia.
+ * (`createSpendScan`): reiniciar não zera o dia. Quando o registro vai para o lado (cadeia quebrada, âncora ilegível),
+ * o registro novo começa com o gasto e o teto que a conferência leu do antigo (`spend.carried`): pôr o registro de lado
+ * também não zera o dia.
  */
 
 /** Teto padrão: US$ 1 por dia, uma dezena de vezes o uso típico estimado do Claude Haiku 5.5 (decisão 0011). */
@@ -33,11 +36,19 @@ export function isValidDailyLimit(limitPUsd: unknown): limitPUsd is number {
 const INPUT_OVERHEAD_TOKENS = 4_096;
 
 /**
- * Pior caso de um pedido, em picodólares: a entrada inteira como gravação no cache (o preço de entrada mais caro), na
- * faixa de preço desse tamanho, mais a saída inteira (`max_tokens`). O custo real nunca passa disso.
+ * Entrada de um bloco de raciocínio devolvido, no pior caso: o raciocínio vem cifrado na assinatura (talvez comprimido)
+ * e é cobrado pelo tamanho original, que nunca passa da saída máxima da resposta que o gerou. Toda resposta passou por
+ * esta saída, com `max_tokens` até `MAX_OUTPUT_TOKENS`; bloco de outra conta ou de modelo que não o lê cai sem cobrança.
  */
-export function worstCaseCostPUsd(card: ModelCard, bodyBytes: number, maxTokens: number): number {
-  const inputTokens = Math.min(bodyBytes + INPUT_OVERHEAD_TOKENS, card.contextWindow);
+export const REPLAYED_THINKING_TOKENS = MAX_OUTPUT_TOKENS;
+
+/**
+ * Pior caso de um pedido, em picodólares: a entrada inteira como gravação no cache (o preço de entrada mais caro), na
+ * faixa de preço desse tamanho, mais a saída inteira (`max_tokens`). Cada bloco de raciocínio devolvido conta a mais
+ * pela saída máxima. O custo real nunca passa disso.
+ */
+export function worstCaseCostPUsd(card: ModelCard, bodyBytes: number, maxTokens: number, thinkingBlocks = 0): number {
+  const inputTokens = Math.min(bodyBytes + INPUT_OVERHEAD_TOKENS + thinkingBlocks * REPLAYED_THINKING_TOKENS, card.contextWindow);
   try {
     return estimatePreflightCost({ inputTokens, expectedCacheHit: 0, expectedOutput: maxTokens, price: card.price, cache: 'explicit' });
   } catch {
@@ -132,9 +143,28 @@ export interface ScannedEntry {
   readonly event: { readonly type: string; readonly [field: string]: unknown };
 }
 
+export interface SpendScanResult {
+  readonly dayKey: string;
+  readonly settledPUsd: number;
+  readonly limitPUsd: number | null;
+}
+
 export interface SpendScan {
   add(entry: ScannedEntry): void;
-  result(): { readonly dayKey: string; readonly settledPUsd: number; readonly limitPUsd: number | null };
+  result(): SpendScanResult;
+}
+
+/**
+ * Evento que leva o gasto e o teto do dia para o registro novo, quando o antigo vai para o lado: sem ele, a abertura
+ * seguinte só leria o registro novo e esqueceria o dia.
+ */
+export function carriedSpendEvent(scanned: SpendScanResult): { readonly type: 'spend.carried'; readonly [field: string]: unknown } {
+  return {
+    type: 'spend.carried',
+    day_key: scanned.dayKey,
+    spent_pusd: scanned.settledPUsd,
+    ...(scanned.limitPUsd === null ? {} : { limit_pusd: scanned.limitPUsd }),
+  };
 }
 
 function pUsdField(value: unknown): number | null {
@@ -143,8 +173,9 @@ function pUsdField(value: unknown): number | null {
 
 /**
  * Gasto do dia a partir do registro de auditoria: soma o custo de cada `api.call` do dia e, para cada `api.reserved`
- * sem `api.call` depois (o app caiu no meio do pedido), o valor reservado inteiro (falha fechada). O teto vem do último
- * `spend.limit_set` válido do registro inteiro (de qualquer dia); sem nenhum, vale o padrão.
+ * sem `api.call` depois (o app caiu no meio do pedido), o valor reservado inteiro (falha fechada). Um `spend.carried`
+ * do dia (o registro anterior foi posto de lado) soma o gasto que ele traz. O teto vem do último `spend.limit_set` ou
+ * `spend.carried` válido do registro inteiro (de qualquer dia); sem nenhum, vale o padrão.
  */
 export function createSpendScan(dayKey: string, timeZone: string): SpendScan {
   let settled = 0;
@@ -153,9 +184,13 @@ export function createSpendScan(dayKey: string, timeZone: string): SpendScan {
   return {
     add(entry) {
       const { type } = entry.event;
-      if (type === 'spend.limit_set') {
+      if (type === 'spend.limit_set' || type === 'spend.carried') {
         const value = entry.event['limit_pusd'];
         if (isValidDailyLimit(value)) limit = value;
+        // O dia do gasto trazido é o que o evento diz (o do registro posto de lado), não a hora da gravação.
+        if (type === 'spend.carried' && entry.event['day_key'] === dayKey) {
+          settled = saturatingAdd(settled, pUsdField(entry.event['spent_pusd']) ?? Number.MAX_SAFE_INTEGER);
+        }
         return;
       }
       if (type !== 'api.reserved' && type !== 'api.call') return;

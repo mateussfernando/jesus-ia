@@ -177,12 +177,27 @@ export function createEgress(options: EgressOptions): Egress {
         body_bytes: checked.bodyBytes,
         messages: checked.messages,
         tools: checked.tools,
+        thinking_blocks: checked.thinkingBlocks,
         betas: checked.betas.join(','),
       });
     } catch {
       // Sem registro, sem gasto: a reserva volta e o pedido não sai.
       options.spend.settle(requestId, 0);
       finish(record, 'audit');
+      return;
+    }
+    // Bloqueio, desistência ou Cérebro caído enquanto a reserva gravava: o pedido nem sai, e nada é cobrado.
+    if (record.controller.signal.aborted) {
+      options.spend.settle(requestId, 0);
+      note({
+        type: 'api.call',
+        request: requestId,
+        outcome: record.locked ? 'locked' : 'cancelled',
+        cost_pusd: 0,
+        estimated: false,
+        duration_ms: Math.round(now() - started),
+      });
+      finish(record, 'interrupted');
       return;
     }
 
@@ -277,7 +292,7 @@ export function createEgress(options: EgressOptions): Egress {
       return () => undefined;
     }
     const requestId = newRequestId();
-    const estimate = worstCaseCostPUsd(options.card, check.request.bodyBytes, check.request.maxTokens);
+    const estimate = worstCaseCostPUsd(options.card, check.request.bodyBytes, check.request.maxTokens, check.request.thinkingBlocks);
     if (!options.spend.reserve(requestId, estimate)) {
       const day = options.spend.snapshot();
       noteThrottled({

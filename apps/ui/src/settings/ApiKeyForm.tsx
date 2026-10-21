@@ -7,7 +7,7 @@ import type { KeySettingsState } from './key-messages';
 const STATE_TEXT: Readonly<Record<KeySettingsState['anthropicKey'], string>> = {
   present: 'Guardada no cofre.',
   absent: 'Nenhuma chave guardada.',
-  unknown: 'Não deu para ler o cofre.',
+  unknown: 'Não deu para ler a chave no cofre. Guarde a chave de novo.',
   no_vault: 'Sem cofre (desenvolvimento).',
 };
 
@@ -57,7 +57,11 @@ export function ApiKeyForm({ initial }: { initial: KeySettingsState }) {
           <button type="submit" disabled={busy || key.trim() === '' || state.anthropicKey === 'no_vault'}>
             Guardar
           </button>
-          <button type="button" disabled={busy || state.anthropicKey !== 'present'} onClick={() => void run(removeAnthropicKey)}>
+          <button
+            type="button"
+            disabled={busy || (state.anthropicKey !== 'present' && state.anthropicKey !== 'unknown')}
+            onClick={() => void run(removeAnthropicKey)}
+          >
             Apagar chave
           </button>
         </div>

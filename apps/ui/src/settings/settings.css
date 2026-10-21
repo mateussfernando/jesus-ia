@@ -21,6 +21,11 @@
   background: var(--panel);
 }
 
+/* Espaço entre as seções (cada uma é um cartão). */
+.settings-section + .settings-section {
+  margin-top: 24px;
+}
+
 .settings-section h2 {
   margin: 0;
   font-size: 18px;

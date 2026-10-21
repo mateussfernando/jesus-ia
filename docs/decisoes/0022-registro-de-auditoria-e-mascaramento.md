@@ -1,7 +1,7 @@
 # 0022 — Registro de auditoria encadeado, mascaramento de segredos e logger com redação
 
 - Status: aceita
-- Data: 19/10/2026
+- Data: 19/10/2026 (revista em 20/10/2026, depois da revisão independente #3)
 
 ## Contexto
 
@@ -54,12 +54,13 @@ Tudo fica no `packages/shared`. A raiz do pacote roda em qualquer ambiente; `@je
   - **Âncora:** `{ seq, hash }` da última entrada, guardada fora do arquivo. Pega o corte do fim, a troca do arquivo e a reescrita com os hashes refeitos. Ao abrir, o arquivo inteiro é conferido contra ela.
   - **Gravação:** uma linha por vez, numa fila. Cada linha vai ao disco (`fsync`) antes de a âncora avançar. Se o app cair entre os dois passos, a âncora fica uma entrada atrás (`ahead`) e alcança o fim na próxima abertura. Uma linha incompleta no fim é cortada, e o corte fica registrado (`audit.recovered`).
   - **Adulteração:** cadeia quebrada, arquivo cortado ou linhas sem âncora fazem o arquivo ir para o lado como prova (`audit.jsonl.adulterado-<data>`). Um registro novo começa com `audit.chain_broken`, ligado à última âncora boa. A primeira linha de um arquivo só pode começar do zero ou religar assim, então cortar o começo também aparece.
+  - **Âncora que não se lê** (a leitura lança, como num cofre estragado ou numa cifra que não abre mais, ou o que veio não é uma âncora): vale como ausente, e o `audit.chain_broken` leva a marca `anchor: 'unreadable'`. Com o registro vazio, fica um `audit.recovered` com o motivo `anchor_unreadable`. O registro nunca deixa de abrir por causa da âncora (revisão #3: antes, a abertura falhava, e o app seguia sem registro e sem API).
   - **Falha de gravação:** o escritor para de gravar, porque o estado do arquivo fica incerto. Na fase 1, sem ferramentas, o app segue e registra o erro no log. A partir da etapa 13, ferramenta não roda sem registro.
-  - **Arquivos:** `audit.jsonl` e `audit-anchor.json`, na pasta de dados (`%LOCALAPPDATA%\Jesus\data`).
+  - **Arquivos:** `audit.jsonl` e a âncora (`audit-anchor.vault`, cifrada; `audit-anchor.json` onde o cofre não funciona), na pasta de dados (`%LOCALAPPDATA%\Jesus\data`).
   - **Eventos de hoje:** abertura do app, servidor da interface pronto, caído, com falha ou desistindo, violações da janela, disjuntor e página caída.
   - **O que não se grava:** nada é gravado se o app for aberto como administrador, porque arquivo criado elevado fica de dono errado.
 
-- **Âncora provisória:** até a etapa 8, a âncora fica num arquivo ao lado do registro (troca atômica). Na etapa 8, ela vai para o cofre (`safeStorage`, DPAPI), como o plano manda.
+- **Âncora provisória:** até a etapa 8, a âncora fica num arquivo ao lado do registro (troca atômica). Na etapa 8, ela vai para o cofre (`safeStorage`, DPAPI), como o plano manda; desde a revisão #3, num arquivo cifrado próprio, longe do arquivo da chave ([decisão 0020](0020-cofre-da-chave-no-processo-principal.md)).
 
 ## Consequências
 

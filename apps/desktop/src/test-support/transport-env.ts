@@ -13,13 +13,23 @@ import { startConnectProxy, startTlsServer } from './tls-server';
  * `NODE_TLS_REJECT_UNAUTHORIZED=0` e `NODE_USE_ENV_PROXY` com `HTTPS_PROXY` apontando para um proxy local, o
  * transporte com as autoridades da produção tem de recusar o servidor de teste, sem passar pelo proxy. O `fetch` global
  * do mesmo processo serve de controle: ele obedece a essas variáveis.
+ *
+ * Com `NODE_DEBUG=*` no mesmo ambiente, o Node imprime no stderr as opções de cada conexão: a chave de mentira do
+ * pedido não pode aparecer ali (o transporte põe os cabeçalhos depois de criar o pedido).
  */
+
+/** Chave de mentira que o transporte manda no cabeçalho e que nunca pode aparecer na saída do processo. */
+export const PROBE_KEY = `sk-ant-api03-SONDA-${'k'.repeat(24)}`;
 
 export interface EnvProbeResult {
   /** O transporte da saída, com as autoridades da produção: tem de falhar. */
   readonly pinned: { readonly ok: boolean; readonly reason?: string; readonly message?: string };
   /** Conexões do transporte que chegaram ao proxy: tem de ser zero. */
   readonly pinnedProxied: number;
+  /** Linhas de depuração do Node (`NODE_DEBUG`) no stderr do pedido do transporte: o controle de que ela valeu. */
+  readonly pinnedDebugLines: number;
+  /** A chave de mentira apareceu no stdout ou no stderr do pedido do transporte: tem de ser `false`. */
+  readonly pinnedLeakedKey: boolean;
   /** O `fetch` global no mesmo ambiente (controle): com o ambiente valendo, ele confia na autoridade de teste. */
   readonly control: { readonly ok: boolean; readonly message?: string };
   readonly controlProxied: number;
@@ -38,7 +48,13 @@ async function bundleDriver(dir: string): Promise<string> {
   return join(dir, 'driver.mjs');
 }
 
-function run(command: string, args: string[], env: Record<string, string>): Promise<Record<string, unknown>> {
+interface DriverRun {
+  readonly result: Record<string, unknown>;
+  readonly output: string;
+  readonly stderr: string;
+}
+
+function run(command: string, args: string[], env: Record<string, string>): Promise<DriverRun> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
@@ -56,7 +72,7 @@ function run(command: string, args: string[], env: Record<string, string>): Prom
         return;
       }
       try {
-        resolve(JSON.parse(stdout) as Record<string, unknown>);
+        resolve({ result: JSON.parse(stdout) as Record<string, unknown>, output: stdout + stderr, stderr });
       } catch {
         reject(new Error(`saída inválida do driver: ${stdout} ${stderr}`));
       }
@@ -84,16 +100,19 @@ export async function probeTransportEnv(command: string, extraEnv: Readonly<Reco
       NODE_USE_ENV_PROXY: '1',
       HTTPS_PROXY: `http://127.0.0.1:${String(proxy.port)}`,
       https_proxy: `http://127.0.0.1:${String(proxy.port)}`,
+      NODE_DEBUG: '*',
       ...extraEnv,
     };
-    const args = (mode: string) => ['--dns-result-order=ipv4first', driver, String(server.port), mode];
+    const args = (mode: string) => ['--dns-result-order=ipv4first', driver, String(server.port), mode, PROBE_KEY];
     const pinned = await run(command, args('pinned'), env);
     const pinnedProxied = proxy.connections();
     const control = await run(command, args('control'), env);
     return {
-      pinned: pinned as EnvProbeResult['pinned'],
+      pinned: pinned.result as EnvProbeResult['pinned'],
       pinnedProxied,
-      control: control as EnvProbeResult['control'],
+      pinnedDebugLines: pinned.stderr.split('\n').filter((line) => /^(HTTPS?|NET|TLS) \d+:/.test(line)).length,
+      pinnedLeakedKey: pinned.output.includes(PROBE_KEY) || pinned.output.includes(PROBE_KEY.slice(-24)),
+      control: control.result as EnvProbeResult['control'],
       controlProxied: proxy.connections() - pinnedProxied,
     };
   } finally {

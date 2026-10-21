@@ -181,6 +181,90 @@ describe('startBrainProcess', () => {
     expect(events).toContainEqual({ type: 'failed', reason: 'protocol', message: 'erro ao atender a mensagem: defeito na saída' });
   });
 
+  it('pedidos demais em pouco tempo derrubam o Cérebro (laço ou ataque); no ritmo de uma conversa, não', async () => {
+    let clock = 0;
+    const events: SupervisorEvent[] = [];
+    const children: FakeUtilityChild[] = [];
+    const brains: ReturnType<typeof fakeBrain>[] = [];
+    const sent: number[] = [];
+    const supervisor = startBrainProcess({
+      fork: () => {
+        const brain = fakeBrain();
+        brains.push(brain);
+        const child = new FakeUtilityChild(brain.run);
+        children.push(child);
+        return child;
+      },
+      egress: {
+        send(input, sink) {
+          sent.push(sent.length);
+          sink.end();
+          return () => undefined;
+        },
+        cancelAll: () => undefined,
+      },
+      onEvent: (event) => events.push(event),
+      timing: FAST,
+      rate: { maxRequests: 3, windowMs: 1_000 },
+      now: () => clock,
+    });
+    running.push(supervisor);
+    await supervisor.whenReady();
+    // Um pedido a cada meio segundo: sempre dentro do limite.
+    for (let id = 1; id <= 6; id++) {
+      brains[0]?.send(apiRequest(id));
+      await until(() => sent.length === id);
+      clock += 500;
+    }
+    expect(children).toHaveLength(1);
+    // Depois de uma janela parada, quatro de uma vez: o quarto derruba o Cérebro, sem chegar à saída.
+    clock += 1_000;
+    for (let id = 7; id <= 10; id++) brains[0]?.send(apiRequest(id));
+    await until(() => children.length === 2);
+    expect(sent).toHaveLength(9);
+    expect(events).toContainEqual({ type: 'failed', reason: 'protocol', message: 'pedidos à API demais em pouco tempo' });
+  });
+
+  it('recusas pela lista em série derrubam o Cérebro; as outras falhas, não', async () => {
+    const events: SupervisorEvent[] = [];
+    const children: FakeUtilityChild[] = [];
+    const brains: ReturnType<typeof fakeBrain>[] = [];
+    let reason: EgressFailure = 'over_budget';
+    const supervisor = startBrainProcess({
+      fork: () => {
+        const brain = fakeBrain();
+        brains.push(brain);
+        const child = new FakeUtilityChild(brain.run);
+        children.push(child);
+        return child;
+      },
+      egress: {
+        send(_input, sink) {
+          sink.fail(reason);
+          return () => undefined;
+        },
+        cancelAll: () => undefined,
+      },
+      onEvent: (event) => events.push(event),
+      timing: FAST,
+      rate: { maxRequests: 100, maxRefusals: 2 },
+    });
+    running.push(supervisor);
+    await supervisor.whenReady();
+    for (let id = 1; id <= 5; id++) brains[0]?.send(apiRequest(id));
+    await until(() => (brains[0]?.received.length ?? 0) === 5);
+    expect(children).toHaveLength(1);
+    reason = 'refused';
+    for (let id = 6; id <= 8; id++) brains[0]?.send(apiRequest(id));
+    await until(() => children.length === 2);
+    expect(events).toContainEqual({ type: 'failed', reason: 'protocol', message: 'pedidos à API fora da lista em série' });
+    // O Cérebro novo começa com a contagem zerada.
+    await until(() => events.filter((event) => event.type === 'ready').length === 2);
+    brains[1]?.send(apiRequest(1));
+    await until(() => (brains[1]?.received.length ?? 0) === 1);
+    expect(children).toHaveLength(2);
+  });
+
   it('Cérebro preso (sem pong) é derrubado e sobe de novo', async () => {
     const { supervisor, children, events } = setup({ pong: false });
     await supervisor.whenReady();

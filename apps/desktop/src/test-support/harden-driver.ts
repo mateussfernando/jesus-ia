@@ -43,4 +43,22 @@ await attempt('require:undici', () => requireFromRoot('undici'));
 await attempt('require:zod', () => requireFromRoot('zod'));
 await attempt('require:path', () => requireFromRoot('node:path'));
 await attempt('binding', () => processInternals.binding('tcp_wrap'));
+await attempt('getBuiltinModule:_http_client', () => process.getBuiltinModule('_http_client'));
+await attempt('getBuiltinModule:_tls_wrap', () => process.getBuiltinModule('node:_tls_wrap'));
+await attempt('getBuiltinModule:worker_threads', () => process.getBuiltinModule('node:worker_threads'));
+await attempt('import:worker_threads', () => import('worker_threads'));
+await attempt('require:_http_agent', () => requireFromRoot('_http_agent'));
+await attempt('dlopen', () => {
+  (process as unknown as { dlopen: (module: unknown, filename: string) => void }).dlopen({ exports: {} }, '/nao/existe.node');
+  throw new Error('não lançou');
+});
+await attempt('dlopen-recusado', () => {
+  try {
+    (process as unknown as { dlopen: (module: unknown, filename: string) => void }).dlopen({ exports: {} }, '/nao/existe.node');
+  } catch (error) {
+    // A trava diz que é a trava (e não "arquivo não encontrado").
+    if (error instanceof Error && error.message.includes('process.dlopen')) return;
+  }
+  throw new Error('a trava não respondeu');
+});
 process.stdout.write(JSON.stringify(results));

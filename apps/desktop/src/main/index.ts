@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { dirname, isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getModelCard, localDayKey } from '@jesus/models';
 import { createLogger, formatTextLine, maskSecrets } from '@jesus/shared';
@@ -11,7 +11,7 @@ import { handleAppRequest } from './app-protocol';
 import { APP_PARTITION, lockDownDefaultSession, setupAppSession } from './app-session';
 import { createAppWindow, guardWebContents } from './app-window';
 import type { Violation } from './app-window';
-import { fileAnchorStore, vaultAnchorStore } from './audit-anchor';
+import { fileAnchorStore, sealedAnchorStore } from './audit-anchor';
 import { startBrainProcess } from './brain-process';
 import { TEST_BUILD } from './build-flags';
 import { buildChildEnv } from './child-env';
@@ -20,7 +20,7 @@ import { CookieJar } from './cookie-jar';
 import { readApiKey } from './egress/api-key';
 import { BRAIN_MODEL_KEY, PHASE1_TOOL_NAMES } from './egress/api-policy';
 import { createEgress } from './egress/egress';
-import { createSpendScan, DailySpend, DEFAULT_DAILY_LIMIT_PUSD } from './egress/spend';
+import { carriedSpendEvent, createSpendScan, DailySpend, DEFAULT_DAILY_LIMIT_PUSD } from './egress/spend';
 import { ANTHROPIC_TARGET, createTransport, ignoredEgressEnvironment } from './egress/transport';
 import { checkElevation, systemWhoamiPath } from './elevation';
 import { LockSignals } from './lock-signals';
@@ -34,7 +34,7 @@ import { startUiServer, statusPage } from './ui-server';
 import type { UiServerEvent } from './ui-server';
 import { Vault } from './vault';
 import { handleSpendRequest } from './spend-requests';
-import { handleVaultRequest } from './vault-requests';
+import { createVaultRequests } from './vault-requests';
 
 /**
  * Processo principal do Jesus (fase 1, etapa 3; seção 3.12; decisões 0016, 0017 e 0023). Abre uma janela só, que
@@ -149,21 +149,39 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   app.on('web-contents-created', (_event, contents) => guardWebContents(contents, onViolation));
   await lockDownDefaultSession(session.defaultSession);
   mkdirSync(paths.dataDir, { recursive: true, mode: 0o700 });
-  // Cofre (decisão 0020): a chave da API e a âncora do registro, cifradas pelo safeStorage (no Windows, DPAPI).
-  const vault = new Vault(join(paths.dataDir, 'vault.json'), safeStorage);
+  // Cofre (decisão 0020): a chave da API, cifrada pelo safeStorage (no Windows, DPAPI). Arquivo estragado vai para o
+  // lado quando o dono guarda ou apaga a chave de novo.
+  const vault = new Vault(join(paths.dataDir, 'vault.json'), safeStorage, {
+    onReset: (quarantined) => {
+      log.warn('cofre.recomecado', { separado: basename(quarantined) });
+      record({ type: 'vault.reset', reason: 'corrupt', quarantined: basename(quarantined) });
+    },
+  });
   const vaultProblem = vault.problem();
   if (vaultProblem !== null) log.warn('cofre.indisponivel', { motivo: vaultProblem });
+  // A âncora do registro fica num arquivo cifrado próprio (regravado a cada linha, longe do arquivo da chave); sem
+  // cofre, num arquivo comum.
   const legacyAnchors = fileAnchorStore(join(paths.dataDir, 'audit-anchor.json'));
-  const anchors = vaultProblem === null ? vaultAnchorStore(vault, legacyAnchors) : legacyAnchors;
+  const anchors =
+    vaultProblem === null
+      ? sealedAnchorStore({ path: join(paths.dataDir, 'audit-anchor.vault'), storage: safeStorage, previous: { vault, legacy: legacyAnchors } })
+      : legacyAnchors;
   // O gasto do dia vem do registro (decisão 0023): reabrir o app não zera o teto.
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const spendScan = createSpendScan(localDayKey(Date.now(), timeZone), timeZone);
   try {
     const opened = await AuditWriter.open({ path: join(paths.dataDir, 'audit.jsonl'), anchors, visit: (entry) => spendScan.add(entry) });
     audit = opened.writer;
-    if (opened.verdict.status !== 'ok' || opened.verdict.tornTail) {
-      log.warn('registro.conferencia', { status: opened.verdict.status, linhaIncompleta: opened.verdict.tornTail, separado: opened.quarantined });
+    if (opened.verdict.status !== 'ok' || opened.verdict.tornTail || opened.anchorUnreadable) {
+      log.warn('registro.conferencia', {
+        status: opened.verdict.status,
+        linhaIncompleta: opened.verdict.tornTail,
+        ancoraIlegivel: opened.anchorUnreadable,
+        separado: opened.quarantined,
+      });
     }
+    // O registro antigo foi para o lado: o novo começa com o gasto e o teto do dia que a conferência leu nele.
+    if (opened.quarantined !== null) await opened.writer.append(carriedSpendEvent(spendScan.result()));
   } catch (error) {
     log.error('registro.nao_abriu', { error });
   }
@@ -180,6 +198,8 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   /** Grava no registro e espera: sem registro, nem gasto nem mudança do teto. */
   const appendAudit = (event: AuditEvent) =>
     audit === null ? Promise.reject(new Error('registro de auditoria indisponível')) : audit.append(event);
+
+  const vaultRequests = createVaultRequests({ vault, record });
 
   const cookies = new CookieJar();
   jar = cookies;
@@ -198,7 +218,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     createChannel: () => new MessageChannelMain(),
     config: { uiDir: paths.uiDir, dataDir: paths.dataDir, ...(idleMs === undefined ? {} : { idleMs }) },
     onLockAck: (seq) => lockSignals?.ack(seq),
-    onVaultRequest: (request) => Promise.resolve(handleVaultRequest(request, vault, record)),
+    onVaultRequest: (request) => Promise.resolve(vaultRequests(request)),
     onSpendRequest: (request) => handleSpendRequest(request, spend, appendAudit),
     onEvent: (event) => {
       serverEvents.push(event);

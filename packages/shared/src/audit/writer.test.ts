@@ -159,6 +159,39 @@ describe('escritor do registro de auditoria', () => {
     expect(first?.seq).toBe(1);
   });
 
+  it('âncora que não se lê (cofre estragado, cifra que não abre): vale como ausente, e o registro nunca deixa de abrir', async () => {
+    await writeEvents(2);
+    const broken: AnchorStore[] = [
+      { read: () => Promise.reject(new Error('cofre: corrupt')), write: (anchor) => anchors.write(anchor) },
+      // O que veio não é uma âncora.
+      { read: () => Promise.resolve({ seq: 0, hash: 'x' }), write: (anchor) => anchors.write(anchor) },
+    ];
+    for (const store of broken) {
+      const { writer, verdict, quarantined, anchorUnreadable } = await AuditWriter.open({ path, anchors: store });
+      expect(anchorUnreadable).toBe(true);
+      expect(verdict.status).toBe('anchor_missing');
+      expect(quarantined).not.toBeNull();
+      await writer.append({ type: 'ferramenta.leitura', n: 9 });
+      await writer.close();
+      const first = parseEntry((await lines())[0] ?? '');
+      expect(first?.event).toMatchObject({ type: CHAIN_BROKEN, reason: 'anchor_missing', anchor: 'unreadable' });
+      // A âncora nova (gravada a cada linha) passa a valer.
+      expect(anchors.value?.seq).toBe(2);
+      const reopened = await AuditWriter.open({ path, anchors });
+      await reopened.writer.close();
+      expect(reopened.verdict.status).toBe('ok');
+    }
+  });
+
+  it('âncora que não se lê com o registro vazio: o reparo fica registrado e a âncora é trocada', async () => {
+    const store: AnchorStore = { read: () => Promise.reject(new Error('não abre')), write: (anchor) => anchors.write(anchor) };
+    const { writer, verdict, quarantined, anchorUnreadable } = await AuditWriter.open({ path, anchors: store });
+    await writer.close();
+    expect([verdict.status, quarantined, anchorUnreadable]).toEqual(['ok', null, true]);
+    expect(parseEntry((await lines())[0] ?? '')?.event).toEqual({ type: 'audit.recovered', reason: 'anchor_unreadable' });
+    expect(anchors.value?.seq).toBe(1);
+  });
+
   it('falha de gravação: a chamada falha e o escritor para (o estado do arquivo é incerto)', async () => {
     const { writer } = await AuditWriter.open({ path, anchors });
     anchors.failNext = true;

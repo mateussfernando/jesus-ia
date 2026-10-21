@@ -25,6 +25,19 @@ export const BLOCKED_BUILTINS: ReadonlySet<string> = new Set([
   'node:cluster',
   'node:inspector',
   'node:inspector/promises',
+  // Uma thread nova teria globais e busca de módulos próprios, sem as travas desta.
+  'node:worker_threads',
+  // As peças internas do `http` e do `tls`, que dão um cliente cru sem passar pelos módulos de cima.
+  'node:_http_agent',
+  'node:_http_client',
+  'node:_http_common',
+  'node:_http_incoming',
+  'node:_http_outgoing',
+  'node:_http_server',
+  'node:_tls_common',
+  'node:_tls_wrap',
+  'node:_stream_wrap',
+  'node:quic',
 ]);
 
 /** Pacotes de rede que o AI SDK carrega à parte. */
@@ -59,6 +72,7 @@ function lockGlobal(name: string, value: unknown): void {
 interface ProcessInternals {
   getBuiltinModule?: (id: string) => unknown;
   binding?: (name: string) => unknown;
+  dlopen?: (module: unknown, filename: string) => void;
 }
 
 /** Liga as travas: chamar uma vez, antes de carregar o AI SDK. */
@@ -80,4 +94,6 @@ export function hardenNetwork(target: NodeJS.Process = process): void {
     });
   }
   Object.defineProperty(target, 'binding', { value: refusing('process.binding'), writable: false, configurable: false });
+  // Módulo nativo (`.node`) é código fora de qualquer trava: o Cérebro não carrega nenhum.
+  Object.defineProperty(target, 'dlopen', { value: refusing('process.dlopen'), writable: false, configurable: false });
 }

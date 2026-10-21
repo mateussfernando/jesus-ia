@@ -97,6 +97,37 @@ describe('createTransport', () => {
     }
   });
 
+  it('certificado de autoridade aceita, mas para outro nome: recusa, sem mandar o pedido', async () => {
+    const other = createTestPki({ dns: ['outro.example'], ips: [] });
+    const server = await startTlsServer(other, (_req, res) => res.end('ok'));
+    servers.push(server);
+    const error = await failure(transportTo(server, { ca: [other.ca] }).send({ path: '/', headers: {}, body: Buffer.from('x') }, new AbortController().signal));
+    expect(error.reason).toBe('network');
+    expect(error.message).toBe('ERR_TLS_CERT_ALTNAME_INVALID');
+    expect(error.sent).toBe(false);
+    expect(server.requests).toHaveLength(0);
+  });
+
+  it('sinal já cancelado: recusa sem abrir conexão (e sem erro solto no processo)', async () => {
+    const server = await serve((_req, res) => res.end('ok'));
+    const controller = new AbortController();
+    controller.abort();
+    const error = await failure(transportTo(server).send({ path: '/', headers: { 'x-api-key': 'k' }, body: Buffer.from('x') }, controller.signal));
+    expect(error.reason).toBe('aborted');
+    expect(error.sent).toBe(false);
+    // Um `error` sem ouvinte apareceria aqui como erro não tratado (o vitest falha o arquivo).
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    expect(server.requests).toHaveLength(0);
+  });
+
+  it('cabeçalho inválido: falha sem mandar nada', async () => {
+    const server = await serve((_req, res) => res.end('ok'));
+    const error = await failure(transportTo(server).send({ path: '/', headers: { 'x-api-key': 'a\r\nb' }, body: Buffer.from('x') }, new AbortController().signal));
+    expect(error).toMatchObject({ reason: 'network', sent: false, message: 'cabeçalho inválido' });
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    expect(server.requests).toHaveLength(0);
+  });
+
   it('não segue redirecionamento', async () => {
     const server = await serve((_req, res) => {
       res.writeHead(307, { location: 'https://atacante.example/' });
@@ -158,10 +189,14 @@ describe('createTransport', () => {
     expect((await failure(readAll(response))).reason).toBe('aborted');
   });
 
-  it('o ambiente (autoridades extras, conferência desligada, proxy) não muda a saída', async () => {
+  it('o ambiente (autoridades extras, conferência desligada, proxy, depuração) não muda a saída nem mostra a chave', async () => {
     const result = await probeTransportEnv(process.execPath);
-    expect(result.pinned).toMatchObject({ ok: false, reason: 'network' });
+    // Recusado pela autoridade (e não por outro motivo, como porta ou IPv6).
+    expect(result.pinned).toMatchObject({ ok: false, reason: 'network', message: expect.stringContaining('UNABLE_TO_VERIFY_LEAF_SIGNATURE') });
     expect(result.pinnedProxied).toBe(0);
+    // Com NODE_DEBUG=*, o Node imprime as opções de cada conexão (o controle), mas a chave do cabeçalho não aparece.
+    expect(result.pinnedDebugLines).toBeGreaterThan(0);
+    expect(result.pinnedLeakedKey).toBe(false);
     // Controle: no mesmo ambiente, o `fetch` global confia na autoridade de teste (as variáveis valem neste Node).
     expect(result.control).toMatchObject({ ok: true });
     // O proxy pelo ambiente existe a partir do Node 24 (o do Electron 44 e o do CI).

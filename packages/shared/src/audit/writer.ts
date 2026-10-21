@@ -12,6 +12,9 @@ import type { AuditAnchor, AuditEntry, AuditEvent, ChainVerdict } from './chain'
  * Ao abrir, o arquivo inteiro é conferido contra a âncora. Se a cadeia estiver quebrada, cortada ou sem âncora, o
  * arquivo é posto de lado como prova (`<nome>.adulterado-<data>`) e um registro novo começa com um evento
  * `audit.chain_broken`, ligado à última âncora boa. O app segue registrando; a tela do registro mostra o aviso.
+ *
+ * Âncora que não se lê (a leitura lança, ou o que veio não é uma âncora) vale como ausente, com a marca
+ * `anchor: 'unreadable'` no evento: o registro nunca deixa de abrir por causa dela.
  */
 
 export interface AnchorStore {
@@ -33,6 +36,20 @@ export interface OpenedAuditWriter {
   readonly verdict: ChainVerdict;
   /** Onde o arquivo quebrado foi posto de lado, se foi. */
   readonly quarantined: string | null;
+  /** A âncora existia, mas não se leu (valeu como ausente). */
+  readonly anchorUnreadable: boolean;
+}
+
+/** Lê a âncora; o que não se lê vale como ausente, com a marca. */
+async function readAnchor(anchors: AnchorStore): Promise<{ readonly anchor: AuditAnchor | null; readonly unreadable: boolean }> {
+  try {
+    const stored = await anchors.read();
+    if (stored === null) return { anchor: null, unreadable: false };
+    const parsed = AnchorSchema.safeParse(stored);
+    return parsed.success ? { anchor: parsed.data, unreadable: false } : { anchor: null, unreadable: true };
+  } catch {
+    return { anchor: null, unreadable: true };
+  }
 }
 
 async function readIfExists(path: string): Promise<string | null> {
@@ -68,8 +85,7 @@ export class AuditWriter {
   static async open(options: AuditWriterOptions): Promise<OpenedAuditWriter> {
     const now = options.now ?? Date.now;
     const content = await readIfExists(options.path);
-    const stored = await options.anchors.read();
-    const anchor = stored === null ? null : AnchorSchema.parse(stored);
+    const { anchor, unreadable } = await readAnchor(options.anchors);
     const verdict = verifyChain(content ?? '', anchor, options.visit);
     const healthy = verdict.status === 'ok' || verdict.status === 'ahead';
 
@@ -91,15 +107,18 @@ export class AuditWriter {
       await writer.append({
         type: CHAIN_BROKEN,
         reason: verdict.status,
+        ...(unreadable ? { anchor: 'unreadable' } : {}),
         ...(verdict.problem === undefined ? {} : { line: verdict.problem.line, detail: verdict.problem.reason }),
         ...(quarantined === null ? {} : { quarantined: basename(quarantined) }),
       });
-    } else if (verdict.tornTail) {
-      await writer.append({ type: 'audit.recovered', reason: 'torn_tail' });
+    } else if (verdict.tornTail || unreadable) {
+      // Cada gravação leva a âncora junto: a estragada (com o registro vazio) é trocada aqui.
+      if (verdict.tornTail) await writer.append({ type: 'audit.recovered', reason: 'torn_tail' });
+      if (unreadable) await writer.append({ type: 'audit.recovered', reason: 'anchor_unreadable' });
     } else if (verdict.status === 'ahead' && last !== null) {
       await options.anchors.write(last);
     }
-    return { writer, verdict, quarantined };
+    return { writer, verdict, quarantined, anchorUnreadable: unreadable };
   }
 
   /** Acrescenta um evento; as chamadas entram em fila e saem na ordem. */

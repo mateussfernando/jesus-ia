@@ -1,6 +1,6 @@
 import { computeCost, getModelCard } from '@jesus/models';
 import { describe, expect, it } from 'vitest';
-import { createSpendScan, DailySpend, DEFAULT_DAILY_LIMIT_PUSD, MAX_DAILY_LIMIT_PUSD, MIN_DAILY_LIMIT_PUSD, worstCaseCostPUsd } from './spend';
+import { carriedSpendEvent, createSpendScan, DailySpend, DEFAULT_DAILY_LIMIT_PUSD, MAX_DAILY_LIMIT_PUSD, MIN_DAILY_LIMIT_PUSD, REPLAYED_THINKING_TOKENS, worstCaseCostPUsd } from './spend';
 
 const card = getModelCard('anthropic:claude-haiku-5-5');
 if (card === null) throw new Error('cartão do Claude Haiku 5.5 sumiu do catálogo');
@@ -25,6 +25,19 @@ describe('worstCaseCostPUsd', () => {
     const below = worstCaseCostPUsd(HAIKU, 90_000, 0);
     const above = worstCaseCostPUsd(HAIKU, 110_000, 0);
     expect(above / 114_096).toBeGreaterThan((below / 94_096) * 4);
+  });
+
+  it('cada bloco de raciocínio devolvido conta pela saída máxima (o raciocínio vem cifrado e é cobrado pelo tamanho original)', () => {
+    // Um bloco de poucos bytes cujo raciocínio original teve 32 mil tokens: lido como entrada pelo modelo.
+    const bodyBytes = 2_000;
+    const real = computeCost(
+      { inputTokens: 500 + REPLAYED_THINKING_TOKENS, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, outputTokens: 1_000 },
+      HAIKU,
+    ).totalPUsd;
+    expect(worstCaseCostPUsd(HAIKU, bodyBytes, 1_000)).toBeLessThan(real);
+    expect(worstCaseCostPUsd(HAIKU, bodyBytes, 1_000, 1)).toBeGreaterThan(real);
+    // Com blocos demais, o teto é a janela de contexto.
+    expect(worstCaseCostPUsd(HAIKU, bodyBytes, 0, 1_000)).toBe(worstCaseCostPUsd(HAIKU, HAIKU.contextWindow, 0));
   });
 
   it('nunca passa da janela de contexto', () => {
@@ -126,6 +139,30 @@ describe('createSpendScan', () => {
     scan.add({ ts: at(0), event: { type: 'spend.limit_set', limit_pusd: 0 } });
     scan.add({ ts: at(0), event: { type: 'spend.limit_set', limit_pusd: '5' } });
     expect(scan.result().limitPUsd).toBe(2 * USD);
+  });
+
+  it('registro posto de lado: o novo começa com o gasto e o teto do dia (spend.carried), e reabrir não zera nada', () => {
+    // Abertura 1: o registro antigo tinha US$ 0,90 gastos hoje e o teto de US$ 2; a conferência o pôs de lado.
+    const old = createSpendScan('2026-10-19', TZ);
+    old.add({ ts: at(-30), event: { type: 'spend.limit_set', limit_pusd: 2 * USD } });
+    old.add({ ts: at(-1), event: { type: 'api.call', request: 'r1', cost_pusd: 0.9 * USD } });
+    const carried = carriedSpendEvent(old.result());
+    expect(carried).toEqual({ type: 'spend.carried', day_key: '2026-10-19', spent_pusd: 0.9 * USD, limit_pusd: 2 * USD });
+    // Abertura 2: só o registro novo existe.
+    const next = createSpendScan('2026-10-19', TZ);
+    next.add({ ts: at(0), event: { type: 'audit.chain_broken', reason: 'tampered' } });
+    next.add({ ts: at(0), event: carried });
+    next.add({ ts: at(1), event: { type: 'api.call', request: 'r2', cost_pusd: 0.1 * USD } });
+    expect(next.result()).toEqual({ dayKey: '2026-10-19', settledPUsd: USD, limitPUsd: 2 * USD });
+    // No dia seguinte, o gasto trazido não conta; o teto continua.
+    const tomorrow = createSpendScan('2026-10-20', TZ);
+    tomorrow.add({ ts: at(30), event: carried });
+    expect(tomorrow.result()).toEqual({ dayKey: '2026-10-20', settledPUsd: 0, limitPUsd: 2 * USD });
+    // Sem teto escolhido, o evento não traz teto; gasto estragado conta como o dia inteiro.
+    expect(carriedSpendEvent({ dayKey: '2026-10-19', settledPUsd: 5, limitPUsd: null })).toEqual({ type: 'spend.carried', day_key: '2026-10-19', spent_pusd: 5 });
+    const broken = createSpendScan('2026-10-19', TZ);
+    broken.add({ ts: at(0), event: { type: 'spend.carried', day_key: '2026-10-19', spent_pusd: 'muito' } });
+    expect(broken.result().settledPUsd).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it('valor estragado no registro conta como o dia inteiro gasto (falha fechada)', () => {

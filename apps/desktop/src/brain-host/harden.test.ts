@@ -12,7 +12,22 @@ const repoRoot = join(here, '..', '..', '..', '..');
 
 describe('travas de rede do Cérebro', () => {
   it('reconhece os módulos de rede com e sem o prefixo node:', () => {
-    for (const id of ['http', 'node:http', 'https', 'node:net', 'tls', 'dgram', 'node:dns', 'dns/promises', 'child_process', 'node:inspector']) {
+    for (const id of [
+      'http',
+      'node:http',
+      'https',
+      'node:net',
+      'tls',
+      'dgram',
+      'node:dns',
+      'dns/promises',
+      'child_process',
+      'node:inspector',
+      'worker_threads',
+      '_http_client',
+      'node:_tls_wrap',
+      '_http_agent',
+    ]) {
       expect(isBlockedBuiltin(id)).toBe(true);
     }
     for (const id of ['node:path', 'fs', 'node:crypto', 'node:diagnostics_channel', 'node:module', 'file:///x/http.js']) {
@@ -56,6 +71,13 @@ describe('travas de rede do Cérebro', () => {
         'require:zod': 'allowed',
         'require:path': 'allowed',
         binding: 'blocked',
+        'getBuiltinModule:_http_client': 'blocked',
+        'getBuiltinModule:_tls_wrap': 'blocked',
+        'getBuiltinModule:worker_threads': 'blocked',
+        'import:worker_threads': 'blocked',
+        'require:_http_agent': 'blocked',
+        dlopen: 'blocked',
+        'dlopen-recusado': 'allowed',
       });
     } finally {
       rmSync(dir, { recursive: true, force: true });

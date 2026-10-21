@@ -6,9 +6,11 @@
 //   no bundle de produção;
 // - build de teste: nome próprio e nenhum instalador ao lado (ele nunca pode ocupar a instalação de verdade);
 // - só na produção, quando dá para abrir o app aqui (mesmo sistema, sem ser root no Linux): ele recusa qualquer
-//   argumento e as variáveis ELECTRON_* que mudam o executável (sai com 2) e ignora ELECTRON_RUN_AS_NODE.
+//   argumento e as variáveis ELECTRON_* e NODE_* que mudam o executável ou o Node do principal (sai com 2) e ignora
+//   ELECTRON_RUN_AS_NODE.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import asar from '@electron/asar';
 import fuses from '@electron/fuses';
@@ -109,8 +111,10 @@ if (testBuild) {
 const samePlatform = executable.endsWith('.exe') === (process.platform === 'win32');
 const asRoot = process.getuid?.() === 0;
 if (!testBuild && samePlatform && !asRoot) {
-  // Sem as ELECTRON_* de quem roda a conferência, para cada recusa vir só do que está sendo testado.
-  const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith('ELECTRON_')));
+  // Sem as ELECTRON_* e NODE_* de quem roda a conferência, para cada recusa vir só do que está sendo testado.
+  const cleanEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !/^(ELECTRON|NODE)_/i.test(name)),
+  );
   const run = (args, env) => {
     const result = spawnSync(executable, args, { env: { ...cleanEnv, ...env }, encoding: 'utf8', timeout: 60_000 });
     return { ...result, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
@@ -123,14 +127,25 @@ if (!testBuild && samePlatform && !asRoot) {
   const asNode = run(['-e', "console.log('rodou' + '-como-node')"], { ELECTRON_RUN_AS_NODE: '1' });
   if (asNode.output.includes('rodou-como-node')) problems.push('ELECTRON_RUN_AS_NODE fez o app rodar como Node');
   if (asNode.status !== 2) problems.push(`com ELECTRON_RUN_AS_NODE o app devia sair com 2 e saiu com ${String(asNode.status)}`);
-  // Variáveis que o executável lê sozinho (ELECTRON_DISABLE_SANDBOX desliga a sandbox de todas as páginas). No
-  // Windows, o nome não diferencia maiúsculas.
-  for (const name of ['ELECTRON_DISABLE_SANDBOX', 'electron_disable_sandbox', 'ELECTRON_ENABLE_LOGGING']) {
-    const result = run([], { [name]: '1' });
+  // Variáveis que o executável e o Node do principal leem sozinhos (ELECTRON_DISABLE_SANDBOX desliga a sandbox de todas
+  // as páginas; NODE_DEBUG imprime objetos internos no stderr; NODE_COMPILE_CACHE carrega código de fora do app.asar).
+  // No Windows, o nome não diferencia maiúsculas.
+  const compileCache = join(tmpdir(), `jesus-conferencia-cache-${String(process.pid)}`);
+  const refusedEnv = [
+    ['ELECTRON_DISABLE_SANDBOX', '1'],
+    ['electron_disable_sandbox', '1'],
+    ['ELECTRON_ENABLE_LOGGING', '1'],
+    ['NODE_DEBUG', 'https'],
+    ['NODE_DEBUG_NATIVE', '*'],
+    ['NODE_COMPILE_CACHE', compileCache],
+  ];
+  for (const [name, value] of refusedEnv) {
+    const result = run([], { [name]: value });
     if (result.status !== 2 || !result.output.includes('variáveis de ambiente recusadas')) {
       problems.push(`com ${name} o app devia sair com 2 e saiu com ${String(result.status)} (${String(result.signal)})`);
     }
   }
+  rmSync(compileCache, { recursive: true, force: true });
 } else if (!testBuild) {
   console.log('(abertura do app não conferida aqui: outro sistema ou root no Linux; o CI confere)');
 }

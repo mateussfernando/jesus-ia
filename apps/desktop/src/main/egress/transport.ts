@@ -12,6 +12,9 @@ import { API_HOST } from '../../bridge/brain-protocol';
  *
  * Redirecionamento não é seguido (`redirect: 'error'`): 3xx é falha. A rede do Chromium não entra aqui (proxy morto e
  * resolvedor sem nomes, seção 3.12).
+ *
+ * A chave nunca vai nas opções do `https.request`, que o Node imprime no stderr com `NODE_DEBUG=https` (o app de
+ * produção nem abre com `NODE_DEBUG`, seção 3.13): os cabeçalhos entram um a um, depois de criado o pedido.
  */
 
 /**
@@ -103,6 +106,11 @@ export function createTransport(target: UpstreamTarget, timing: TransportTiming 
 
   const send = (upstream: UpstreamRequest, signal: AbortSignal) =>
     new Promise<UpstreamResponse>((resolve, reject) => {
+      // Já cancelado: nem abre conexão.
+      if (signal.aborted) {
+        reject(new UpstreamError('aborted', false, 'pedido cancelado'));
+        return;
+      }
       let sent = false;
       let settled = false;
       let response: IncomingMessage | null = null;
@@ -110,13 +118,18 @@ export function createTransport(target: UpstreamTarget, timing: TransportTiming 
       let idleTimer: NodeJS.Timeout | null = null;
       let closed = false;
 
+      // Os cabeçalhos (com a chave) nunca vão nas opções do `https.request`: com `NODE_DEBUG=https`, o Node imprime
+      // essas opções inteiras no stderr ao abrir a conexão. Eles entram depois, um a um, antes do `end`.
+      const req = httpsRequest({ host: target.host, port: target.port, path: upstream.path, method: 'POST', agent, ...tlsOptions });
+      const headTimer = setTimeout(() => fail('timeout', 'a API não respondeu a tempo'), timing.headMs);
+      const totalTimer = setTimeout(() => fail('timeout', 'o pedido passou do tempo máximo'), timing.totalMs);
       const clearTimers = () => {
         clearTimeout(headTimer);
         clearTimeout(totalTimer);
         if (idleTimer !== null) clearTimeout(idleTimer);
         signal.removeEventListener('abort', onAbort);
       };
-      const fail = (reason: UpstreamFailure, message: string) => {
+      function fail(reason: UpstreamFailure, message: string) {
         if (failure !== null) return;
         failure = new UpstreamError(reason, sent, message);
         clearTimers();
@@ -127,7 +140,7 @@ export function createTransport(target: UpstreamTarget, timing: TransportTiming 
         // Com a resposta já entregue, a iteração do corpo termina com o mesmo erro.
         req.destroy(failure);
         response?.destroy(failure);
-      };
+      }
       const touch = () => {
         if (failure !== null || closed) return;
         if (idleTimer !== null) clearTimeout(idleTimer);
@@ -137,19 +150,13 @@ export function createTransport(target: UpstreamTarget, timing: TransportTiming 
         fail('aborted', 'pedido cancelado');
       }
 
-      const req = httpsRequest({
-        host: target.host,
-        port: target.port,
-        path: upstream.path,
-        method: 'POST',
-        headers: { ...upstream.headers, 'content-length': String(upstream.body.byteLength) },
-        agent,
-        ...tlsOptions,
-      });
-      const headTimer = setTimeout(() => fail('timeout', 'a API não respondeu a tempo'), timing.headMs);
-      const totalTimer = setTimeout(() => fail('timeout', 'o pedido passou do tempo máximo'), timing.totalMs);
-      if (signal.aborted) {
-        onAbort();
+      // O ouvinte de erro vem antes de qualquer `destroy`: um erro sem ouvinte viraria exceção solta no principal.
+      req.on('error', (error: NodeJS.ErrnoException) => fail('network', error.code ?? error.message));
+      try {
+        for (const [name, value] of Object.entries(upstream.headers)) req.setHeader(name, value);
+        req.setHeader('content-length', String(upstream.body.byteLength));
+      } catch {
+        fail('network', 'cabeçalho inválido');
         return;
       }
       signal.addEventListener('abort', onAbort, { once: true });
@@ -157,7 +164,6 @@ export function createTransport(target: UpstreamTarget, timing: TransportTiming 
       req.on('finish', () => {
         sent = true;
       });
-      req.on('error', (error: NodeJS.ErrnoException) => fail('network', error.code ?? error.message));
       req.on('response', (res) => {
         clearTimeout(headTimer);
         response = res;

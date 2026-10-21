@@ -72,6 +72,46 @@ describe('linha de comando do app', () => {
     expect(unexpectedEnvironment(env, { testBuild: false })).toEqual([]);
   });
 
+  it('produção: variáveis NODE_* fora da lista fazem o app sair', () => {
+    const env = {
+      PATH: 'C:\\Windows',
+      NODE_DEBUG: 'https',
+      node_debug_native: '*',
+      Node_Compile_Cache: 'C:\\temp\\cache',
+      NODE_V8_COVERAGE: 'C:\\temp\\cov',
+      NODE_REDIRECT_WARNINGS: 'C:\\temp\\w.txt',
+      NODE_ICU_DATA: 'C:\\temp\\icu',
+      NODE_QUALQUER_COISA_NOVA: 'segredo',
+    };
+    expect(unexpectedEnvironment(env, { testBuild: false })).toEqual([
+      'NODE_DEBUG',
+      'node_debug_native',
+      'Node_Compile_Cache',
+      'NODE_V8_COVERAGE',
+      'NODE_REDIRECT_WARNINGS',
+      'NODE_ICU_DATA',
+      'NODE_QUALQUER_COISA_NOVA',
+    ]);
+  });
+
+  it('produção: aceita as NODE_* que não mudam nada no principal', () => {
+    const env = {
+      NODE_OPTIONS: '--max-old-space-size=4096',
+      NODE_EXTRA_CA_CERTS: 'C:\\certs\\empresa.pem',
+      node_use_system_ca: '1',
+      NODE_TLS_REJECT_UNAUTHORIZED: '0',
+      NODE_USE_ENV_PROXY: '1',
+      NODE_PATH: 'C:\\npm\\node_modules',
+      NODE_ENV: 'development',
+      NODE_NO_WARNINGS: '1',
+      NODE_PENDING_DEPRECATION: '1',
+      NODE_DISABLE_COLORS: '1',
+      NODE: 'C:\\Program Files\\nodejs\\node.exe',
+      XNODE_DEBUG: '1',
+    };
+    expect(unexpectedEnvironment(env, { testBuild: false })).toEqual([]);
+  });
+
   it('build de teste: não confere o ambiente', () => {
     expect(unexpectedEnvironment({ ELECTRON_ENABLE_LOGGING: '1' }, { testBuild: true })).toEqual([]);
   });

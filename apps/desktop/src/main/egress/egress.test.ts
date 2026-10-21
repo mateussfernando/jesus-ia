@@ -199,6 +199,28 @@ describe('createEgress: pedido que passa', () => {
     expect(JSON.stringify(audit)).not.toContain(KEY);
   });
 
+  it('raciocínio devolvido no histórico: a reserva conta cada bloco pela saída máxima', async () => {
+    const { egress, audit } = setup();
+    const withThinking = JSON.stringify({
+      model: 'claude-haiku-5-5',
+      max_tokens: 1000,
+      stream: true,
+      messages: [
+        { role: 'user', content: 'oi' },
+        { role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: 'c2lnbmF0dXJh' }, { type: 'text', text: 'olá' }] },
+        { role: 'user', content: 'e aí?' },
+      ],
+    });
+    const out = recorder();
+    egress.send(apiRequest({ body: withThinking }), out.sink);
+    await out.done;
+    expect(audit[0]).toMatchObject({
+      type: 'api.reserved',
+      thinking_blocks: 1,
+      reserved_pusd: worstCaseCostPUsd(HAIKU, Buffer.byteLength(withThinking), 1000, 1),
+    });
+  });
+
   it('cada pedaço vai copiado: nada do resto do buffer do Node segue para o Cérebro', async () => {
     const pool = Buffer.from(`x-api-key: ${KEY}|${START}${DELTA}|outros dados`);
     const start = pool.indexOf(START);
@@ -309,6 +331,34 @@ describe('createEgress: interrupções', () => {
     ).totalPUsd;
     expect(spend.snapshot().settledPUsd).toBe(expected);
     expect(audit[1]).toMatchObject({ outcome: 'locked', estimated: true, cost_pusd: expected });
+  });
+
+  it('cancelado enquanto a reserva grava: o pedido nem sai, e nada é cobrado', async () => {
+    for (const how of ['cancel', 'locked', 'brain_gone'] as const) {
+      let release: () => void = () => undefined;
+      const events: AuditEvent[] = [];
+      const { egress, calls, spend } = setup({
+        options: {
+          audit: (event) => {
+            events.push(event);
+            // A reserva demora a gravar (disco lento); o resto grava na hora.
+            return event.type === 'api.reserved' ? new Promise<void>((resolve) => (release = resolve)) : Promise.resolve();
+          },
+        },
+      });
+      const out = recorder();
+      const cancel = egress.send(apiRequest(), out.sink);
+      await tick();
+      if (how === 'cancel') cancel();
+      else egress.cancelAll(how);
+      release();
+      for (let i = 0; i < 10; i++) await tick();
+      expect(calls, how).toHaveLength(0);
+      expect(egress.inflight).toBe(0);
+      expect(spend.snapshot()).toMatchObject({ settledPUsd: 0, reservedPUsd: 0 });
+      expect(events[1], how).toMatchObject({ type: 'api.call', outcome: how === 'locked' ? 'locked' : 'cancelled', cost_pusd: 0 });
+      expect(out.events, how).toEqual(how === 'locked' ? [{ type: 'fail', reason: 'locked' }] : []);
+    }
   });
 
   it('o Cérebro desiste: nada mais vai para ele', async () => {
