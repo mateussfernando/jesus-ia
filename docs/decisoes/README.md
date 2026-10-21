@@ -24,7 +24,8 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0018](0018-empacotamento-com-electron-builder.md) | Empacotamento com electron-builder: fusíveis, asar e instalador por usuário | aceita |
 | [0019](0019-bloqueio-pelos-eventos-do-windows.md) | Bloqueio pelos eventos do Windows e ponte do servidor da interface com o principal | aceita |
 | [0020](0020-cofre-da-chave-no-processo-principal.md) | Cofre da chave no processo principal e tela Configurações | aceita |
-| [0022](0022-registro-de-auditoria-e-mascaramento.md) | Registro de auditoria encadeado, mascaramento de segredos e logger com redação | aceita (âncora no cofre pela 0020; número 0021 reservado no plano da fase 1) |
+| [0021](0021-porteiro-minimo-para-leituras.md) | Porteiro mínimo para a leitura de arquivos: caminhos do Windows pelo texto, pastas liberadas, leitura sensível e pastas do Jesus negadas | aceita |
+| [0022](0022-registro-de-auditoria-e-mascaramento.md) | Registro de auditoria encadeado, mascaramento de segredos e logger com redação | aceita (âncora no cofre pela 0020) |
 | [0023](0023-cerebro-e-saida-para-a-api.md) | Cérebro num utilityProcess e saída para a API pelo processo principal | aceita |
 | [0024](0024-laco-da-conversa-no-cerebro.md) | Laço da conversa no Cérebro: conversa só na memória, histórico sem raciocínio e limite pelo orçamento | aceita |
 | [0025](0025-tela-de-conversa.md) | Tela de conversa: texto puro, turno por rota com conferência de origem e parada ao bloquear | aceita |

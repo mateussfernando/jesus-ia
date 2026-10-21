@@ -34,7 +34,8 @@
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "attack-corpus": "npm run attack-corpus -w @jesus/gate"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

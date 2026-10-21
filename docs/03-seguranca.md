@@ -266,6 +266,7 @@ Uma negação em qualquer nível vence uma liberação em qualquer outro (igual 
 - Edições dentro das pastas liberadas → executa com checkpoint (exceto caminhos protegidos).
 - **Primeira leitura fora** das pastas liberadas → pergunta (igual ao Claude Code).
 - Leituras nas suas contas (listar eventos, listar e-mails) → executa, mas **ler o conteúdo de e-mails e páginas marca a tarefa como contaminada**.
+- **Na fase 1 ([decisão 0021](decisoes/0021-porteiro-minimo-para-leituras.md)):** só a leitura de arquivos existe, e o Porteiro é mínimo e determinístico (`packages/gate`). Ele confere duas vezes: o caminho pedido, só pelo texto, antes de o Executor abrir qualquer coisa (um caminho de rede nem é aberto); e o caminho real, o tipo e o número de nomes do arquivo, depois de aberto. Pasta do Jesus, leitura sensível (seção 3.4.3) e fora das pastas liberadas negam, pelo caminho pedido ou pelo real; hardlink nega. A primeira leitura fora das pastas liberadas também nega (a pergunta chega com os cartões de confirmação).
 
 ### 3.4.5 Camada 3 — Classificador de risco
 
@@ -651,7 +652,7 @@ Na interface, aparece como uma linha do tempo, que pode ser exportada.
 ## 3.17 Testes de segurança
 
 - **Testes unitários** para cada regra fixa e para a normalização (caminhos do Windows, comandos compostos, ofuscação).
-- **Coleção de ataques** que cresce sempre:
+- **Coleção de ataques** (`security/attack-corpus`, `npm run attack-corpus`; roda também no `npm test` e no CI) que cresce sempre. Começou com a leitura de arquivos (73 casos: caminhos ambíguos do Windows, links e junções para fora, segredos, pastas do Jesus, hardlinks); depois:
   - e-mails, páginas, PDFs, issues, convites de agenda, nomes de arquivo e transcrições com injeções;
   - cenários de vazamento de dados;
   - pedidos ambíguos que tentam deixar o agente "afobado".
