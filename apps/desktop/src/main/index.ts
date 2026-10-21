@@ -31,6 +31,7 @@ import { phase1PermissionPolicy } from './policy/permissions';
 import { APP_DISABLED_FEATURES, HOST_RESOLVER_RULES, mergeFeatureList, unexpectedArguments, unexpectedEnvironment } from './policy/switches';
 import { APP_ORIGIN } from './policy/url';
 import type { Supervisor, SupervisorEvent } from './supervisor';
+import { createTestApi } from './test-api';
 import { startUiServer, statusPage } from './ui-server';
 import type { UiServerEvent } from './ui-server';
 import { Vault } from './vault';
@@ -246,10 +247,13 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
 
   // Saída para a API da Anthropic e o Cérebro (decisão 0023). A chave sai do cofre só na hora de cada pedido; sem
   // registro de auditoria, nenhum pedido sai.
-  const transport = createTransport(ANTHROPIC_TARGET);
+  const anthropic = createTransport(ANTHROPIC_TARGET);
+  // Só no build de teste: os testes de ponta a ponta podem trocar o destino por um servidor local (some da produção).
+  const testApi = TEST_BUILD ? createTestApi(anthropic, () => readApiKey(vault)) : null;
+  const transport = testApi?.transport ?? anthropic;
   const egress = createEgress({
     transport,
-    readKey: () => readApiKey(vault),
+    readKey: testApi?.readKey ?? (() => readApiKey(vault)),
     spend,
     card,
     audit: appendAudit,
@@ -389,6 +393,7 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
         brainPid: () => brainChild?.pid,
         restartBrain: () => brain.restart(),
         spend: () => spend.snapshot(),
+        useTestApi: (port: number, ca: string, key: string) => testApi?.useTestApi(port, ca, key),
       },
     });
   }

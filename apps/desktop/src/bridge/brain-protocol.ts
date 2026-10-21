@@ -1,6 +1,6 @@
+import { EGRESS_FAILURES } from '@jesus/core/chat';
 import { z } from 'zod';
 import { FromBrainChatSchemas, ToBrainChatSchemas } from './chat-protocol';
-import type { ChatFailure } from './chat-protocol';
 import { bytes, FailedMessageSchema, headerName, headerValue, PingMessageSchema, PongMessageSchema, pingSeq } from './protocol';
 
 /**
@@ -34,34 +34,11 @@ const MAX_URL_LENGTH = 2048;
 
 /**
  * Por que o principal não atendeu (ou interrompeu) um pedido. O Cérebro só recebe o motivo; o detalhe fica no
- * registro de auditoria do principal.
- * - `refused`: o pedido saiu da lista (destino, cabeçalho, corpo, modelo, ferramenta, teto de `max_tokens`);
- * - `no_key`: não há chave da API guardada; `vault`: o cofre não abre;
- * - `over_budget`: o teto de gasto do dia não cobre o pior caso do pedido;
- * - `busy`: pedidos demais ao mesmo tempo; `audit`: o registro de auditoria não grava (sem registro, sem gasto);
- * - `locked`: o Jesus bloqueou no meio do pedido;
- * - `network`, `timeout`, `redirect`, `too_large`, `interrupted`: falhas da conexão ou da resposta;
- * - `internal`: erro inesperado no próprio principal.
+ * registro de auditoria do principal. A lista mora em `@jesus/core/chat`, junto com as falhas da conversa (cada falha
+ * da saída é também uma da conversa), porque a interface mostra uma mensagem para cada uma.
  */
-export const EGRESS_FAILURES = [
-  'refused',
-  'no_key',
-  'vault',
-  'over_budget',
-  'busy',
-  'audit',
-  'locked',
-  'network',
-  'timeout',
-  'redirect',
-  'too_large',
-  'interrupted',
-  'internal',
-] as const;
-export type EgressFailure = (typeof EGRESS_FAILURES)[number];
-// Toda falha da saída é também uma falha da conversa (o Cérebro a repassa como veio).
-const EGRESS_IN_CHAT: readonly ChatFailure[] = EGRESS_FAILURES;
-void EGRESS_IN_CHAT;
+export { EGRESS_FAILURES };
+export type { EgressFailure } from '@jesus/core/chat';
 
 const ApiHeaderListSchema = z.array(z.tuple([headerName, headerValue])).max(MAX_API_HEADERS);
 

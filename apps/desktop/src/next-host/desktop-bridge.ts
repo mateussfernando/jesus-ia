@@ -40,8 +40,10 @@ export interface DesktopChat {
   state(): Promise<ChatResult>;
   /** Começa uma conversa nova (o turno em andamento para). */
   reset(): Promise<ChatResult>;
-  /** Pergunta na conversa `conversationId`. A função devolvida para o turno (o botão Parar). */
+  /** Pergunta na conversa `conversationId`. A função devolvida para o turno. */
   send(conversationId: string, text: string, listener: (event: ChatTurnEvent) => void): () => void;
+  /** Para os turnos que este servidor começou (o botão Parar); cada um termina com `cancelled`. */
+  stop(): void;
 }
 
 export interface DesktopBridge {
@@ -225,6 +227,18 @@ export function createHostBridge(options: { vaultTimeoutMs?: number; chatIdleMs?
         listener({ kind: 'error', reason: 'unavailable' });
       }
       return stop;
+    },
+    stop() {
+      const sender = post;
+      if (sender === null) return;
+      for (const [id, entry] of chats) {
+        if (entry.kind !== 'turn') continue;
+        try {
+          sender({ type: 'chat', id, op: 'stop' });
+        } catch {
+          // Sem principal, o turno termina pelo prazo.
+        }
+      }
     },
   });
   const chatEvent = (message: UiChatEvent) => {

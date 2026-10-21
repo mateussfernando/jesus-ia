@@ -1,3 +1,4 @@
+import { CHAT_FAILURES, MAX_CHAT_TEXT_CHARS } from '@jesus/core/chat';
 import { z } from 'zod';
 
 /**
@@ -7,11 +8,13 @@ import { z } from 'zod';
  * - interface → principal: `chat` (`get`, `send`, `stop`, `reset`); principal → interface: `chat-event`;
  * - principal → Cérebro: `chat-get`, `chat-send`, `chat-stop`, `chat-reset`; Cérebro → principal: `chat-state`,
  *   `chat-delta`, `chat-done`, `chat-error`.
- * Este arquivo não importa as outras pontes (elas é que importam daqui), para não haver ciclo.
+ * Este arquivo não importa as outras pontes (elas é que importam daqui), para não haver ciclo. O vocabulário comum com
+ * a interface (motivos de falha, maior pergunta) vem de `@jesus/core/chat`.
  */
 
-/** Maior pergunta (caracteres). Uma conversa inteira cabe em uns 88 mil tokens. */
-export const MAX_CHAT_TEXT_CHARS = 20_000;
+export { CHAT_FAILURES, MAX_CHAT_TEXT_CHARS };
+export type { ChatFailure } from '@jesus/core/chat';
+
 /** Maior pedaço de resposta por mensagem; o Cérebro junta os pedaços do modelo e fatia os grandes. */
 export const MAX_CHAT_DELTA_CHARS = 8_192;
 /** Maior resposta guardada (a saída máxima, 32 mil tokens, dá uns 128 mil caracteres). */
@@ -21,46 +24,6 @@ export const MAX_CHAT_TURNS = 200;
 export const MAX_TRANSCRIPT_CHARS = 2_000_000;
 /** Texto que o principal aceita do Cérebro num só turno; além disso, o Cérebro fugiu do protocolo. */
 export const MAX_TURN_STREAM_CHARS = 1_000_000;
-
-/**
- * Por que um turno da conversa não terminou bem:
- * - as falhas da saída para a API (`refused` a `internal`, decisão 0023);
- * - `api_auth`: a Anthropic recusou a chave; `api_rate`: limite de uso da conta; `api_overloaded`: a API está
- *   sobrecarregada ou com erro; `api_invalid`: a API recusou o pedido;
- * - `refusal`: o modelo recusou responder; `empty_answer`: veio resposta sem texto;
- * - `cancelled`: o dono parou; `stale`: a conversa da tela não é mais a do Cérebro (ele reiniciou, ou outra começou);
- * - `turn_running`: já há um turno em andamento; `context_full`: a conversa ficou longa e precisa de uma nova;
- * - `empty`: pergunta vazia; `brain`: o Cérebro caiu ou falhou; `unavailable`: sem Cérebro (fora do app de desktop).
- */
-export const CHAT_FAILURES = [
-  'refused',
-  'no_key',
-  'vault',
-  'over_budget',
-  'busy',
-  'audit',
-  'locked',
-  'network',
-  'timeout',
-  'redirect',
-  'too_large',
-  'interrupted',
-  'internal',
-  'api_auth',
-  'api_rate',
-  'api_overloaded',
-  'api_invalid',
-  'refusal',
-  'empty_answer',
-  'cancelled',
-  'stale',
-  'turn_running',
-  'context_full',
-  'empty',
-  'brain',
-  'unavailable',
-] as const;
-export type ChatFailure = (typeof CHAT_FAILURES)[number];
 
 export const chatId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const conversationId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);

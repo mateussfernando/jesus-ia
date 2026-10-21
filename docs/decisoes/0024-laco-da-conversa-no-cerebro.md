@@ -82,7 +82,7 @@ Dois fatos pesaram:
 - **O teto é conservador com conversas longas:** perto do limite, o corpo (uns 350 KB) passa da faixa de 100 mil na conta do pior caso, porque cada byte conta como um token. São uns US$ 0,28 reservados para um custo real de centavos.
   - Com o teto padrão de US$ 1, conversas longas são recusadas antes de as curtas, perto do fim do dia.
   - A contagem exata de tokens da API (`count_tokens`) pode entrar depois.
-- **Sem tela ainda:** a etapa 11 liga a tela de conversa (streaming, Parar, Nova conversa).
+- **Sem tela ainda:** a etapa 11 liga a tela de conversa (streaming, Parar, Nova conversa; [decisão 0025](0025-tela-de-conversa.md)).
 
 ## Detalhes
 

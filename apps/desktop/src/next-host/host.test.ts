@@ -253,6 +253,35 @@ describe('servidor da interface: configuração e pedidos pelo parentPort', () =
     expect(events).toEqual([{ kind: 'error', reason: 'timeout' }]);
   });
 
+  it('conversa: o Parar da tela para só os turnos em andamento deste servidor', async () => {
+    const host = createHostBridge({ vaultTimeoutMs: 1_000 });
+    const child = new FakeUtilityChild((parent) => runNextHost(parent, () => new Promise(() => undefined), () => undefined, host));
+    const conversationId = '0b6e3c1e-5f1a-4f7e-9c7a-2d9b1f4e6a80';
+    const requests: { type: string; id: number; op: string }[] = [];
+    child.on('message', (message: { type: string; id: number; op: string }) => {
+      if (message.type !== 'chat') return;
+      requests.push(message);
+      // O primeiro turno termina logo; o segundo fica em andamento; o pedido de estado fica sem resposta.
+      if (message.op === 'send' && requests.filter((request) => request.op === 'send').length === 1) {
+        child.postMessage({ type: 'chat-event', id: message.id, event: { kind: 'error', reason: 'cancelled' } });
+      }
+    });
+    await settle();
+    const events: unknown[] = [];
+    host.bridge.chat.send(conversationId, 'primeira', (event) => events.push(event));
+    await until(() => events.length === 1);
+    host.bridge.chat.send(conversationId, 'segunda', (event) => events.push(event));
+    void host.bridge.chat.state();
+    await until(() => requests.length === 3);
+    host.bridge.chat.stop();
+    await until(() => requests.length === 4);
+    await settle();
+    const second = requests.filter((request) => request.op === 'send')[1];
+    expect(requests.slice(3)).toEqual([{ type: 'chat', id: second?.id, op: 'stop' }]);
+    // Sem ligação com o principal, o Parar não faz nada (e não lança).
+    expect(() => createHostBridge().bridge.chat.stop()).not.toThrow();
+  });
+
   it('conversa sem ligação com o principal: indisponível na hora', async () => {
     const host = createHostBridge();
     expect(await host.bridge.chat.state()).toEqual({ ok: false, reason: 'unavailable' });

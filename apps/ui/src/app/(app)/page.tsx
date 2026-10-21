@@ -1,29 +1,27 @@
 import Link from 'next/link';
+import { ChatPanel } from '../../chat/ChatPanel';
+import { desktopBridge } from '../../server/desktop-bridge';
+import type { ChatResult } from '../../server/desktop-bridge';
 import { requireUnlocked } from '../../server/guard';
-import './home.css';
 
 /**
- * Início (com o Jesus desbloqueado). Na fase 1, a central de comando (chat) entra aqui; por enquanto, os
- * atalhos para o que já existe.
+ * Início (com o Jesus desbloqueado): a conversa com o Jesus (fase 1, etapa 11; decisões 0024 e 0025) e os atalhos
+ * para as outras telas. A conversa mora no Cérebro, no app de desktop; fora dele (`next dev`), a tela avisa.
  */
 export default async function HomePage() {
   await requireUnlocked();
+  const bridge = desktopBridge();
+  const initial: ChatResult = bridge === null ? { ok: false, reason: 'unavailable' } : await bridge.chat.state();
   return (
-    <main className="home">
-      <h1>Jesus</h1>
-      <p className="home-lead">
-        Assistente pessoal de IA para Windows. Interface e back-end no mesmo app Next.js (decisão 0016).
-      </p>
-      <nav className="home-links" aria-label="Telas">
-        <Link href="/cenarios/" className="home-card">
-          <strong>Cenários</strong>
-          <span>O laboratório do holograma, com cenários roteirizados e dados falsos.</span>
-        </Link>
-        <Link href="/configuracoes/" className="home-card">
-          <strong>Configurações</strong>
-          <span>A chave da API da Anthropic, guardada no cofre do Windows.</span>
-        </Link>
-      </nav>
+    <main className="chat-page">
+      <header className="chat-header">
+        <h1>Jesus</h1>
+        <nav className="chat-nav" aria-label="Telas">
+          <Link href="/cenarios/">Cenários</Link>
+          <Link href="/configuracoes/">Configurações</Link>
+        </nav>
+      </header>
+      <ChatPanel initial={initial} />
     </main>
   );
 }

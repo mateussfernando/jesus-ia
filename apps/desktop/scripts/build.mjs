@@ -9,13 +9,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'rolldown';
 import { GATEWAY_MARKERS } from './gateway-markers.mjs';
+import { TEST_ONLY_MARKERS } from './test-markers.mjs';
 
 const desktopDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const testBuild = process.argv.includes('--test');
 const outDir = join(desktopDir, testBuild ? 'dist-test' : 'dist');
-
-/** Textos que só existem no código de teste: se aparecerem no build de produção, o build falha. */
-const TEST_ONLY_MARKERS = ['__jesusTest', 'JESUS_E2E_USER_DATA', 'JESUS_E2E_IDLE_MS'];
 
 rmSync(outDir, { recursive: true, force: true });
 await build({

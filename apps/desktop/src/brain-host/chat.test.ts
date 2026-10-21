@@ -12,6 +12,7 @@ import { DailySpend } from '../main/egress/spend';
 import { UpstreamError } from '../main/egress/transport';
 import type { Transport, UpstreamRequest } from '../main/egress/transport';
 import type { Supervisor } from '../main/supervisor';
+import { answerEvents, messageEnd as end, messageStart as start, textBlock as text, thinkingBlock as thinking } from '../test-support/anthropic-sse';
 import { EgressError } from './api-fetch';
 import { runBrainHost } from './brain';
 import type { BrainContext } from './brain';
@@ -37,47 +38,8 @@ async function until(check: () => boolean, ms = 3_000) {
   }
 }
 
-// Respostas SSE da Messages API.
-function sse(name: string, data: unknown): string {
-  return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
-}
-function start(input = 120): string {
-  return sse('message_start', {
-    type: 'message_start',
-    message: {
-      id: 'msg_1',
-      type: 'message',
-      role: 'assistant',
-      model: 'claude-haiku-5-5',
-      content: [],
-      stop_reason: null,
-      stop_sequence: null,
-      usage: { input_tokens: input, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 1 },
-    },
-  });
-}
-function thinking(index: number): string[] {
-  return [
-    sse('content_block_start', { type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '', signature: '' } }),
-    sse('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'signature_delta', signature: 'RXFRQkNnLi4u' } }),
-    sse('content_block_stop', { type: 'content_block_stop', index }),
-  ];
-}
-function text(index: number, pieces: readonly string[]): string[] {
-  return [
-    sse('content_block_start', { type: 'content_block_start', index, content_block: { type: 'text', text: '' } }),
-    ...pieces.map((piece) => sse('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'text_delta', text: piece } })),
-    sse('content_block_stop', { type: 'content_block_stop', index }),
-  ];
-}
-function end(stopReason = 'end_turn', output = 50): string[] {
-  return [
-    sse('message_delta', { type: 'message_delta', delta: { stop_reason: stopReason, stop_sequence: null }, usage: { output_tokens: output } }),
-    sse('message_stop', { type: 'message_stop' }),
-  ];
-}
-function answer(pieces: readonly string[], options: { input?: number; output?: number } = {}): Reply {
-  return { chunks: [start(options.input), ...thinking(0), ...text(1, pieces), ...end('end_turn', options.output)] };
+function answer(pieces: readonly string[], options: { inputTokens?: number } = {}): Reply {
+  return { chunks: answerEvents(pieces, options) };
 }
 function apiError(status: number, type: string): Reply {
   return { status, contentType: 'application/json', chunks: [JSON.stringify({ type: 'error', error: { type, message: 'x' } })] };
@@ -229,7 +191,7 @@ describe('conversa: um turno inteiro', () => {
   });
 
   it('o histórico volta como texto, sem os blocos de raciocínio, e só a última pergunta leva o ponto de cache', async () => {
-    const h = await harness([answer(['Primeira resposta.']), answer(['Segunda resposta.'], { input: 300 })]);
+    const h = await harness([answer(['Primeira resposta.']), answer(['Segunda resposta.'], { inputTokens: 300 })]);
     const { conversationId } = await h.ask('get');
     expect((await h.send(conversationId, 'Primeira pergunta').finished).kind).toBe('done');
     expect((await h.send(conversationId, 'Segunda pergunta').finished).kind).toBe('done');
@@ -332,7 +294,7 @@ describe('conversa: o que dá errado', () => {
   });
 
   it('conversa longa pede uma nova antes de mandar (limite de contexto)', async () => {
-    const h = await harness([answer(['Resposta longa.'], { input: 95_000 })]);
+    const h = await harness([answer(['Resposta longa.'], { inputTokens: 95_000 })]);
     const { conversationId } = await h.ask('get');
     const done = await h.send(conversationId, 'Oi').finished;
     expect(done.kind === 'done' && done.done.contextTokens >= done.done.limitTokens).toBe(true);

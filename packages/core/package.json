@@ -3,9 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Núcleo do Jesus. Por enquanto: orçamento automático de contexto por modelo (lógica pura).",
+  "description": "Núcleo do Jesus. Por enquanto: orçamento automático de contexto por modelo (lógica pura) e o vocabulário da conversa (`@jesus/core/chat`).",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./chat": "./src/chat.ts"
   },
   "scripts": {
     "test": "vitest run",

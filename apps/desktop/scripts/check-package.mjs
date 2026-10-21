@@ -15,6 +15,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import asar from '@electron/asar';
 import fuses from '@electron/fuses';
 import { GATEWAY_MARKERS } from './gateway-markers.mjs';
+import { TEST_ONLY_MARKERS } from './test-markers.mjs';
 import { classifyStagePath } from './stage-policy.mjs';
 
 const { FuseV1Options, getCurrentFuseWire } = fuses;
@@ -95,7 +96,7 @@ else {
   for (const path of files.filter((file) => file.startsWith(`/${bundle}/`) && file.endsWith('.mjs'))) {
     const text = asar.extractFile(asarPath, archivePath(path)).toString('utf8');
     if (!testBuild) {
-      for (const marker of ['__jesusTest', 'JESUS_E2E_USER_DATA', 'JESUS_E2E_IDLE_MS']) if (text.includes(marker)) problems.push(`código de teste em ${path}: ${marker}`);
+      for (const marker of TEST_ONLY_MARKERS) if (text.includes(marker)) problems.push(`código de teste em ${path}: ${marker}`);
     }
     // O AI Gateway da Vercel nunca entra no app (decisão 0023): o build o troca por um substituto que recusa tudo.
     for (const marker of GATEWAY_MARKERS) if (text.includes(marker)) problems.push(`AI Gateway em ${path}: ${marker}`);
