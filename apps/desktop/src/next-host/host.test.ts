@@ -15,6 +15,13 @@ const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 async function settle(rounds = 10) {
   for (let i = 0; i < rounds; i++) await tick();
 }
+async function until(check: () => boolean, ms = 2_000) {
+  const end = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > end) throw new Error('condição não aconteceu a tempo');
+    await new Promise<void>((resolve) => setTimeout(resolve, 2));
+  }
+}
 
 /** Lado "principal" de um pedido: guarda tudo o que o servidor manda e confirma só quando mandado. */
 function mainSide(port: FakeMessagePort) {
@@ -184,6 +191,74 @@ describe('servidor da interface: configuração e pedidos pelo parentPort', () =
       ['set-limit', 2_000_000_000_000],
       ['status', undefined],
     ]);
+  });
+
+  it('conversa: estado e conversa nova vão ao principal; um turno recebe os pedaços e termina; parar manda o mesmo id', async () => {
+    const host = createHostBridge({ vaultTimeoutMs: 50 });
+    const child = new FakeUtilityChild((parent) => runNextHost(parent, () => new Promise(() => undefined), () => undefined, host));
+    const conversationId = '0b6e3c1e-5f1a-4f7e-9c7a-2d9b1f4e6a80';
+    const state = { conversationId, turns: [], contextTokens: 10, limitTokens: 88_500, busy: false };
+    const requests: { type: string; id: number; op: string; conversationId?: string; text?: string }[] = [];
+    child.on('message', (message: { type: string; id: number; op: string }) => {
+      if (message.type !== 'chat') return;
+      requests.push(message);
+      if (message.op === 'get') child.postMessage({ type: 'chat-event', id: message.id, event: { kind: 'state', state } });
+      if (message.op === 'reset') child.postMessage({ type: 'chat-event', id: message.id, event: { kind: 'error', reason: 'brain' } });
+      if (message.op === 'send') {
+        child.postMessage({ type: 'chat-event', id: message.id, event: { kind: 'delta', text: 'Olá' } });
+        // Um estado no meio de um turno não é deste turno: ignorado.
+        child.postMessage({ type: 'chat-event', id: message.id, event: { kind: 'state', state } });
+        child.postMessage({ type: 'chat-event', id: message.id, event: { kind: 'done', done: { conversationId, finish: 'stop', contextTokens: 20, limitTokens: 88_500 } } });
+      }
+    });
+    await settle();
+    expect(await host.bridge.chat.state()).toEqual({ ok: true, state });
+    expect(await host.bridge.chat.reset()).toEqual({ ok: false, reason: 'brain' });
+    const events: unknown[] = [];
+    const stop = host.bridge.chat.send(conversationId, 'Oi', (event) => events.push(event));
+    await until(() => events.length === 2);
+    expect(events).toEqual([
+      { kind: 'delta', text: 'Olá' },
+      { kind: 'done', done: { conversationId, finish: 'stop', contextTokens: 20, limitTokens: 88_500 } },
+    ]);
+    // Depois do fim, parar não manda nada.
+    stop();
+    await settle();
+    expect(requests.map((request) => [request.op, request.text])).toEqual([
+      ['get', undefined],
+      ['reset', undefined],
+      ['send', 'Oi'],
+    ]);
+  });
+
+  it('conversa: parar um turno em andamento manda o id dele; turno sem nenhum evento falha pelo prazo', async () => {
+    const host = createHostBridge({ chatIdleMs: 60 });
+    const child = new FakeUtilityChild((parent) => runNextHost(parent, () => new Promise(() => undefined), () => undefined, host));
+    const requests: { type: string; id: number; op: string }[] = [];
+    child.on('message', (message: { type: string; id: number; op: string }) => {
+      if (message.type === 'chat') requests.push(message);
+    });
+    await settle();
+    const events: unknown[] = [];
+    const stop = host.bridge.chat.send('0b6e3c1e-5f1a-4f7e-9c7a-2d9b1f4e6a80', 'Oi', (event) => events.push(event));
+    await until(() => requests.length === 1);
+    stop();
+    await until(() => requests.length === 2);
+    expect(requests.map((request) => [request.op, request.id])).toEqual([
+      ['send', requests[0]?.id],
+      ['stop', requests[0]?.id],
+    ]);
+    // O principal não respondeu nada: o turno falha pelo prazo, e o Parar sai de novo para garantir.
+    await until(() => events.length === 1, 1_000);
+    expect(events).toEqual([{ kind: 'error', reason: 'timeout' }]);
+  });
+
+  it('conversa sem ligação com o principal: indisponível na hora', async () => {
+    const host = createHostBridge();
+    expect(await host.bridge.chat.state()).toEqual({ ok: false, reason: 'unavailable' });
+    const events: unknown[] = [];
+    host.bridge.chat.send('0b6e3c1e-5f1a-4f7e-9c7a-2d9b1f4e6a80', 'Oi', (event) => events.push(event));
+    expect(events).toEqual([{ kind: 'error', reason: 'unavailable' }]);
   });
 
   it('cofre sem ligação com o principal: falha na hora', async () => {

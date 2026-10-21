@@ -12,6 +12,7 @@ import type {
   VaultReply,
   VaultRequest,
 } from '../bridge/protocol';
+import type { ChatEvent, UiChatRequest } from '../bridge/chat-protocol';
 import { wrapPort } from '../bridge/ports';
 import type { ChannelLike, UtilityChildLike } from '../bridge/ports';
 import { isAppUrl } from './policy/url';
@@ -87,6 +88,13 @@ export interface UiServerOptions {
   readonly onVaultRequest?: (request: VaultRequest) => Promise<Omit<VaultReply, 'type' | 'id'>>;
   /** Pedido do servidor ao teto de gasto do dia (decisão 0023). Sem quem atenda, a resposta é falha. */
   readonly onSpendRequest?: (request: SpendRequest) => Promise<Omit<SpendReply, 'type' | 'id'>>;
+  /**
+   * Pedido de conversa do servidor (decisão 0024). `owner` identifica o processo que pediu; `reply` leva cada resposta
+   * a ele, se ele ainda for o atual. Sem quem atenda, a conversa fica indisponível.
+   */
+  readonly onChatRequest?: (request: UiChatRequest, owner: object, reply: (event: ChatEvent) => void) => void;
+  /** Um processo do servidor saiu: a conversa que ele pediu para (ninguém mais vai ler). */
+  readonly onServerGone?: (owner: object) => void;
   readonly timing?: Partial<UiServerTiming>;
   readonly now?: () => number;
 }
@@ -347,6 +355,23 @@ export function startUiServer(options: UiServerOptions): UiServer {
           });
         return;
       }
+      if (message.type === 'chat') {
+        if (!record.ready) return;
+        const reply = (event: ChatEvent) => {
+          if (current !== record) return;
+          try {
+            child.postMessage({ type: 'chat-event', id: message.id, event });
+          } catch {
+            // O processo saiu; a conversa dele parou junto.
+          }
+        };
+        if (options.onChatRequest === undefined) {
+          if (message.op !== 'stop') reply({ kind: 'error', reason: 'unavailable' });
+          return;
+        }
+        options.onChatRequest(message, record, reply);
+        return;
+      }
       if (message.type === 'pong') {
         // Só vale a resposta ao `ping` pendente; qualquer outra é fuga do protocolo.
         if (ping?.seq !== message.seq) {
@@ -370,6 +395,7 @@ export function startUiServer(options: UiServerOptions): UiServer {
       clearInterval(watchdog);
       emit({ type: 'exited', code, inflight: record.inflight.size });
       for (const fail of [...record.inflight]) fail();
+      options.onServerGone?.(record);
       if (current !== record) return;
       current = null;
       if (stopped) return;

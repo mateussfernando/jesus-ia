@@ -265,6 +265,44 @@ describe('startBrainProcess', () => {
     expect(children).toHaveLength(2);
   });
 
+  it('mensagens de conversa vão a quem atende; sem quem atenda, derrubam o Cérebro; a saída dele avisa', async () => {
+    const chat: unknown[] = [];
+    let gone = 0;
+    const brains: ReturnType<typeof fakeBrain>[] = [];
+    const children: FakeUtilityChild[] = [];
+    const events: SupervisorEvent[] = [];
+    const make = (withChat: boolean) =>
+      startBrainProcess({
+        fork: () => {
+          const brain = fakeBrain();
+          brains.push(brain);
+          const child = new FakeUtilityChild(brain.run);
+          children.push(child);
+          return child;
+        },
+        egress: { send: () => () => undefined, cancelAll: () => undefined },
+        ...(withChat ? { onChat: (message: unknown, violation: (reason: string) => void) => (chat.push(message), violation('teste')) } : {}),
+        onGone: () => (gone += 1),
+        onEvent: (event) => events.push(event),
+        timing: FAST,
+      });
+    const supervisor = make(true);
+    running.push(supervisor);
+    await supervisor.whenReady();
+    brains[0]?.send({ type: 'chat-delta', id: 1, text: 'Olá' });
+    await until(() => chat.length === 1);
+    expect(chat).toEqual([{ type: 'chat-delta', id: 1, text: 'Olá' }]);
+    // Quem atende pediu para derrubar: o Cérebro cai, sobe de novo, e a saída é avisada.
+    await until(() => children.length === 2 && gone >= 1);
+    expect(events).toContainEqual({ type: 'failed', reason: 'protocol', message: 'teste' });
+
+    const plain = make(false);
+    running.push(plain);
+    await plain.whenReady();
+    brains.at(-1)?.send({ type: 'chat-done', id: 1, done: { conversationId: '0b6e3c1e-5f1a-4f7e-9c7a-2d9b1f4e6a80', finish: 'stop', contextTokens: 1, limitTokens: 2 } });
+    await until(() => events.some((event) => event.type === 'failed' && event.message === 'conversa sem quem atenda'));
+  });
+
   it('Cérebro preso (sem pong) é derrubado e sobe de novo', async () => {
     const { supervisor, children, events } = setup({ pong: false });
     await supervisor.whenReady();

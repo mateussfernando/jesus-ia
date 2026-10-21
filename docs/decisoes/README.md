@@ -26,6 +26,7 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0020](0020-cofre-da-chave-no-processo-principal.md) | Cofre da chave no processo principal e tela Configurações | aceita |
 | [0022](0022-registro-de-auditoria-e-mascaramento.md) | Registro de auditoria encadeado, mascaramento de segredos e logger com redação | aceita (âncora no cofre pela 0020; número 0021 reservado no plano da fase 1) |
 | [0023](0023-cerebro-e-saida-para-a-api.md) | Cérebro num utilityProcess e saída para a API pelo processo principal | aceita |
+| [0024](0024-laco-da-conversa-no-cerebro.md) | Laço da conversa no Cérebro: conversa só na memória, histórico sem raciocínio e limite pelo orçamento | aceita |
 
 ## Modelo
 

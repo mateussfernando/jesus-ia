@@ -438,6 +438,7 @@ O Jesus **nunca** faz o que está abaixo, mesmo que você peça, mesmo com todos
   - senha em string de conexão, senha por atribuição ou por proximidade de palavra-chave, códigos de verificação e de login, código de segurança e número de cartão (fica o final);
   - tokens de alta entropia.
   - É idempotente (mascarar de novo não muda nada). O logger também tira campos com nome de segredo (`password`, `token`, `cookie`…) inteiros.
+  - Na conversa ([decisão 0024](decisoes/0024-laco-da-conversa-no-cerebro.md)), a pergunta do dono é mascarada uma vez, ao entrar no histórico, e já sai mascarada para o modelo. O histórico fica só na memória do Cérebro e guarda só o texto das trocas, sem o raciocínio cifrado.
   - Se encontrar um segredo num parâmetro de ação com destino externo → **bloqueio**.
 - **Sua senha:** o Jesus nunca pede, guarda ou digita. O login é sempre você, na página oficial (OAuth).
 - **A senha do próprio Jesus** (para abrir o app, seção 3.20) é outra coisa: fica só como hash bcrypt e nunca é usada com nenhum provedor.
@@ -624,6 +625,7 @@ Seguir a lista oficial de segurança do Electron ([Electron Security](https://el
 
 - Orçamento diário e por tarefa (tokens e dinheiro), com alerta no holograma (anel de gasto).
 - **Teto do dia no processo principal ([decisão 0023](decisoes/0023-cerebro-e-saida-para-a-api.md)):** US$ 1 por dia por padrão; o dono muda o valor na tela Configurações (de US$ 0,01 a US$ 100,00), e a mudança só vale depois de gravada no registro de auditoria, que é a fonte do teto na abertura. Antes de cada pedido à API, o principal reserva o pior caso (cada byte do corpo como token gravado no cache, cada bloco de raciocínio devolvido pela saída máxima, que é como a API o cobra, e mais a saída inteira); o que não cabe na sobra do dia não sai. Depois, liquida pelo uso real lido da resposta. O gasto do dia é refeito pelo registro de auditoria ao abrir o app, e um pedido que caiu no meio conta pelo valor reservado inteiro; se o registro vai para o lado, o novo começa com o gasto e o teto do dia (`spend.carried`). Vale mesmo com o Cérebro comprometido pedindo sem parar, e pedido demais em pouco tempo derruba o Cérebro.
+- **Conversa ([decisão 0024](decisoes/0024-laco-da-conversa-no-cerebro.md)):** o limite de contexto vem do orçamento do modelo (uns 88,5 mil tokens no Haiku 5.5, abaixo da faixa de preço de 100 mil) e cada conversa tem no máximo 200 trocas; chegando lá, a tela pede uma conversa nova. O Cérebro não tenta de novo sozinho (`maxRetries: 0`): todo pedido passa pelo teto. O histórico não devolve blocos de raciocínio, que custariam entrada e 32 mil tokens de reserva cada.
 - Limites de passos, chamadas de ferramenta e tempo por tarefa.
 - Detecção de laço (a mesma ferramenta com os mesmos parâmetros repetida) → para.
 - **Botão de emergência:** atalho global + "Jesus, pare" → cancela o modelo, mata os comandos em execução e congela a fila.

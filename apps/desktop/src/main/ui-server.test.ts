@@ -320,6 +320,69 @@ describe('ponte do principal com o servidor da interface', () => {
     expect(replies[1]).toEqual({ type: 'spend-reply', id: 4, ok: false, problem: 'failed' });
   });
 
+  it('pedido de conversa: vai a quem atende com o processo que pediu, e a resposta volta só para ele', async () => {
+    const replies: unknown[] = [];
+    const conversationId = '0b6e3c1e-5f1a-4f7e-9c7a-2d9b1f4e6a80';
+    const asking = (parent: ParentPortLike) => {
+      parent.on('message', (event) => {
+        const data = event.data as { type?: string };
+        if (data.type === 'config') {
+          parent.postMessage({ type: 'ready', prepareMs: 1 });
+          parent.postMessage({ type: 'chat', id: 5, op: 'send', conversationId, text: 'Oi' });
+        }
+        if (data.type === 'chat-event') replies.push(data);
+      });
+    };
+    const owners: object[] = [];
+    const gone: object[] = [];
+    const children: FakeUtilityChild[] = [];
+    const server = startUiServer({
+      fork: () => {
+        const child = new FakeUtilityChild(asking);
+        children.push(child);
+        return child;
+      },
+      createChannel: createFakeChannel,
+      config: { uiDir: '/app/ui', dataDir: '/dados' },
+      timing: FAST,
+      onChatRequest: (request, owner, reply) => {
+        owners.push(owner);
+        expect(request).toEqual({ type: 'chat', id: 5, op: 'send', conversationId, text: 'Oi' });
+        reply({ kind: 'delta', text: 'Olá' });
+      },
+      onServerGone: (owner) => gone.push(owner),
+    });
+    running.push(server);
+    await until(() => replies.length === 1);
+    expect(replies).toEqual([{ type: 'chat-event', id: 5, event: { kind: 'delta', text: 'Olá' } }]);
+    // O processo cai: quem atende a conversa fica sabendo qual processo foi.
+    children[0]?.kill();
+    await until(() => gone.length === 1);
+    expect(gone[0]).toBe(owners[0]);
+    server.stop();
+
+    // Sem quem atenda: a conversa fica indisponível.
+    const plainReplies: unknown[] = [];
+    const { server: plain } = setup({
+      run: (parent) => {
+        parent.on('message', (event) => {
+          const data = event.data as { type?: string };
+          if (data.type === 'config') {
+            parent.postMessage({ type: 'ready', prepareMs: 1 });
+            parent.postMessage({ type: 'chat', id: 6, op: 'get' });
+            parent.postMessage({ type: 'chat', id: 6, op: 'stop' });
+          }
+          if (data.type === 'chat-event') plainReplies.push(data);
+        });
+      },
+    });
+    await plain.whenReady();
+    await until(() => plainReplies.length === 1);
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    // O `stop` não tem resposta.
+    expect(plainReplies).toEqual([{ type: 'chat-event', id: 6, event: { kind: 'error', reason: 'unavailable' } }]);
+  });
+
   it('pong fora de ordem é fuga do protocolo: o processo cai e sobe de novo', async () => {
     const children: FakeUtilityChild[] = [];
     const { server, events } = setup({

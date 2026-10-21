@@ -13,6 +13,7 @@ import { createAppWindow, guardWebContents } from './app-window';
 import type { Violation } from './app-window';
 import { fileAnchorStore, sealedAnchorStore } from './audit-anchor';
 import { startBrainProcess } from './brain-process';
+import { createChatRelay } from './chat-relay';
 import { TEST_BUILD } from './build-flags';
 import { buildChildEnv } from './child-env';
 import type { HostLockReason } from '../bridge/protocol';
@@ -29,7 +30,7 @@ import { ViolationBreaker } from './policy/breaker';
 import { phase1PermissionPolicy } from './policy/permissions';
 import { APP_DISABLED_FEATURES, HOST_RESOLVER_RULES, mergeFeatureList, unexpectedArguments, unexpectedEnvironment } from './policy/switches';
 import { APP_ORIGIN } from './policy/url';
-import type { SupervisorEvent } from './supervisor';
+import type { Supervisor, SupervisorEvent } from './supervisor';
 import { startUiServer, statusPage } from './ui-server';
 import type { UiServerEvent } from './ui-server';
 import { Vault } from './vault';
@@ -200,6 +201,9 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     audit === null ? Promise.reject(new Error('registro de auditoria indisponível')) : audit.append(event);
 
   const vaultRequests = createVaultRequests({ vault, record });
+  // A conversa (decisão 0024) mora no Cérebro; o principal só repassa entre ele e o servidor da interface.
+  let brainSupervisor: Supervisor | null = null;
+  const chatRelay = createChatRelay({ postToBrain: (message) => brainSupervisor?.post(message) ?? false });
 
   const cookies = new CookieJar();
   jar = cookies;
@@ -220,6 +224,8 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     onLockAck: (seq) => lockSignals?.ack(seq),
     onVaultRequest: (request) => Promise.resolve(vaultRequests(request)),
     onSpendRequest: (request) => handleSpendRequest(request, spend, appendAudit),
+    onChatRequest: (request, owner, reply) => chatRelay.fromUi(request, owner, reply),
+    onServerGone: (owner) => chatRelay.uiGone(owner),
     onEvent: (event) => {
       serverEvents.push(event);
       log.info('servidor_interface', event);
@@ -260,6 +266,8 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
       return child;
     },
     egress,
+    onChat: (message, violation) => chatRelay.fromBrain(message, violation),
+    onGone: () => chatRelay.brainGone(),
     onEvent: (event) => {
       if (TEST_BUILD) brainEvents.push(event);
       log.info('cerebro', event);
@@ -269,6 +277,8 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
       if (event.type === 'gave-up') record({ type: 'brain.gave_up', failures: event.failures });
     },
   });
+
+  brainSupervisor = brain;
 
   const signals = new LockSignals({
     notify: (message) => uiServer.notify(message),

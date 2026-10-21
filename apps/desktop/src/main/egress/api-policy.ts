@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { API_BASE_URL, BRAIN_KEY_PLACEHOLDER, BRAIN_MODEL_ID, MAX_API_BODY_BYTES } from '../../bridge/brain-protocol';
+import { API_BASE_URL, BRAIN_KEY_PLACEHOLDER, BRAIN_MAX_OUTPUT_TOKENS, BRAIN_MODEL_ID, MAX_API_BODY_BYTES } from '../../bridge/brain-protocol';
 
 /**
  * O que o Cérebro pode pedir à API da Anthropic (decisão 0023). O principal confere cada pedido antes de pôr a chave:
@@ -22,7 +22,7 @@ export const API_URL = `${API_BASE_URL}/messages`;
 export const ANTHROPIC_VERSION = '2023-06-01';
 export const BRAIN_MODEL_KEY = `anthropic:${BRAIN_MODEL_ID}`;
 /** Teto de `max_tokens` de um pedido (o raciocínio conta como saída). */
-export const MAX_OUTPUT_TOKENS = 32_000;
+export const MAX_OUTPUT_TOKENS = BRAIN_MAX_OUTPUT_TOKENS;
 
 /**
  * Betas aceitos (lista fechada). Só os que o provedor do AI SDK pede para o que o Jesus usa:

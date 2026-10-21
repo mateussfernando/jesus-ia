@@ -20,6 +20,7 @@
     "@ai-sdk/anthropic": "4.0.81",
     "@electron/asar": "3.4.1",
     "@electron/fuses": "1.8.0",
+    "@jesus/core": "*",
     "@jesus/models": "*",
     "@jesus/shared": "*",
     "@types/node": "^24.19.1",

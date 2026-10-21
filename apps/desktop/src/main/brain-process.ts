@@ -1,5 +1,6 @@
 import { parseFromBrain } from '../bridge/brain-protocol';
 import type { FromBrainMessage } from '../bridge/brain-protocol';
+import type { FromBrainChatMessage } from '../bridge/chat-protocol';
 import type { UtilityChildLike } from '../bridge/ports';
 import type { Egress } from './egress/egress';
 import { startSupervisor } from './supervisor';
@@ -17,7 +18,10 @@ import type { Supervisor, SupervisorEvent, SupervisorTiming } from './supervisor
  * seguidas).
  */
 
-type WorkMessage = Extract<FromBrainMessage, { readonly type: 'api-request' | 'api-cancel' }>;
+type WorkMessage = Extract<
+  FromBrainMessage,
+  { readonly type: 'api-request' | 'api-cancel' | 'chat-state' | 'chat-delta' | 'chat-done' | 'chat-error' }
+>;
 
 export interface BrainRateLimits {
   /** Pedidos aceitos numa janela de `windowMs`. */
@@ -45,6 +49,10 @@ export interface BrainProcessOptions {
   /** Sobe o utilityProcess (no app: `utilityProcess.fork` com ambiente de lista e `serviceName: 'jesus-brain'`). */
   readonly fork: () => UtilityChildLike;
   readonly egress: Pick<Egress, 'send' | 'cancelAll'>;
+  /** Mensagem de conversa do Cérebro (decisão 0024); `violation` o derruba por fuga do protocolo. */
+  readonly onChat?: (message: FromBrainChatMessage, violation: (reason: string) => void) => void;
+  /** O Cérebro saiu (ou foi parado): a conversa em andamento com ele termina. */
+  readonly onGone?: () => void;
   readonly onEvent?: (event: SupervisorEvent) => void;
   readonly timing?: Partial<SupervisorTiming>;
   readonly rate?: Partial<BrainRateLimits>;
@@ -66,6 +74,11 @@ export function startBrainProcess(options: BrainProcessOptions): Supervisor {
     fork: options.fork,
     parse: parseFromBrain,
     onMessage: (message, link) => {
+      if (message.type === 'chat-state' || message.type === 'chat-delta' || message.type === 'chat-done' || message.type === 'chat-error') {
+        if (options.onChat === undefined) link.violation('conversa sem quem atenda');
+        else options.onChat(message, (reason) => link.violation(reason));
+        return;
+      }
       if (message.type === 'api-cancel') {
         const cancel = open.get(message.id);
         open.delete(message.id);
@@ -108,6 +121,7 @@ export function startBrainProcess(options: BrainProcessOptions): Supervisor {
       open = new Map();
       counters = newCounters();
       options.egress.cancelAll('brain_gone');
+      options.onGone?.();
     },
     ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
     ...(options.timing === undefined ? {} : { timing: options.timing }),

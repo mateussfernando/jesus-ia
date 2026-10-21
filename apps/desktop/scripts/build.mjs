@@ -8,6 +8,7 @@ import { readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'rolldown';
+import { GATEWAY_MARKERS } from './gateway-markers.mjs';
 
 const desktopDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const testBuild = process.argv.includes('--test');
@@ -15,11 +16,6 @@ const outDir = join(desktopDir, testBuild ? 'dist-test' : 'dist');
 
 /** Textos que só existem no código de teste: se aparecerem no build de produção, o build falha. */
 const TEST_ONLY_MARKERS = ['__jesusTest', 'JESUS_E2E_USER_DATA', 'JESUS_E2E_IDLE_MS'];
-/**
- * Textos do AI Gateway da Vercel (decisão 0023): o pacote `ai` o importa, e o build o troca por um substituto que recusa
- * tudo. Se algum aparecer em qualquer build, o substituto não foi aplicado, e o build falha.
- */
-const GATEWAY_MARKERS = ['ai-gateway.vercel.sh', 'AI_GATEWAY_API_KEY', 'VERCEL_OIDC_TOKEN'];
 
 rmSync(outDir, { recursive: true, force: true });
 await build({

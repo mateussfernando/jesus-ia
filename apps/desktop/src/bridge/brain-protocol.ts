@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { FromBrainChatSchemas, ToBrainChatSchemas } from './chat-protocol';
+import type { ChatFailure } from './chat-protocol';
 import { bytes, FailedMessageSchema, headerName, headerValue, PingMessageSchema, PongMessageSchema, pingSeq } from './protocol';
 
 /**
@@ -19,6 +21,9 @@ export const API_BASE_URL = `https://${API_HOST}/v1`;
 export const BRAIN_MODEL_ID = 'claude-haiku-5-5';
 /** O provedor do AI SDK exige uma chave: o Cérebro põe esta, e o principal a troca pela do cofre. */
 export const BRAIN_KEY_PLACEHOLDER = 'jesus-brain-sem-chave';
+
+/** Saída máxima (`max_tokens`) de um pedido à API; o raciocínio conta como saída. */
+export const BRAIN_MAX_OUTPUT_TOKENS = 32_000;
 
 /** Corpo máximo de um pedido à API, em bytes UTF-8 (o principal confere de novo antes de mandar). */
 export const MAX_API_BODY_BYTES = 2 * 1024 * 1024;
@@ -54,6 +59,9 @@ export const EGRESS_FAILURES = [
   'internal',
 ] as const;
 export type EgressFailure = (typeof EGRESS_FAILURES)[number];
+// Toda falha da saída é também uma falha da conversa (o Cérebro a repassa como veio).
+const EGRESS_IN_CHAT: readonly ChatFailure[] = EGRESS_FAILURES;
+void EGRESS_IN_CHAT;
 
 const ApiHeaderListSchema = z.array(z.tuple([headerName, headerValue])).max(MAX_API_HEADERS);
 
@@ -84,6 +92,7 @@ export const FromBrainMessageSchema = z.discriminatedUnion('type', [
   PongMessageSchema,
   ApiRequestMessageSchema,
   ApiCancelMessageSchema,
+  ...FromBrainChatSchemas,
 ]);
 export type FromBrainMessage = z.infer<typeof FromBrainMessageSchema>;
 
@@ -115,9 +124,10 @@ export const ToBrainMessageSchema = z.discriminatedUnion('type', [
   ApiChunkMessageSchema,
   ApiEndMessageSchema,
   ApiErrorMessageSchema,
+  ...ToBrainChatSchemas,
 ]);
 export type ToBrainMessage = z.infer<typeof ToBrainMessageSchema>;
-export type ToBrainApiMessage = Exclude<ToBrainMessage, { type: 'ping' }>;
+export type ToBrainApiMessage = Extract<ToBrainMessage, { type: 'api-head' | 'api-chunk' | 'api-end' | 'api-error' }>;
 
 function parseWith<T>(schema: z.ZodType<T>, data: unknown): T | null {
   const result = schema.safeParse(data);

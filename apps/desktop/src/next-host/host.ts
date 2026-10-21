@@ -85,6 +85,11 @@ export function runNextHost(parent: ParentPortLike, load: LoadServer, log: HostL
       host.spendReply(message);
       return;
     }
+    if (message.type === 'chat-event') {
+      port?.close();
+      host.chatEvent(message);
+      return;
+    }
     if (message.type === 'config') {
       port?.close();
       // A configuração vale uma vez: trocar a pasta de dados com o servidor rodando nunca é aceito.

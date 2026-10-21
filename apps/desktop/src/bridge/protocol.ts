@@ -1,6 +1,7 @@
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import { isAppUrl } from '../main/policy/url';
+import { UiChatEventSchema, UiChatRequestSchema } from './chat-protocol';
 
 /**
  * Protocolo da ponte entre o processo principal e o servidor da interface (`jesus-next`, um utilityProcess; decisão
@@ -168,6 +169,7 @@ export const ToServerMessageSchema = z.discriminatedUnion('type', [
   ActivityMessageSchema,
   VaultReplySchema,
   SpendReplySchema,
+  UiChatEventSchema,
 ]);
 export type ToServerMessage = z.infer<typeof ToServerMessageSchema>;
 
@@ -190,6 +192,7 @@ export const FromServerMessageSchema = z.discriminatedUnion('type', [
   LockAckMessageSchema,
   VaultRequestSchema,
   SpendRequestSchema,
+  UiChatRequestSchema,
 ]);
 export type FromServerMessage = z.infer<typeof FromServerMessageSchema>;
 

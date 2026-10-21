@@ -1,3 +1,4 @@
+import type { ChatDone, ChatFailure, ChatState, UiChatEvent } from '../bridge/chat-protocol';
 import type { HostLockReason, SpendReply, VaultReply } from '../bridge/protocol';
 
 /**
@@ -26,6 +27,23 @@ export interface DesktopSpend {
   setDailyLimit(limitPUsd: number): Promise<SpendResult>;
 }
 
+/** A conversa (decisão 0024), que mora no Cérebro: o estado dela, ou o motivo de não ter vindo. */
+export type ChatResult = { readonly ok: true; readonly state: ChatState } | { readonly ok: false; readonly reason: ChatFailure };
+
+/** O que chega de um turno: pedaços da resposta e, no fim, sempre `done` ou `error`. */
+export type ChatTurnEvent =
+  | { readonly kind: 'delta'; readonly text: string }
+  | { readonly kind: 'done'; readonly done: ChatDone }
+  | { readonly kind: 'error'; readonly reason: ChatFailure };
+
+export interface DesktopChat {
+  state(): Promise<ChatResult>;
+  /** Começa uma conversa nova (o turno em andamento para). */
+  reset(): Promise<ChatResult>;
+  /** Pergunta na conversa `conversationId`. A função devolvida para o turno (o botão Parar). */
+  send(conversationId: string, text: string, listener: (event: ChatTurnEvent) => void): () => void;
+}
+
 export interface DesktopBridge {
   /** Tempo sem uso (ms) mandado pelo principal; `undefined` vale o padrão. Só o build de teste manda. */
   readonly idleMs: number | undefined;
@@ -33,6 +51,8 @@ export interface DesktopBridge {
   readonly vault: DesktopVault;
   /** Teto de gasto do dia, guardado e aplicado pelo principal (decisão 0023). */
   readonly spend: DesktopSpend;
+  /** A conversa com o Cérebro, pelo principal (decisão 0024). */
+  readonly chat: DesktopChat;
   /** Quem aplica os bloqueios do Windows no estado de acesso. Um só: um segundo registro lança. */
   onLock(listener: (reason: HostLockReason) => void): void;
   /** Quem conta o uso de verdade. Um só. */
@@ -48,6 +68,8 @@ export interface HostBridge {
   vaultReply(reply: VaultReply): void;
   /** Resposta do principal a um pedido sobre o teto do dia. */
   spendReply(reply: SpendReply): void;
+  /** Evento da conversa vindo do principal. */
+  chatEvent(message: UiChatEvent): void;
   configure(idleMs: number | undefined): void;
   /**
    * Aplica um bloqueio e diz se deu certo. Sem ninguém registrado também dá: o estado de acesso ainda não existe e,
@@ -57,10 +79,15 @@ export interface HostBridge {
   activity(): void;
 }
 
-/** Sem resposta do principal nesse tempo, o pedido ao cofre (ou ao teto do dia) falha. */
+/** Sem resposta do principal nesse tempo, o pedido ao cofre (ou ao teto do dia, ou o estado da conversa) falha. */
 export const VAULT_TIMEOUT_MS = 10_000;
+/**
+ * Turno sem nenhum evento nesse tempo falha com `timeout` (e é parado). A saída para a API já tem os próprios prazos
+ * (até 2 min parado no meio); este é a última garantia de que a tela nunca espera para sempre.
+ */
+export const CHAT_IDLE_TIMEOUT_MS = 5 * 60_000;
 
-export function createHostBridge(options: { vaultTimeoutMs?: number } = {}): HostBridge {
+export function createHostBridge(options: { vaultTimeoutMs?: number; chatIdleMs?: number } = {}): HostBridge {
   let idleMs: number | undefined;
   let lockListener: ((reason: HostLockReason) => void) | null = null;
   let activityListener: (() => void) | null = null;
@@ -125,12 +152,113 @@ export function createHostBridge(options: { vaultTimeoutMs?: number } = {}): Hos
     pending.delete(reply.id);
     entry.settle(reply);
   };
+
+  // Conversa: pedidos de estado (uma resposta) e turnos (vários eventos), pelo `id` do lado daqui.
+  type ChatEntry =
+    | { readonly kind: 'ask'; readonly settle: (result: ChatResult) => void }
+    | { readonly kind: 'turn'; readonly listener: (event: ChatTurnEvent) => void; readonly touch: () => void; readonly clear: () => void };
+  const chats = new Map<number, ChatEntry>();
+  const askChat = (op: 'get' | 'reset'): Promise<ChatResult> =>
+    new Promise((resolve) => {
+      if (post === null) {
+        resolve({ ok: false, reason: 'unavailable' });
+        return;
+      }
+      const id = nextId++;
+      const timer = setTimeout(() => {
+        chats.delete(id);
+        resolve({ ok: false, reason: 'brain' });
+      }, options.vaultTimeoutMs ?? VAULT_TIMEOUT_MS);
+      chats.set(id, {
+        kind: 'ask',
+        settle: (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        },
+      });
+      try {
+        post({ type: 'chat', id, op });
+      } catch {
+        chats.delete(id);
+        clearTimeout(timer);
+        resolve({ ok: false, reason: 'unavailable' });
+      }
+    });
+  const chat: DesktopChat = Object.freeze({
+    state: () => askChat('get'),
+    reset: () => askChat('reset'),
+    send(conversationId: string, text: string, listener: (event: ChatTurnEvent) => void) {
+      const sender = post;
+      if (sender === null) {
+        listener({ kind: 'error', reason: 'unavailable' });
+        return () => undefined;
+      }
+      const id = nextId++;
+      const stop = () => {
+        if (!chats.has(id)) return;
+        try {
+          sender({ type: 'chat', id, op: 'stop' });
+        } catch {
+          // Sem principal, o turno termina pelo prazo.
+        }
+      };
+      let timer: NodeJS.Timeout | null = null;
+      const clear = () => {
+        if (timer !== null) clearTimeout(timer);
+        timer = null;
+      };
+      const touch = () => {
+        clear();
+        timer = setTimeout(() => {
+          stop();
+          chats.delete(id);
+          listener({ kind: 'error', reason: 'timeout' });
+        }, options.chatIdleMs ?? CHAT_IDLE_TIMEOUT_MS);
+      };
+      chats.set(id, { kind: 'turn', listener, touch, clear });
+      touch();
+      try {
+        sender({ type: 'chat', id, op: 'send', conversationId, text });
+      } catch {
+        clear();
+        chats.delete(id);
+        listener({ kind: 'error', reason: 'unavailable' });
+      }
+      return stop;
+    },
+  });
+  const chatEvent = (message: UiChatEvent) => {
+    const entry = chats.get(message.id);
+    if (entry === undefined) return;
+    const { event } = message;
+    if (entry.kind === 'ask') {
+      if (event.kind === 'state') {
+        chats.delete(message.id);
+        entry.settle({ ok: true, state: event.state });
+      } else if (event.kind === 'error') {
+        chats.delete(message.id);
+        entry.settle({ ok: false, reason: event.reason });
+      }
+      return;
+    }
+    if (event.kind === 'state') return;
+    if (event.kind === 'delta') {
+      entry.touch();
+      entry.listener(event);
+      return;
+    }
+    entry.clear();
+    chats.delete(message.id);
+    entry.listener(event);
+  };
+
   const bridge: DesktopBridge = Object.freeze({
     get idleMs() {
       return idleMs;
     },
     vault,
     spend,
+    chat,
     onLock(listener: (reason: HostLockReason) => void) {
       if (lockListener !== null) throw new Error('o bloqueio já tem quem aplique');
       lockListener = listener;
@@ -147,6 +275,7 @@ export function createHostBridge(options: { vaultTimeoutMs?: number } = {}): Hos
     },
     vaultReply: settle,
     spendReply: settle,
+    chatEvent,
     configure(value) {
       idleMs = value;
     },
