@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { describeDenial, describeRelease } from './describe';
 import { createPlaces } from './places';
-import { checkRequestedPath, checkResolvedPath, createReadPolicy } from './read-gate';
+import { checkLinkTarget, checkRequestedPath, checkResolvedPath, createReadPolicy } from './read-gate';
 import type { ReadDenial } from './read-gate';
 import { checkReleaseFolder } from './release';
 import type { ReleaseRefusal } from './release';
@@ -68,6 +68,27 @@ describe('Porteiro da leitura', () => {
     const policy = createReadPolicy({ released: ['E:\\'], places: { ...PLACES, jesus: ['E:\\Jesus\\dados'] } });
     expect(checkRequestedPath('E:\\Jesus\\dados\\vault.json', policy)).toEqual({ decision: 'deny', denial: { reason: 'jesus', which: 'requested' } });
     expect(checkRequestedPath('E:\\Jesus\\outra\\a.txt', policy).decision).toBe('allow');
+  });
+
+  it('o alvo de um link é conferido como caminho real, antes de o Executor segui-lo', () => {
+    const policy = createReadPolicy({ released: [SITE], places: PLACES });
+    expect(checkLinkTarget(`${SITE}\\docs\\..\\outra\\a.txt`, policy)).toMatchObject({
+      decision: 'allow',
+      path: { text: `${SITE}\\outra\\a.txt` },
+    });
+    for (const [target, denial] of [
+      ['\\\\servidor\\pasta\\a.txt', { reason: 'path', which: 'real', problem: 'unc' }],
+      ['\\\\attacker.example@SSL\\DavWWWRoot\\x', { reason: 'path', which: 'real', problem: 'unc' }],
+      ['\\\\?\\Volume{0b1c2d3e-0000-0000-0000-100000000000}\\a.txt', { reason: 'path', which: 'real', problem: 'device_namespace' }],
+      ['\\\\.\\pipe\\algum', { reason: 'path', which: 'real', problem: 'device_namespace' }],
+      ['\\pasta\\a.txt', { reason: 'path', which: 'real', problem: 'not_absolute' }],
+      ['D:relativo\\a.txt', { reason: 'path', which: 'real', problem: 'not_absolute' }],
+      ['C:\\Users\\Mateus\\Projetos\\outro\\a.txt', { reason: 'outside', which: 'real' }],
+      [`${SITE}\\.ssh\\id_ed25519`, { reason: 'sensitive', which: 'real', kind: 'ssh' }],
+      ['C:\\Users\\Mateus\\AppData\\Local\\Jesus\\data\\vault.bin', { reason: 'jesus', which: 'real' }],
+    ] as const) {
+      expect(checkLinkTarget(target, policy), target).toEqual({ decision: 'deny', denial });
+    }
   });
 
   it('sem a pasta do sistema, as regras dela ficam de fora (o resto continua)', () => {

@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { GatePlacesInput } from './places';
-import { checkRequestedPath, checkResolvedPath, createReadPolicy } from './read-gate';
+import { checkLinkTarget, checkRequestedPath, checkResolvedPath, createReadPolicy } from './read-gate';
 import type { EntryKind, ReadDenial } from './read-gate';
 import { checkReleaseFolder } from './release';
 import type { ReleaseRefusal } from './release';
@@ -74,6 +74,45 @@ describe('coleção de ataques: leitura de arquivos', () => {
     if (verdict.decision !== 'deny') return;
     expect(reasonOf(verdict.denial)).toBe(entry.reason);
     if (entry.which !== undefined) expect('which' in verdict.denial ? verdict.denial.which : undefined).toBe(entry.which);
+  });
+});
+
+interface LinkCase {
+  readonly id: string;
+  readonly target: string;
+  readonly expect: 'allow' | 'deny';
+  readonly reason?: string;
+  readonly note?: string;
+}
+
+interface LinkCorpus {
+  readonly places: GatePlacesInput;
+  readonly released: readonly string[];
+  readonly cases: readonly LinkCase[];
+}
+
+const linkCorpus = JSON.parse(readFileSync(join(corpusDir, 'link-targets.json'), 'utf8')) as LinkCorpus;
+const linkPolicy = createReadPolicy({ released: linkCorpus.released, places: linkCorpus.places });
+
+describe('coleção de ataques: alvos de link', () => {
+  it('nomes únicos e os dois lados', () => {
+    const ids = linkCorpus.cases.map((entry) => entry.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(linkCorpus.cases.filter((entry) => entry.expect === 'allow').length).toBeGreaterThan(2);
+    for (const entry of linkCorpus.cases) if (entry.expect === 'deny') expect(entry.reason, entry.id).toBeDefined();
+  });
+
+  it.each(linkCorpus.cases.map((entry) => [`${entry.id}${entry.note === undefined ? '' : ` (${entry.note})`}`, entry] as const))('%s', (_name, entry) => {
+    const verdict = checkLinkTarget(entry.target, linkPolicy);
+    if (entry.expect === 'allow') {
+      expect(verdict.decision).toBe('allow');
+      return;
+    }
+    expect(verdict.decision).toBe('deny');
+    if (verdict.decision !== 'deny') return;
+    expect(reasonOf(verdict.denial)).toBe(entry.reason);
+    // O alvo de um link é sempre o caminho real.
+    expect('which' in verdict.denial ? verdict.denial.which : undefined).toBe('real');
   });
 });
 

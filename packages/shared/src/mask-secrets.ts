@@ -9,11 +9,14 @@
  *   (`XXXX-XXXX` perto de "código", "device", "GitHub"), código de segurança do cartão;
  * - número de cartão que passa no Luhn (fica só o final: `[cartão •••• 1234]`);
  * - token de alta entropia (24 caracteres ou mais, com letra e dígito, entropia de Shannon de 4 bits por caractere ou
- *   mais).
+ *   mais) e base64 com barra (40 caracteres ou mais: a chave secreta da AWS, o corpo de uma chave PEM sem o cabeçalho).
  * A frase-semente (BIP-39) fica para a memória automática, que precisa das listas de palavras.
  *
  * Idempotente por construção: o texto é mascarado de novo até nenhuma regra achar nada (as marcas já postas são
  * protegidas), então mascarar o resultado não muda nada.
+ *
+ * O custo cresce em linha com o tamanho do texto, mesmo com milhares de achados: o Executor mascara arquivos inteiros
+ * (até alguns MB), e um arquivo cheio de "senhas" não pode prender o processo.
  */
 
 export type SecretKind =
@@ -32,11 +35,28 @@ export type SecretKind =
 export interface MaskResult {
   /** O texto com cada segredo trocado por uma marca (`[segredo removido: …]` ou `[cartão •••• 1234]`). */
   readonly text: string;
-  /** Um item por trecho mascarado, na ordem em que foram achados. Nunca leva o valor. */
+  /** Um item por trecho mascarado, na ordem do texto. Nunca leva o valor. */
   readonly findings: readonly SecretKind[];
   /** Quantos caracteres do texto original foram mascarados. */
   readonly maskedChars: number;
 }
+
+export interface MaskOptions {
+  /** Só estas regras (padrão: todas). */
+  readonly kinds?: readonly SecretKind[];
+  /**
+   * Mantém as quebras de linha de um trecho mascarado (a chave privada de várias linhas vira a marca e as mesmas
+   * quebras), para a numeração das linhas de um arquivo continuar certa.
+   */
+  readonly keepLines?: boolean;
+}
+
+/**
+ * As regras que quase nunca erram, para nomes de arquivo e de pasta: as outras (senha por proximidade, código, cartão,
+ * alta entropia) pegariam nomes comuns, como `Screenshot_2023-10-15-12-34-56-789_com.whatsapp.jpg` ou
+ * `relatorio_final_v2_2023-10-15_revisado_marcos.docx`, e o nome mascarado não abre mais o arquivo.
+ */
+export const HIGH_CONFIDENCE_SECRETS: readonly SecretKind[] = Object.freeze(['private_key', 'jwt', 'api_key', 'connection_string']);
 
 const LABELS: Readonly<Record<Exclude<SecretKind, 'card_pan'>, string>> = {
   private_key: 'chave privada',
@@ -240,39 +260,105 @@ const detectHighEntropy: Detector = (text) => {
   return found;
 };
 
+/**
+ * Base64 com barra, que a regra de cima não pega (a barra a separa, para caminhos e URLs não virarem token): a chave
+ * secreta da AWS (40 caracteres) e as linhas do corpo de uma chave PEM vista sem o cabeçalho (um pedaço do arquivo, um
+ * resultado de busca). Para não pegar caminhos: maiúscula, minúscula e dígito, no máximo uma barra a cada 16
+ * caracteres e entropia de 4,5 bits por caractere ou mais.
+ */
+const detectBase64WithSlash: Detector = (text) => {
+  const found: Candidate[] = [];
+  for (const m of matches(/(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/]{40,}={0,2}(?![A-Za-z0-9+/=_-])/g, text)) {
+    const token = text.slice(m.start, m.end).replace(/=+$/, '');
+    const slashes = token.split('/').length - 1;
+    if (slashes === 0 || slashes * 16 > token.length) continue;
+    if (!/[a-z]/.test(token) || !/[A-Z]/.test(token) || !/\d/.test(token)) continue;
+    if (shannonEntropy(token) >= 4.5) found.push(candidate('high_entropy', m.start, m.end));
+  }
+  return found;
+};
+
+interface Rule {
+  readonly kinds: readonly SecretKind[];
+  readonly detect: Detector;
+}
+
 /** Na ordem de prioridade: num conflito, a regra mais específica fica com o trecho. */
-const DETECTORS: readonly Detector[] = [
-  detectPrivateKeys,
-  detectJwt,
-  detectApiKeys,
-  detectConnectionStrings,
-  detectBearer,
-  detectCards,
-  detectCvv,
-  detectAssignedPasswords,
-  detectNearbyPasswords,
-  detectDeviceCodes,
-  detectOtp,
-  detectHighEntropy,
+const RULES: readonly Rule[] = [
+  { kinds: ['private_key'], detect: detectPrivateKeys },
+  { kinds: ['jwt'], detect: detectJwt },
+  { kinds: ['api_key'], detect: detectApiKeys },
+  { kinds: ['connection_string'], detect: detectConnectionStrings },
+  { kinds: ['bearer'], detect: detectBearer },
+  { kinds: ['card_pan'], detect: detectCards },
+  { kinds: ['cvv'], detect: detectCvv },
+  { kinds: ['password'], detect: detectAssignedPasswords },
+  { kinds: ['password'], detect: detectNearbyPasswords },
+  { kinds: ['device_code'], detect: detectDeviceCodes },
+  { kinds: ['otp'], detect: detectOtp },
+  // Antes da regra de alta entropia: senão ela pegaria só um pedaço entre barras, e o resto sobraria.
+  { kinds: ['high_entropy'], detect: detectBase64WithSlash },
+  { kinds: ['high_entropy'], detect: detectHighEntropy },
 ];
 
-function maskOnce(text: string): { text: string; findings: SecretKind[]; maskedChars: number } {
-  const marks = [...text.matchAll(MARK)].map((m) => [m.index, m.index + m[0].length] as const);
-  const protectedAt = (start: number, end: number) => marks.some(([s, e]) => start < e && s < end);
-  const chosen: Candidate[] = [];
-  for (const detector of DETECTORS) {
-    for (const found of detector(text, protectedAt)) {
-      if (found.end <= found.start || protectedAt(found.start, found.end)) continue;
-      if (chosen.some((other) => found.start < other.end && other.start < found.end)) continue;
-      chosen.push(found);
+type Span = readonly [start: number, end: number];
+
+/** Algum trecho de `sorted` (ordenados e sem sobreposição) cruza `[start, end)`. Busca binária. */
+function overlaps(sorted: readonly Span[], start: number, end: number): boolean {
+  let low = 0;
+  let high = sorted.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if ((sorted[middle]?.[1] ?? 0) <= start) low = middle + 1;
+    else high = middle;
+  }
+  const first = sorted[low];
+  return first !== undefined && first[0] < end;
+}
+
+/** Junta duas listas ordenadas pelo início. */
+function merge(a: readonly Candidate[], b: readonly Candidate[]): Candidate[] {
+  const out: Candidate[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    const left = a[i];
+    const right = b[j];
+    if (right === undefined || (left !== undefined && left.start <= right.start)) {
+      if (left !== undefined) out.push(left);
+      i += 1;
+    } else {
+      out.push(right);
+      j += 1;
     }
   }
-  chosen.sort((a, b) => a.start - b.start);
+  return out;
+}
+
+function maskOnce(text: string, rules: readonly Rule[], keepLines: boolean): { text: string; findings: SecretKind[]; maskedChars: number } {
+  const marks: Span[] = [...text.matchAll(MARK)].map((m) => [m.index, m.index + m[0].length] as const);
+  const protectedAt = (start: number, end: number) => overlaps(marks, start, end);
+  // Os trechos escolhidos, sempre ordenados e sem sobreposição: cada regra só fica com o que as anteriores deixaram.
+  let chosen: Candidate[] = [];
+  for (const rule of rules) {
+    const spans: Span[] = chosen.map((found) => [found.start, found.end] as const);
+    const accepted: Candidate[] = [];
+    let lastEnd = -1;
+    const found = rule.detect(text, protectedAt).sort((a, b) => a.start - b.start);
+    for (const item of found) {
+      if (item.end <= item.start || item.start < lastEnd || protectedAt(item.start, item.end)) continue;
+      if (overlaps(spans, item.start, item.end)) continue;
+      accepted.push(item);
+      lastEnd = item.end;
+    }
+    if (accepted.length > 0) chosen = merge(chosen, accepted);
+  }
   let output = '';
   let cursor = 0;
   let maskedChars = 0;
   for (const found of chosen) {
-    output += text.slice(cursor, found.start) + found.replacement;
+    const breaks = keepLines ? text.slice(found.start, found.end).split('\n').length - 1 : 0;
+    output += text.slice(cursor, found.start) + found.replacement + '\n'.repeat(breaks);
     maskedChars += found.end - found.start;
     cursor = found.end;
   }
@@ -283,12 +369,15 @@ function maskOnce(text: string): { text: string; findings: SecretKind[]; maskedC
 /** Teto de passadas: cada uma só troca texto ainda não mascarado por marcas protegidas, então o laço termina antes. */
 const MAX_PASSES = 16;
 
-export function maskSecrets(text: string): MaskResult {
+export function maskSecrets(text: string, options: MaskOptions = {}): MaskResult {
+  const kinds = options.kinds;
+  const rules = kinds === undefined ? RULES : RULES.filter((rule) => rule.kinds.some((kind) => kinds.includes(kind)));
+  const keepLines = options.keepLines ?? false;
   let current = text;
   const findings: SecretKind[] = [];
   let maskedChars = 0;
   for (let pass = 0; pass < MAX_PASSES; pass++) {
-    const result = maskOnce(current);
+    const result = maskOnce(current, rules, keepLines);
     if (result.findings.length === 0) break;
     current = result.text;
     findings.push(...result.findings);

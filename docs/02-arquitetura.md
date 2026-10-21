@@ -132,6 +132,8 @@ Regras:
 | Interação | `perguntar_usuario`, `notificar` | — | baixo |
 | Agentes | `subagente.iniciar` | depende da tarefa | checado na delegação |
 
+Na fase 1 ([decisão 0026](decisoes/0026-ferramentas-de-leitura-e-pastas-liberadas.md)), só as leituras de arquivo existem, com os nomes da API em inglês e sem ponto (a API não aceita): `file_read`, `file_list` e `file_search`. O catálogo delas (`@jesus/executor/catalog`) segue o contrato da seção 2.4.
+
 ## 2.6 Instruções persistentes: `JESUS.md`
 
 - `~/.jesus/JESUS.md` (global): quem você é, como prefere ser tratado, rotina, preferências de código.

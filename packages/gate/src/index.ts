@@ -3,7 +3,7 @@ export { foldCase, hostPath, hostPlatform, isInside, joinPath, MAX_NAME_CHARS, M
 export type { GatePath, ParsedPath, PathPlatform, PathProblem } from './path';
 export { createPlaces, isJesusPath, JESUS_DEV_DIR } from './places';
 export type { GatePlaces, GatePlacesInput } from './places';
-export { checkRequestedPath, checkResolvedPath, createReadPolicy } from './read-gate';
+export { checkLinkTarget, checkRequestedPath, checkResolvedPath, createReadPolicy } from './read-gate';
 export type { EntryKind, ReadDenial, ReadPolicy, ReadPolicyInput, RequestedVerdict, ResolvedFacts, ResolvedVerdict, Which } from './read-gate';
 export { checkReleaseFolder } from './release';
 export type { ReleaseCheck, ReleaseRefusal } from './release';

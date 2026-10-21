@@ -15,6 +15,8 @@ Rodar: `npm run attack-corpus` (também roda no `npm test` e no CI).
   - `expect`: `allow` ou `deny`; com `deny`, `reason` (`path:<problema>`, `jesus`, `sensitive:<tipo>`, `outside`, `kind` ou `hardlink`) e, se importar, `which` (`requested` ou `real`);
   - `note`: por que o caso existe.
 
+- **`link-targets.json`** — o caminho a que um link leva, conferido antes de o Executor seguir o link ([decisão 0026](../../docs/decisoes/0026-ferramentas-de-leitura-e-pastas-liberadas.md)): o contexto (lugares e pastas liberadas) no topo; cada caso tem `id`, `target` (o alvo do link junto com o resto do caminho pedido), `expect` e, com `deny`, `reason` (como em `read-paths.json`; a negação é sempre pelo caminho real).
+
 - **`release-folders.json`** — que pastas o dono pode liberar ([decisão 0026](../../docs/decisoes/0026-ferramentas-de-leitura-e-pastas-liberadas.md)): o contexto (pasta do usuário, pastas pessoais, do sistema e do Jesus) no topo; cada caso tem `id`, `folder` (o caminho real escolhido no diálogo), `expect` e, com `deny`, `reason` (`path:<problema>`, `root`, `too_broad`, `personal`, `system`, `app_data`, `jesus` ou `sensitive:<tipo>`).
 
 Os caminhos usam `\\` (barra invertida escapada no JSON). Caracteres invisíveis entram como `\uXXXX`, nunca colados.

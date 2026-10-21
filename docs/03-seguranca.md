@@ -267,6 +267,11 @@ Uma negação em qualquer nível vence uma liberação em qualquer outro (igual 
 - **Primeira leitura fora** das pastas liberadas → pergunta (igual ao Claude Code).
 - Leituras nas suas contas (listar eventos, listar e-mails) → executa, mas **ler o conteúdo de e-mails e páginas marca a tarefa como contaminada**.
 - **Na fase 1 ([decisão 0021](decisoes/0021-porteiro-minimo-para-leituras.md)):** só a leitura de arquivos existe, e o Porteiro é mínimo e determinístico (`packages/gate`). Ele confere duas vezes: o caminho pedido, só pelo texto, antes de o Executor abrir qualquer coisa (um caminho de rede nem é aberto); e o caminho real, o tipo e o número de nomes do arquivo, depois de aberto. Pasta do Jesus, leitura sensível (seção 3.4.3) e fora das pastas liberadas negam, pelo caminho pedido ou pelo real; hardlink nega. A primeira leitura fora das pastas liberadas também nega (a pergunta chega com os cartões de confirmação).
+- **As ferramentas de leitura ([decisão 0026](decisoes/0026-ferramentas-de-leitura-e-pastas-liberadas.md)):** `file_read`, `file_list` e `file_search`, no Executor (`packages/executor`).
+  - **Links:** antes de abrir, o Executor resolve os links nome a nome, sem deixar o sistema segui-los, e o Porteiro confere o alvo de cada um antes de ele ser tocado. Um link plantado para `\\servidor\pasta` (que no Windows mandaria a credencial do usuário ao servidor) nem é aberto.
+  - **Depois de abrir:** confere que o arquivo aberto é o conferido (`dev` e `ino`, também depois do `realpath` nativo).
+  - **Busca:** só literal; não segue links e para em cortes de níveis, itens, arquivos, bytes, resultados e tempo.
+  - **Liberar pasta:** só pelo diálogo nativo, com confirmação gerada por código. As pastas pessoais inteiras (Documentos, Downloads, Área de Trabalho, Imagens, Vídeos, Música) são recusadas; as subpastas delas podem.
 
 ### 3.4.5 Camada 3 — Classificador de risco
 
@@ -437,8 +442,12 @@ O Jesus **nunca** faz o que está abaixo, mesmo que você peça, mesmo com todos
   - chaves `sk-…`/`sk-ant-…`, `ghp_…`/`ghs_…`/`github_pat_…`, `AIza…`/`GOCSPX-…`, `xox…`, AWS, Stripe, npm e outras com prefixo;
   - `Bearer`, JWTs e chaves privadas (`-----BEGIN … PRIVATE KEY-----`);
   - senha em string de conexão, senha por atribuição ou por proximidade de palavra-chave, códigos de verificação e de login, código de segurança e número de cartão (fica o final);
-  - tokens de alta entropia.
-  - É idempotente (mascarar de novo não muda nada). O logger também tira campos com nome de segredo (`password`, `token`, `cookie`…) inteiros.
+  - tokens de alta entropia e base64 com barra (a chave secreta da AWS, o corpo de uma chave PEM visto sem o cabeçalho).
+  - É idempotente (mascarar de novo não muda nada), e o custo cresce em linha com o texto, mesmo com milhares de achados.
+  - **Arquivos lidos ([decisão 0026](decisoes/0026-ferramentas-de-leitura-e-pastas-liberadas.md)):**
+    - **leitura:** o Executor mascara o texto lido inteiro antes de mostrar qualquer pedaço, mantendo as quebras de linha;
+    - **busca:** compara com o texto já mascarado, para não virar oráculo do segredo;
+    - **nomes de arquivo:** passam só pelas regras de alta confiança (as heurísticas estragariam nomes comuns, e o nome mascarado não abre mais o arquivo). O logger também tira campos com nome de segredo (`password`, `token`, `cookie`…) inteiros.
   - Na conversa ([decisão 0024](decisoes/0024-laco-da-conversa-no-cerebro.md)), a pergunta do dono é mascarada uma vez, ao entrar no histórico, e já sai mascarada para o modelo. O histórico fica só na memória do Cérebro e guarda só o texto das trocas, sem o raciocínio cifrado.
   - Se encontrar um segredo num parâmetro de ação com destino externo → **bloqueio**.
 - **Sua senha:** o Jesus nunca pede, guarda ou digita. O login é sempre você, na página oficial (OAuth).
@@ -652,7 +661,7 @@ Na interface, aparece como uma linha do tempo, que pode ser exportada.
 ## 3.17 Testes de segurança
 
 - **Testes unitários** para cada regra fixa e para a normalização (caminhos do Windows, comandos compostos, ofuscação).
-- **Coleção de ataques** (`security/attack-corpus`, `npm run attack-corpus`; roda também no `npm test` e no CI) que cresce sempre. Começou com a leitura de arquivos (73 casos: caminhos ambíguos do Windows, links e junções para fora, segredos, pastas do Jesus, hardlinks); depois:
+- **Coleção de ataques** (`security/attack-corpus`, `npm run attack-corpus`; roda também no `npm test` e no CI) que cresce sempre. Começou com a leitura de arquivos (73 casos: caminhos ambíguos do Windows, links e junções para fora, segredos, pastas do Jesus, hardlinks), as pastas que o dono pode liberar e os alvos de link (25 casos: rede por SMB e WebDAV, dispositivos, fora, sensível, Jesus); depois:
   - e-mails, páginas, PDFs, issues, convites de agenda, nomes de arquivo e transcrições com injeções;
   - cenários de vazamento de dados;
   - pedidos ambíguos que tentam deixar o agente "afobado".

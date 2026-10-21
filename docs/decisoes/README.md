@@ -29,6 +29,7 @@ Cada decisão importante do projeto fica num arquivo próprio, curto, com contex
 | [0023](0023-cerebro-e-saida-para-a-api.md) | Cérebro num utilityProcess e saída para a API pelo processo principal | aceita |
 | [0024](0024-laco-da-conversa-no-cerebro.md) | Laço da conversa no Cérebro: conversa só na memória, histórico sem raciocínio e limite pelo orçamento | aceita |
 | [0025](0025-tela-de-conversa.md) | Tela de conversa: texto puro, turno por rota com conferência de origem e parada ao bloquear | aceita |
+| [0026](0026-ferramentas-de-leitura-e-pastas-liberadas.md) | Ferramentas de leitura (`file_read`, `file_list`, `file_search`) e pastas liberadas: links conferidos antes de seguidos, busca literal no texto já mascarado e pastas pessoais só por subpasta | aceita |
 
 ## Modelo
 

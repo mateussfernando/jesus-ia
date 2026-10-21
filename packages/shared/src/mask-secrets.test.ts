@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskSecrets } from './mask-secrets';
+import { HIGH_CONFIDENCE_SECRETS, maskSecrets } from './mask-secrets';
 import type { SecretKind } from './mask-secrets';
 
 /**
@@ -161,5 +161,84 @@ describe('mascaramento de segredos', () => {
     const started = performance.now();
     maskSecrets(big);
     expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  it('milhares de achados não deixam o custo quadrático (arquivo de 2 MB cheio de "senhas")', () => {
+    const paragraph = 'A senha do Wi-Fi é Abc123!xyz e o código 123456 chegou por SMS. Linha comum, sem nada.\n';
+    const big = paragraph.repeat(Math.ceil(2_000_000 / paragraph.length));
+    const started = performance.now();
+    const result = maskSecrets(big);
+    expect(performance.now() - started).toBeLessThan(5_000);
+    expect(result.text).not.toContain('Abc123!xyz');
+    expect(result.text).not.toContain('123456');
+    expect(result.findings.length).toBeGreaterThan(40_000);
+  });
+});
+
+describe('base64 com barra', () => {
+  // A chave secreta de exemplo da documentação da AWS, montada por partes.
+  const AWS_SECRET = join('wJalrXUtnFEMI', '/K7MDENG/', 'bPxRfiCYEXAMPLEKEY');
+  const PEM_LINE = join('MIIEowIBAAKCAQEAt7cP3c', '/9V2g8Zt1bEqkR4mXyL', '+u0Hn5Wq2Jd7Kf8LmZp3RsTv6Yb1Ce4Gh9IjNo0Q');
+
+  it('a chave secreta da AWS sai, mesmo sem palavra-chave por perto', () => {
+    const result = maskSecrets(`AWS_SECRET_ACCESS_KEY: ${AWS_SECRET}`);
+    expect(result.text).not.toContain('bPxRfiCY');
+    expect(result.findings).toContain('high_entropy');
+  });
+
+  it('uma linha do corpo de uma chave PEM, vista sem o cabeçalho, sai inteira', () => {
+    const result = maskSecrets(`${PEM_LINE}\n${PEM_LINE}\n`);
+    expect(result.text).toBe('[segredo removido: token]\n[segredo removido: token]\n');
+  });
+
+  it('caminhos e URLs com barra ficam', () => {
+    for (const text of [
+      'veja src/components/Button/index.tsx e /home/mateus/Projetos/jesus/apps/desktop/src/main',
+      'com/example/projectname/SomeLongClassName2023/Impl',
+      '/api/v1/users/12345/orders/67890/items/1/details/2023',
+      'https://github.com/mateussfernando/jesus-ia/blob/main/apps/desktop/src/main/ui-server.ts',
+      '/Users/Mateus/Projetos2023/Relatorios/Q3/Final2/Resumo',
+    ]) {
+      expect(maskSecrets(text), text).toEqual({ text, findings: [], maskedChars: 0 });
+    }
+  });
+});
+
+describe('opções', () => {
+  const PEM = join('-----BEGIN ', 'PRIVATE KEY-----\nlinha1\nlinha2\nlinha3\n-----END ', 'PRIVATE KEY-----');
+
+  it('keepLines: a chave de várias linhas vira a marca com as mesmas quebras', () => {
+    const text = `antes\n${PEM}\ndepois`;
+    const kept = maskSecrets(text, { keepLines: true });
+    expect(kept.text).toBe('antes\n[segredo removido: chave privada]\n\n\n\n\ndepois');
+    expect(kept.text.split('\n')).toHaveLength(text.split('\n').length);
+    expect(maskSecrets(text).text).toBe('antes\n[segredo removido: chave privada]\ndepois');
+    // Idempotente também assim.
+    expect(maskSecrets(kept.text, { keepLines: true })).toEqual({ text: kept.text, findings: [], maskedChars: 0 });
+  });
+
+  it('kinds: só as regras pedidas', () => {
+    const text = 'a senha do Wi-Fi é Abc123!xyz';
+    expect(maskSecrets(text, { kinds: ['api_key'] }).findings).toEqual([]);
+    expect(maskSecrets(text, { kinds: ['password'] }).findings).toEqual(['password']);
+  });
+
+  it('nomes de arquivo comuns passam pelas regras de alta confiança sem mudar', () => {
+    for (const name of [
+      'Screenshot_2023-10-15-12-34-56-789_com.whatsapp.jpg',
+      'relatorio_final_v2_2023-10-15_revisado_marcos.docx',
+      'VID_20231015_123456789_HDR_Pro_Edition4K.mp4',
+      'Comprovante_Pix_E00000000202310151234abcdEFGH567.pdf',
+      'senha do banco 1234.txt',
+      'Basic Electrical-Engineering.pdf',
+      'Código 2023 relatório.pdf',
+    ]) {
+      expect(maskSecrets(name, { kinds: HIGH_CONFIDENCE_SECRETS }), name).toEqual({ text: name, findings: [], maskedChars: 0 });
+    }
+  });
+
+  it('e uma chave de API no nome sai', () => {
+    const name = `${join('sk-', 'ant-', 'api03-', RANDOM)}.txt`;
+    expect(maskSecrets(name, { kinds: HIGH_CONFIDENCE_SECRETS }).text).toBe('[segredo removido: chave de API].txt');
   });
 });

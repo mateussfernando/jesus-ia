@@ -86,6 +86,19 @@ export function checkRequestedPath(requested: string, policy: ReadPolicy): Reque
   return denial === null ? { decision: 'allow', path: parsed.path } : { decision: 'deny', denial };
 }
 
+/**
+ * O caminho a que um link leva (o alvo do link junto com o resto do caminho pedido), conferido pelo texto antes de o
+ * Executor seguir o link: as mesmas regras, como caminho real. Assim, um link para a rede (`\\servidor\pasta`, que no
+ * Windows mandaria a credencial do usuário ao servidor), para um dispositivo ou para fora das pastas liberadas nem chega
+ * a ser aberto.
+ */
+export function checkLinkTarget(target: string, policy: ReadPolicy): RequestedVerdict {
+  const parsed = parsePath(target, policy.platform);
+  if (!parsed.ok) return { decision: 'deny', denial: { reason: 'path', which: 'real', problem: parsed.problem } };
+  const denial = classify(parsed.path, 'real', policy);
+  return denial === null ? { decision: 'allow', path: parsed.path } : { decision: 'deny', denial };
+}
+
 export function checkResolvedPath(
   requested: GatePath,
   facts: ResolvedFacts,
