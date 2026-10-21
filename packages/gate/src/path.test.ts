@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { foldCase, isInside, joinPath, MAX_NAME_CHARS, MAX_PATH_CHARS, parseWindowsPath, windowsPath } from './windows-path';
-import type { PathProblem } from './windows-path';
+import { foldCase, hostPath, hostPlatform, isInside, joinPath, MAX_NAME_CHARS, MAX_PATH_CHARS, parentPath, parsePath, parsePosixPath, parseWindowsPath, windowsPath } from './path';
+import type { PathProblem } from './path';
 
 function problem(input: string): PathProblem | 'ok' {
   const parsed = parseWindowsPath(input);
@@ -102,5 +102,50 @@ describe('caminhos do Windows pelo texto', () => {
     expect(joinPath(windowsPath('C:\\Users\\Mateus'), 'AppData', 'Local').text).toBe('C:\\Users\\Mateus\\AppData\\Local');
     expect(() => joinPath(windowsPath('C:\\Users'), 'a:b')).toThrow();
     expect(() => windowsPath('relativo')).toThrow();
+  });
+});
+
+describe('caminhos POSIX (só testes e desenvolvimento no Linux)', () => {
+  const posix = (input: string) => {
+    const parsed = parsePosixPath(input);
+    return parsed.ok ? parsed.path.text : parsed.problem;
+  };
+
+  it('só absoluto; normaliza ., .. e barras repetidas, sem passar da raiz', () => {
+    expect(posix('/home/mateus/./projetos//site/../site/index.html')).toBe('/home/mateus/projetos/site/index.html');
+    expect(posix('/../../etc')).toBe('/etc');
+    expect(posix('/')).toBe('/');
+    for (const input of ['home/mateus', './a', '~/a', 'C:\\Users\\a']) expect(posix(input), input).toBe('not_absolute');
+  });
+
+  it('recusa barra invertida, controle, formatação invisível e surrogate solto', () => {
+    expect(posix('/home/mateus/a\\b')).toBe('invalid_char');
+    expect(posix('/home/mateus/a\u0000b')).toBe('control_char');
+    expect(posix('/home/mateus/fdp.\u202Etxt')).toBe('control_char');
+    expect(posix('/home/mateus/a\uD800')).toBe('invalid_char');
+  });
+
+  it('o resto vale no Linux: dois-pontos, ponto no fim e nomes do Windows', () => {
+    for (const name of ['a:b', 'a.txt.', 'CON', 'PROGRA~1', 'a*b']) expect(posix(`/home/mateus/${name}`), name).toBe(`/home/mateus/${name}`);
+  });
+
+  it('compara diferenciando maiúsculas, como o Linux; as regras de nomes usam a caixa dobrada', () => {
+    const site = hostPath('/home/mateus/Site', 'posix');
+    expect(isInside(hostPath('/home/mateus/Site/a.txt', 'posix'), site)).toBe(true);
+    expect(isInside(hostPath('/home/mateus/site/a.txt', 'posix'), site)).toBe(false);
+    expect(hostPath('/home/mateus/.SSH', 'posix').upper).toEqual(['/', 'HOME', 'MATEUS', '.SSH']);
+    // Caminhos de plataformas diferentes nunca se contêm.
+    expect(isInside(hostPath('/a', 'posix'), windowsPath('C:\\a'))).toBe(false);
+  });
+
+  it('parsePath, joinPath e parentPath seguem a plataforma do caminho', () => {
+    expect(parsePath('/a/b', 'posix').ok).toBe(true);
+    expect(parsePath('/a/b', 'win32')).toEqual({ ok: false, problem: 'not_absolute' });
+    expect(joinPath(hostPath('/', 'posix'), 'home', 'mateus').text).toBe('/home/mateus');
+    expect(parentPath(hostPath('/home/mateus', 'posix'))?.text).toBe('/home');
+    expect(parentPath(windowsPath('C:\\Users'))?.text).toBe('C:\\');
+    expect(parentPath(windowsPath('C:\\'))).toBeNull();
+    expect(hostPlatform('win32')).toBe('win32');
+    expect(hostPlatform('linux')).toBe('posix');
   });
 });

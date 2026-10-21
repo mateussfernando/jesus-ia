@@ -1,9 +1,11 @@
-export { describeDenial } from './describe';
+export { describeDenial, describeRelease } from './describe';
+export { foldCase, hostPath, hostPlatform, isInside, joinPath, MAX_NAME_CHARS, MAX_PATH_CHARS, parentPath, parsePath, parsePosixPath, parseWindowsPath, windowsPath } from './path';
+export type { GatePath, ParsedPath, PathPlatform, PathProblem } from './path';
 export { createPlaces, isJesusPath, JESUS_DEV_DIR } from './places';
 export type { GatePlaces, GatePlacesInput } from './places';
 export { checkRequestedPath, checkResolvedPath, createReadPolicy } from './read-gate';
-export type { EntryKind, ReadDenial, ReadPolicy, RequestedVerdict, ResolvedFacts, ResolvedVerdict, Which } from './read-gate';
+export type { EntryKind, ReadDenial, ReadPolicy, ReadPolicyInput, RequestedVerdict, ResolvedFacts, ResolvedVerdict, Which } from './read-gate';
+export { checkReleaseFolder } from './release';
+export type { ReleaseCheck, ReleaseRefusal } from './release';
 export { sensitiveKind } from './sensitive';
 export type { SensitiveKind } from './sensitive';
-export { foldCase, isInside, joinPath, MAX_NAME_CHARS, MAX_PATH_CHARS, parseWindowsPath, windowsPath } from './windows-path';
-export type { ParsedPath, PathProblem, WindowsPath } from './windows-path';

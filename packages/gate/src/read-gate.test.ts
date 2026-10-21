@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { describeDenial } from './describe';
+import { describeDenial, describeRelease } from './describe';
 import { createPlaces } from './places';
 import { checkRequestedPath, checkResolvedPath, createReadPolicy } from './read-gate';
 import type { ReadDenial } from './read-gate';
+import { checkReleaseFolder } from './release';
+import type { ReleaseRefusal } from './release';
 import { sensitiveKind } from './sensitive';
 import type { SensitiveKind } from './sensitive';
-import { windowsPath } from './windows-path';
-import type { PathProblem } from './windows-path';
+import { windowsPath } from './path';
+import type { PathProblem } from './path';
 
 const PLACES = {
   home: 'C:\\Users\\Mateus',
@@ -112,5 +114,73 @@ describe('a negação em texto', () => {
     // Os de caminho inválido dizem o mesmo para o pedido e o real; o resto é diferente entre si.
     expect(new Set(texts).size).toBe(texts.length - problems.length);
     expect(describeDenial({ reason: 'outside', which: 'real' })).toContain('link');
+  });
+});
+
+describe('Porteiro com caminhos POSIX (testes e desenvolvimento no Linux)', () => {
+  const policy = createReadPolicy({
+    platform: 'posix',
+    released: ['/home/mateus/projetos/site'],
+    places: { home: '/home/mateus', localAppData: '/home/mateus/.config', roamingAppData: '/home/mateus/.config', jesus: ['/tmp/jesus-e2e/data'] },
+  });
+
+  it('libera dentro da pasta liberada e nega fora, a pasta do Jesus e o sensível', () => {
+    expect(checkRequestedPath('/home/mateus/projetos/site/index.html', policy).decision).toBe('allow');
+    expect(checkRequestedPath('/home/mateus/projetos/Site/index.html', policy)).toEqual({ decision: 'deny', denial: { reason: 'outside', which: 'requested' } });
+    expect(checkRequestedPath('/home/mateus/.config/Jesus/data/vault.json', policy)).toMatchObject({ decision: 'deny', denial: { reason: 'jesus' } });
+    expect(checkRequestedPath('/tmp/jesus-e2e/data/audit.jsonl', policy)).toMatchObject({ decision: 'deny', denial: { reason: 'jesus' } });
+    expect(checkRequestedPath('/home/mateus/projetos/site/.env', policy)).toMatchObject({ decision: 'deny', denial: { reason: 'sensitive', kind: 'env_file' } });
+    expect(checkRequestedPath('/home/mateus/projetos/site/.SSH/config', policy)).toMatchObject({ decision: 'deny', denial: { reason: 'sensitive', kind: 'ssh' } });
+    expect(checkRequestedPath('C:\\Users\\mateus\\a.txt', policy)).toMatchObject({ decision: 'deny', denial: { reason: 'path', problem: 'not_absolute' } });
+  });
+
+  it('o caminho real também vale no POSIX (link para fora)', () => {
+    const first = checkRequestedPath('/home/mateus/projetos/site/link', policy);
+    if (first.decision !== 'allow') throw new Error('era para passar');
+    expect(checkResolvedPath(first.path, { real: '/home/mateus/.mozilla/firefox/x/logins.json', kind: 'file', links: 1 }, 'file', policy)).toMatchObject({
+      decision: 'deny',
+      denial: { reason: 'sensitive', kind: 'browser', which: 'real' },
+    });
+  });
+
+  it('liberar pasta no POSIX segue as mesmas regras', () => {
+    const release = createReadPolicy({
+      platform: 'posix',
+      released: [],
+      places: { home: '/home/mateus', localAppData: '/home/mateus/.config', roamingAppData: '/home/mateus/.config', personal: ['/home/mateus/Documentos'], system: ['/etc', '/usr'] },
+    });
+    expect(checkReleaseFolder('/home/mateus/projetos', release).ok).toBe(true);
+    expect(checkReleaseFolder('/home/mateus/Documentos/escola', release).ok).toBe(true);
+    for (const [folder, reason] of [
+      ['/', 'root'],
+      ['/home', 'too_broad'],
+      ['/home/mateus', 'too_broad'],
+      ['/home/mateus/Documentos', 'personal'],
+      ['/home/mateus/.config/algum', 'app_data'],
+      ['/home/mateus/.config/Jesus', 'jesus'],
+      ['/etc/ssl', 'system'],
+      ['/usr', 'system'],
+    ] as const) {
+      const check = checkReleaseFolder(folder, release);
+      expect(check.ok ? 'ok' : check.refusal.reason, folder).toBe(reason);
+    }
+  });
+});
+
+describe('o motivo de não liberar a pasta, em texto', () => {
+  it('cada motivo tem um texto próprio', () => {
+    const refusals: ReleaseRefusal[] = [
+      { reason: 'path', problem: 'unc' },
+      { reason: 'root' },
+      { reason: 'jesus' },
+      { reason: 'sensitive', kind: 'ssh' },
+      { reason: 'too_broad' },
+      { reason: 'personal' },
+      { reason: 'system' },
+      { reason: 'app_data' },
+    ];
+    const texts = refusals.map(describeRelease);
+    expect(new Set(texts).size).toBe(texts.length);
+    for (const text of texts) expect(text.length).toBeGreaterThan(20);
   });
 });

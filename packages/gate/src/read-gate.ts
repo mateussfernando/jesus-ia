@@ -1,9 +1,9 @@
+import { hostPath, isInside, parsePath } from './path';
+import type { GatePath, PathPlatform, PathProblem } from './path';
 import { createPlaces, isJesusPath } from './places';
 import type { GatePlaces, GatePlacesInput } from './places';
 import { sensitiveKind } from './sensitive';
 import type { SensitiveKind } from './sensitive';
-import { isInside, parseWindowsPath, windowsPath } from './windows-path';
-import type { PathProblem, WindowsPath } from './windows-path';
 
 /**
  * Porteiro da leitura de arquivos na fase 1 (decisão 0021; seções 3.4.2 a 3.4.4). Determinístico e sem disco, em duas
@@ -32,11 +32,11 @@ export type ReadDenial =
   | { readonly reason: 'hardlink'; readonly links: number };
 
 export type RequestedVerdict =
-  | { readonly decision: 'allow'; readonly path: WindowsPath }
+  | { readonly decision: 'allow'; readonly path: GatePath }
   | { readonly decision: 'deny'; readonly denial: ReadDenial };
 
 export type ResolvedVerdict =
-  | { readonly decision: 'allow'; readonly path: WindowsPath; readonly real: WindowsPath }
+  | { readonly decision: 'allow'; readonly path: GatePath; readonly real: GatePath }
   | { readonly decision: 'deny'; readonly denial: ReadDenial };
 
 /** O que o Executor viu no disco depois de abrir o caminho pedido. */
@@ -49,16 +49,29 @@ export interface ResolvedFacts {
 }
 
 export interface ReadPolicy {
+  readonly platform: PathPlatform;
   /** Pastas liberadas pelo dono, já resolvidas (caminho real). */
-  readonly released: readonly WindowsPath[];
+  readonly released: readonly GatePath[];
   readonly places: GatePlaces;
 }
 
-export function createReadPolicy(input: { readonly released: readonly string[]; readonly places: GatePlacesInput }): ReadPolicy {
-  return { released: Object.freeze(input.released.map(windowsPath)), places: createPlaces(input.places) };
+export interface ReadPolicyInput {
+  readonly released: readonly string[];
+  readonly places: GatePlacesInput;
+  /** Windows (o produto) ou POSIX (testes e desenvolvimento no Linux). */
+  readonly platform?: PathPlatform;
 }
 
-function classify(path: WindowsPath, which: Which, policy: ReadPolicy): ReadDenial | null {
+export function createReadPolicy(input: ReadPolicyInput): ReadPolicy {
+  const platform = input.platform ?? 'win32';
+  return {
+    platform,
+    released: Object.freeze(input.released.map((text) => hostPath(text, platform))),
+    places: createPlaces(input.places, platform),
+  };
+}
+
+function classify(path: GatePath, which: Which, policy: ReadPolicy): ReadDenial | null {
   if (isJesusPath(path, policy.places)) return { reason: 'jesus', which };
   const kind = sensitiveKind(path, policy.places);
   if (kind !== null) return { reason: 'sensitive', which, kind };
@@ -67,14 +80,14 @@ function classify(path: WindowsPath, which: Which, policy: ReadPolicy): ReadDeni
 }
 
 export function checkRequestedPath(requested: string, policy: ReadPolicy): RequestedVerdict {
-  const parsed = parseWindowsPath(requested);
+  const parsed = parsePath(requested, policy.platform);
   if (!parsed.ok) return { decision: 'deny', denial: { reason: 'path', which: 'requested', problem: parsed.problem } };
   const denial = classify(parsed.path, 'requested', policy);
   return denial === null ? { decision: 'allow', path: parsed.path } : { decision: 'deny', denial };
 }
 
 export function checkResolvedPath(
-  requested: WindowsPath,
+  requested: GatePath,
   facts: ResolvedFacts,
   expected: 'file' | 'directory',
   policy: ReadPolicy,
@@ -82,7 +95,7 @@ export function checkResolvedPath(
   // O pedido de novo: a política pode ter mudado entre as duas conferências (uma pasta deixou de ser liberada).
   const again = classify(requested, 'requested', policy);
   if (again !== null) return { decision: 'deny', denial: again };
-  const parsed = parseWindowsPath(facts.real);
+  const parsed = parsePath(facts.real, policy.platform);
   if (!parsed.ok) return { decision: 'deny', denial: { reason: 'path', which: 'real', problem: parsed.problem } };
   const denial = classify(parsed.path, 'real', policy);
   if (denial !== null) return { decision: 'deny', denial };

@@ -1,6 +1,6 @@
+import { foldCase } from './path';
+import type { GatePath } from './path';
 import type { GatePlaces } from './places';
-import { foldCase } from './windows-path';
-import type { WindowsPath } from './windows-path';
 
 /**
  * Leitura sensível, negada por padrão (seção 3.4.3), mesmo dentro de uma pasta liberada: chaves, credenciais, perfis
@@ -117,18 +117,32 @@ const UNDER: readonly (readonly [Base, Folded, SensitiveKind])[] = (
   ] as const
 ).map(([base, names, kind]) => [base, fold(names), kind] as const);
 
+/** Os mesmos segredos onde o Linux os guarda (só para os testes e o desenvolvimento; o produto é para Windows). */
+const UNDER_POSIX: readonly (readonly [Base, Folded, SensitiveKind])[] = (
+  [
+    ['home', ['.mozilla'], 'browser'],
+    ['home', ['.thunderbird'], 'browser'],
+    ['home', ['.config', 'google-chrome'], 'browser'],
+    ['home', ['.config', 'chromium'], 'browser'],
+    ['home', ['.config', 'BraveSoftware'], 'browser'],
+    ['home', ['.local', 'share', 'keyrings'], 'password_manager'],
+  ] as const
+).map(([base, names, kind]) => [base, fold(names), kind] as const);
+
 /** Registro do usuário (`NTUSER.DAT` e os arquivos dele), na raiz da pasta do usuário. */
 const USER_HIVE = /^ntuser\./i;
 
-function startsWith(path: WindowsPath, base: WindowsPath, names: Folded): boolean {
-  const prefix = [...base.folded, ...names];
-  if (path.folded.length < prefix.length) return false;
-  return prefix.every((name, index) => path.folded[index] === name);
+/** O caminho começa pela pasta `base` mais `names`, sem diferenciar maiúsculas (os segredos valem em qualquer caixa). */
+function startsWith(path: GatePath, base: GatePath, names: Folded): boolean {
+  if (path.platform !== base.platform) return false;
+  const prefix = [...base.upper, ...names];
+  if (path.upper.length < prefix.length) return false;
+  return prefix.every((name, index) => path.upper[index] === name);
 }
 
 /** O tipo de segredo que o caminho é (ou guarda), ou `null`. */
-export function sensitiveKind(path: WindowsPath, places: GatePlaces): SensitiveKind | null {
-  for (const name of path.folded.slice(1)) {
+export function sensitiveKind(path: GatePath, places: GatePlaces): SensitiveKind | null {
+  for (const name of path.upper.slice(1)) {
     const kind = DIRECTORIES_ANYWHERE.get(name);
     if (kind !== undefined) return kind;
   }
@@ -138,11 +152,11 @@ export function sensitiveKind(path: WindowsPath, places: GatePlaces): SensitiveK
     if (kind !== undefined) return kind;
     for (const [pattern, patternKind] of FILE_PATTERNS) if (pattern.test(last)) return patternKind;
   }
-  for (const [base, names, kind] of UNDER) {
+  for (const [base, names, kind] of path.platform === 'win32' ? UNDER : [...UNDER, ...UNDER_POSIX]) {
     const place = places[base];
     if (place !== null && startsWith(path, place, names)) return kind;
   }
-  if (last !== undefined && path.folded.length === places.home.folded.length + 1 && startsWith(path, places.home, []) && USER_HIVE.test(last)) {
+  if (last !== undefined && path.upper.length === places.home.upper.length + 1 && startsWith(path, places.home, []) && USER_HIVE.test(last)) {
     return 'windows';
   }
   return null;

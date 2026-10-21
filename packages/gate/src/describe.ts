@@ -1,6 +1,7 @@
+import type { PathProblem } from './path';
 import type { ReadDenial } from './read-gate';
+import type { ReleaseRefusal } from './release';
 import type { SensitiveKind } from './sensitive';
-import type { PathProblem } from './windows-path';
 
 /**
  * A negação em texto, para o modelo e para a tela (seção 3.4.1: a negação volta ao Cérebro, que procura um caminho
@@ -11,7 +12,7 @@ const PATH_TEXT: Readonly<Record<PathProblem, string>> = {
   empty: 'o caminho veio vazio',
   too_long: 'o caminho (ou um nome nele) é longo demais',
   control_char: 'o caminho tem caracteres invisíveis ou de controle',
-  invalid_char: 'o caminho tem caracteres que o Windows não aceita em nomes',
+  invalid_char: 'o caminho tem caracteres que não valem em nomes',
   not_absolute: 'o caminho precisa ser absoluto, com a letra da unidade (C:\\…)',
   unc: 'caminhos de rede (\\\\servidor\\pasta) não são lidos',
   device_namespace: 'caminhos com \\\\?\\ ou \\\\.\\ (dispositivos) não são lidos',
@@ -53,5 +54,27 @@ export function describeDenial(denial: ReadDenial): string {
       return denial.expected === 'file' ? 'Leitura negada: isso é uma pasta, não um arquivo.' : 'Leitura negada: isso é um arquivo, não uma pasta.';
     case 'hardlink':
       return 'Leitura negada: o arquivo tem mais de um nome (hardlink), e o mesmo conteúdo pode estar fora das pastas liberadas.';
+  }
+}
+
+/** Por que a pasta escolhida não pode ser liberada, em texto para a tela (o caminho a tela já mostra). */
+export function describeRelease(refusal: ReleaseRefusal): string {
+  switch (refusal.reason) {
+    case 'path':
+      return `Essa pasta não pode ser liberada: ${PATH_TEXT[refusal.problem]}.`;
+    case 'root':
+      return 'A unidade inteira não pode ser liberada. Escolha uma pasta dentro dela.';
+    case 'jesus':
+      return 'As pastas do próprio Jesus não podem ser liberadas.';
+    case 'sensitive':
+      return `Essa pasta guarda ${SENSITIVE_TEXT[refusal.kind]} e não pode ser liberada.`;
+    case 'too_broad':
+      return 'A sua pasta de usuário inteira não pode ser liberada. Escolha uma pasta dentro dela.';
+    case 'personal':
+      return 'Documentos, Downloads, Área de Trabalho, Imagens, Vídeos e Música não podem ser liberados inteiros. Escolha uma pasta dentro deles.';
+    case 'system':
+      return 'Pastas do sistema e de programas instalados não podem ser liberadas.';
+    case 'app_data':
+      return 'As pastas de dados dos programas (AppData) não podem ser liberadas: guardam senhas, sessões e configurações.';
   }
 }

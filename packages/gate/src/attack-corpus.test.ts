@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import type { GatePlacesInput } from './places';
 import { checkRequestedPath, checkResolvedPath, createReadPolicy } from './read-gate';
 import type { EntryKind, ReadDenial } from './read-gate';
+import { checkReleaseFolder } from './release';
+import type { ReleaseRefusal } from './release';
 
 /**
  * A coleção de ataques da leitura (`security/attack-corpus/read-paths.json`), rodada inteira a cada mudança no Porteiro
@@ -31,8 +33,8 @@ interface Corpus {
   readonly cases: readonly CorpusCase[];
 }
 
-const corpusPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'security', 'attack-corpus', 'read-paths.json');
-const corpus = JSON.parse(readFileSync(corpusPath, 'utf8')) as Corpus;
+const corpusDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'security', 'attack-corpus');
+const corpus = JSON.parse(readFileSync(join(corpusDir, 'read-paths.json'), 'utf8')) as Corpus;
 const policy = createReadPolicy({ released: corpus.released, places: corpus.places });
 
 function reasonOf(denial: ReadDenial): string {
@@ -72,5 +74,46 @@ describe('coleção de ataques: leitura de arquivos', () => {
     if (verdict.decision !== 'deny') return;
     expect(reasonOf(verdict.denial)).toBe(entry.reason);
     if (entry.which !== undefined) expect('which' in verdict.denial ? verdict.denial.which : undefined).toBe(entry.which);
+  });
+});
+
+interface ReleaseCase {
+  readonly id: string;
+  readonly folder: string;
+  readonly expect: 'allow' | 'deny';
+  readonly reason?: string;
+  readonly note?: string;
+}
+
+interface ReleaseCorpus {
+  readonly places: GatePlacesInput;
+  readonly cases: readonly ReleaseCase[];
+}
+
+const releaseCorpus = JSON.parse(readFileSync(join(corpusDir, 'release-folders.json'), 'utf8')) as ReleaseCorpus;
+const releasePolicy = createReadPolicy({ released: [], places: releaseCorpus.places });
+
+function refusalOf(refusal: ReleaseRefusal): string {
+  if (refusal.reason === 'path') return `path:${refusal.problem}`;
+  if (refusal.reason === 'sensitive') return `sensitive:${refusal.kind}`;
+  return refusal.reason;
+}
+
+describe('coleção de ataques: liberar pastas', () => {
+  it('nomes únicos e os dois lados', () => {
+    const ids = releaseCorpus.cases.map((entry) => entry.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(releaseCorpus.cases.filter((entry) => entry.expect === 'allow').length).toBeGreaterThan(3);
+    for (const entry of releaseCorpus.cases) if (entry.expect === 'deny') expect(entry.reason, entry.id).toBeDefined();
+  });
+
+  it.each(releaseCorpus.cases.map((entry) => [`${entry.id}${entry.note === undefined ? '' : ` (${entry.note})`}`, entry] as const))('%s', (_name, entry) => {
+    const check = checkReleaseFolder(entry.folder, releasePolicy);
+    if (entry.expect === 'allow') {
+      expect(check.ok).toBe(true);
+      return;
+    }
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(refusalOf(check.refusal)).toBe(entry.reason);
   });
 });

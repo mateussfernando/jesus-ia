@@ -22,7 +22,7 @@ Dois fatos pesaram:
 - **Duas conferências:**
   1. **O caminho pedido** (`checkRequestedPath`), antes de o Executor abrir qualquer coisa, só pelo texto;
   2. **O caminho real** (`checkResolvedPath`), depois que o Executor abriu: o destino depois de links, junções e nomes curtos, o tipo (arquivo, pasta ou outra coisa) e o número de nomes do arquivo (`nlink`). O pedido é conferido de novo nessa hora (a política pode ter mudado no meio).
-- **O texto ambíguo é recusado, não adivinhado** (`windows-path.ts`):
+- **O texto ambíguo é recusado, não adivinhado** (`path.ts`):
   - só caminho absoluto com unidade (`C:\…`); relativo, relativo à unidade (`C:pasta`) e relativo à raiz (`\pasta`) são recusados;
   - caminho de rede, `\\?\`, `\\.\` e `\??\` são recusados;
   - dois-pontos fora da unidade (fluxo alternativo), `< > " | ? *`, nome terminado em ponto ou espaço, nome de dispositivo (`CON`, `NUL`, `COM1`, `LPT1`, com ou sem extensão) e nome curto 8.3 são recusados;
@@ -51,7 +51,8 @@ Dois fatos pesaram:
 - **Falso positivo aceito:** um arquivo de projeto com nome que parece nome curto (`Notas~2.txt`), `.env.example` e certificados públicos em `.pem` são negados. O dono pode pedir mudança; uma regra nova entra com caso novo na coleção.
 - **Leitura de rede, dispositivos e fluxos alternativos fica fora** da fase 1.
 - **Revisão independente:** o plano recomenda uma depois desta etapa (as regras de leitura).
+- **Caminhos POSIX** (desde a etapa 13): o mesmo Porteiro aceita caminhos do Linux, só para os testes e o desenvolvimento (o CI e as sessões na nuvem rodam em Linux). Mesmas recusas de texto escondido, só absoluto, sem `\`, e comparação diferenciando maiúsculas, como o Linux; as regras de nomes sensíveis valem em qualquer caixa.
 
 ## Detalhes
 
-`packages/gate/src/` (`windows-path.ts`, `places.ts`, `sensitive.ts`, `read-gate.ts`, `describe.ts`) · `security/attack-corpus/` · seções [3.4.2 a 3.4.4](../03-seguranca.md) e [3.17](../03-seguranca.md)
+`packages/gate/src/` (`path.ts`, `places.ts`, `sensitive.ts`, `read-gate.ts`, `describe.ts`) · `security/attack-corpus/` · seções [3.4.2 a 3.4.4](../03-seguranca.md) e [3.17](../03-seguranca.md)
