@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EGRESS_FAILURES, parseFromBrain, parseToBrain } from './brain-protocol';
-import { CHAT_FAILURES, MAX_CHAT_DELTA_CHARS, MAX_CHAT_TEXT_CHARS, MAX_TRANSCRIPT_CHARS } from './chat-protocol';
+import { CHAT_FAILURES, MAX_CHAT_DELTA_CHARS, MAX_CHAT_TEXT_CHARS, MAX_FOLDER_CHARS, MAX_TRANSCRIPT_CHARS, MAX_TURN_FOLDERS } from './chat-protocol';
 import { parseFromServer, parseToServer } from './protocol';
 
 const CONVERSATION = '0b6e3c1e-5f1a-4f7e-9c7a-2d9b1f4e6a80';
@@ -61,11 +61,21 @@ describe('mensagens da conversa', () => {
     for (const message of [
       { type: 'chat-get', id: 1 },
       { type: 'chat-reset', id: 1 },
-      { type: 'chat-send', id: 1, conversationId: CONVERSATION, text: 'oi' },
+      { type: 'chat-send', id: 1, conversationId: CONVERSATION, text: 'oi', folders: [] },
+      { type: 'chat-send', id: 1, conversationId: CONVERSATION, text: 'oi', folders: ['C:\\Users\\dono\\Projetos\\site'] },
       { type: 'chat-stop', id: 1 },
     ]) {
       expect(parseToBrain(message)).not.toBeNull();
     }
+    // As pastas vão sempre, dentro dos limites (decisão 0026).
+    expect(parseToBrain({ type: 'chat-send', id: 1, conversationId: CONVERSATION, text: 'oi' })).toBeNull();
+    expect(parseToBrain({ type: 'chat-send', id: 1, conversationId: CONVERSATION, text: 'oi', folders: [''] })).toBeNull();
+    expect(
+      parseToBrain({ type: 'chat-send', id: 1, conversationId: CONVERSATION, text: 'oi', folders: ['x'.repeat(MAX_FOLDER_CHARS + 1)] }),
+    ).toBeNull();
+    expect(
+      parseToBrain({ type: 'chat-send', id: 1, conversationId: CONVERSATION, text: 'oi', folders: Array.from({ length: MAX_TURN_FOLDERS + 1 }, () => 'C:\\a') }),
+    ).toBeNull();
     for (const message of [
       { type: 'chat-state', id: 1, state },
       { type: 'chat-delta', id: 1, text: 'pedaço' },
@@ -75,7 +85,7 @@ describe('mensagens da conversa', () => {
       expect(parseFromBrain(message)).not.toBeNull();
     }
     // Direção errada ou campo a mais: fora do protocolo.
-    expect(parseFromBrain({ type: 'chat-send', id: 1, conversationId: CONVERSATION, text: 'oi' })).toBeNull();
+    expect(parseFromBrain({ type: 'chat-send', id: 1, conversationId: CONVERSATION, text: 'oi', folders: [] })).toBeNull();
     expect(parseToBrain({ type: 'chat-delta', id: 1, text: 'x' })).toBeNull();
     expect(parseFromBrain({ type: 'chat-error', id: 1, reason: 'cancelled', detail: 'x' })).toBeNull();
   });

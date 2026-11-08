@@ -1,4 +1,4 @@
-import { MAX_TURN_STREAM_CHARS } from '../bridge/chat-protocol';
+import { MAX_FOLDER_CHARS, MAX_TURN_FOLDERS, MAX_TURN_STREAM_CHARS } from '../bridge/chat-protocol';
 import type { ChatEvent, FromBrainChatMessage, ToBrainChatMessage, UiChatRequest } from '../bridge/chat-protocol';
 
 /**
@@ -9,7 +9,8 @@ import type { ChatEvent, FromBrainChatMessage, ToBrainChatMessage, UiChatRequest
  * - o Cérebro só responde a `id` que o principal mandou: um `id` inventado derruba o Cérebro (fuga do protocolo);
  *   resposta atrasada de um pedido que já terminou (corrida com o Parar) é ignorada;
  * - um turno não passa de `MAX_TURN_STREAM_CHARS` de texto (a saída máxima dá bem menos);
- * - Cérebro que cai encerra os pedidos com `brain`; servidor da interface que cai para os turnos que ele pediu.
+ * - Cérebro que cai encerra os pedidos com `brain`; servidor da interface que cai para os turnos que ele pediu;
+ * - cada pergunta leva as pastas liberadas do momento (`folders`), para as instruções do Cérebro (decisão 0026).
  */
 
 type PendingKind = 'get' | 'reset' | 'send';
@@ -39,9 +40,22 @@ export interface ChatRelay {
   brainGone(): void;
   /** Um servidor da interface saiu: os turnos que ele pediu param (ninguém mais vai ler). */
   uiGone(owner: object): void;
-  /** Há um turno em andamento com este `id` do lado do Cérebro (uma ferramenta só roda dentro de um). */
-  isSending(id: number): boolean;
+  /**
+   * A situação do turno `id` (o do lado do Cérebro), para as chamadas de ferramenta, que só rodam dentro de um turno em
+   * andamento: `running`; `ended` se o pedido já terminou ou não é uma pergunta (corrida com o Parar ou com a saída do
+   * servidor da interface: a chamada é recusada, sem derrubar o Cérebro); `unknown` se o principal nunca mandou esse
+   * `id` (fuga do protocolo).
+   */
+  turnState(id: number): 'running' | 'ended' | 'unknown';
   readonly pending: number;
+}
+
+/**
+ * As pastas que vão com a pergunta, dentro do que o protocolo aceita: uma lista fora dele faria o Cérebro recusar a
+ * mensagem inteira, e o turno não começaria. A lista do principal já cabe (até 32 pastas, conferidas pelo Porteiro).
+ */
+function turnFolders(folders: readonly string[]): string[] {
+  return folders.filter((folder) => folder.length > 0 && folder.length <= MAX_FOLDER_CHARS).slice(0, MAX_TURN_FOLDERS);
 }
 
 export function createChatRelay(options: ChatRelayOptions): ChatRelay {
@@ -91,7 +105,7 @@ export function createChatRelay(options: ChatRelayOptions): ChatRelay {
             id,
             conversationId: request.conversationId ?? '',
             text: request.text ?? '',
-            folders: [...(options.folders?.() ?? [])],
+            folders: turnFolders(options.folders?.() ?? []),
           }));
           return;
         case 'stop':
@@ -163,8 +177,9 @@ export function createChatRelay(options: ChatRelayOptions): ChatRelay {
         }
       }
     },
-    isSending(id) {
-      return pending.get(id)?.kind === 'send';
+    turnState(id) {
+      if (!Number.isSafeInteger(id) || id < 1 || id > lastId) return 'unknown';
+      return pending.get(id)?.kind === 'send' ? 'running' : 'ended';
     },
     get pending() {
       return pending.size;

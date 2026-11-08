@@ -3,6 +3,8 @@ import type { PathPlatform } from '@jesus/gate';
 import { describeFailure, failureCode, isToolName, TOOL_INPUTS } from '@jesus/executor';
 import type { AuditEvent } from '@jesus/shared/audit';
 import type { ToolPolicy } from '../bridge/executor-protocol';
+import type { ToolHandler } from './brain-process';
+import { UNAVAILABLE } from './executor-process';
 import type { ExecutorProcess, ToolReply } from './executor-process';
 
 /**
@@ -75,5 +77,40 @@ export function createToolRelay(options: ToolRelayOptions): ToolRelay {
       await options.audit(result).catch(() => undefined);
       return reply;
     },
+  };
+}
+
+/** A chamada chegou depois de o turno acabar (corrida com o Parar ou com a saída da tela): não roda. */
+export const TURN_ENDED: ToolReply = { ok: false, code: 'cancelled', text: 'O turno acabou antes desta leitura, e ela não foi feita.' };
+
+export interface BrainToolHandlerOptions {
+  readonly relay: ToolRelay;
+  /** A situação do turno da chamada no repassador da conversa (`ChatRelay.turnState`). */
+  readonly turnState: (turn: number) => 'running' | 'ended' | 'unknown';
+}
+
+/**
+ * Quem atende as chamadas de ferramenta do Cérebro (`onTool` de `startBrainProcess`). Só roda a chamada de um turno em
+ * andamento; a de um turno que o principal nunca pediu é fuga do protocolo e derruba o Cérebro. O resto da conferência
+ * (esquema, Porteiro, registro) fica em `ToolRelay.call`. Ao Cérebro volta só o texto para o modelo.
+ */
+export function createBrainToolHandler(options: BrainToolHandlerOptions): ToolHandler {
+  return (call, reply, violation) => {
+    const turn = options.turnState(call.turn);
+    if (turn === 'unknown') {
+      violation('chamada de ferramenta num turno que o principal não pediu');
+      return () => undefined;
+    }
+    if (turn === 'ended') {
+      reply({ ok: TURN_ENDED.ok, text: TURN_ENDED.text });
+      return () => undefined;
+    }
+    const controller = new AbortController();
+    // `call` nunca rejeita; o segundo caminho só guarda o Cérebro de ficar sem resposta.
+    options.relay.call(call.name, call.input, controller.signal).then(
+      (result) => reply({ ok: result.ok, text: result.text }),
+      () => reply({ ok: UNAVAILABLE.ok, text: UNAVAILABLE.text }),
+    );
+    return () => controller.abort();
   };
 }

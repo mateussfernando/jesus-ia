@@ -7,12 +7,23 @@ import type { ChatEvent, ChatState, UiChatRequest } from '../bridge/chat-protoco
 import { FakeUtilityChild } from '../bridge/fake-ipc';
 import { startBrainProcess } from '../main/brain-process';
 import { createChatRelay } from '../main/chat-relay';
+import { PHASE1_TOOL_NAMES } from '../main/egress/api-policy';
 import { createEgress } from '../main/egress/egress';
 import { DailySpend } from '../main/egress/spend';
 import { UpstreamError } from '../main/egress/transport';
 import type { Transport, UpstreamRequest } from '../main/egress/transport';
+import type { ToolReply } from '../main/executor-process';
 import type { Supervisor } from '../main/supervisor';
-import { answerEvents, messageEnd as end, messageStart as start, textBlock as text, thinkingBlock as thinking } from '../test-support/anthropic-sse';
+import { createBrainToolHandler } from '../main/tool-relay';
+import {
+  answerEvents,
+  messageEnd as end,
+  messageStart as start,
+  textBlock as text,
+  thinkingBlock as thinking,
+  toolUseEvents,
+} from '../test-support/anthropic-sse';
+import type { ToolCallScript } from '../test-support/anthropic-sse';
 import { EgressError } from './api-fetch';
 import { runBrainHost } from './brain';
 import type { BrainContext } from './brain';
@@ -41,6 +52,9 @@ async function until(check: () => boolean, ms = 3_000) {
 function answer(pieces: readonly string[], options: { inputTokens?: number } = {}): Reply {
   return { chunks: answerEvents(pieces, options) };
 }
+function toolUse(calls: readonly ToolCallScript[], options: { inputTokens?: number; text?: string } = {}): Reply {
+  return { chunks: toolUseEvents(calls, options) };
+}
 function apiError(status: number, type: string): Reply {
   return { status, contentType: 'application/json', chunks: [JSON.stringify({ type: 'error', error: { type, message: 'x' } })] };
 }
@@ -58,7 +72,23 @@ afterEach(() => {
   for (const supervisor of running.splice(0)) supervisor.stop();
 });
 
-async function harness(replies: readonly Reply[], options: { limitPUsd?: number } = {}) {
+/** Uma chamada que chegou ao "principal" (o repassador das ferramentas, com o Executor roteirizado). */
+interface SeenCall {
+  readonly name: string;
+  readonly input: unknown;
+  readonly signal: AbortSignal | undefined;
+}
+
+type ToolScript = (call: SeenCall) => Promise<ToolReply>;
+
+const READ_TEXT = 'Linhas 1 a 2 de 2:\n<dados-externos origem="file.read">\n1\tprimeira linha\n2\tsegunda linha\n</dados-externos>';
+const READ_REPLY: ToolReply = { ok: true, text: READ_TEXT, secrets: {}, stats: { tool: 'file_read', firstLine: 1, lastLine: 2, totalLines: 2, partial: false } };
+const READ_OK: ToolScript = () => Promise.resolve(READ_REPLY);
+
+async function harness(
+  replies: readonly Reply[],
+  options: { limitPUsd?: number; folders?: () => readonly string[]; tool?: ToolScript } = {},
+) {
   const calls: UpstreamRequest[] = [];
   const transport: Pick<Transport, 'send'> = {
     send(request, signal) {
@@ -97,11 +127,24 @@ async function harness(replies: readonly Reply[], options: { limitPUsd?: number 
       audit.push(event);
       return Promise.resolve();
     },
-    toolNames: [],
+    toolNames: PHASE1_TOOL_NAMES,
     userAgent: 'Jesus/0.1.0',
   });
   let supervisor: Supervisor | null = null;
-  const relay = createChatRelay({ postToBrain: (message) => supervisor?.post(message) ?? false });
+  const relay = createChatRelay({ postToBrain: (message) => supervisor?.post(message) ?? false, folders: options.folders ?? (() => []) });
+  // As ferramentas no "principal": quem atende as chamadas do Cérebro de verdade, com o Executor roteirizado.
+  const toolCalls: SeenCall[] = [];
+  const script = options.tool ?? READ_OK;
+  const onTool = createBrainToolHandler({
+    relay: {
+      call: (name, input, signal) => {
+        const call = { name, input, signal };
+        toolCalls.push(call);
+        return script(call);
+      },
+    },
+    turnState: (turn) => relay.turnState(turn),
+  });
   const violations: string[] = [];
   const contexts: BrainContext[] = [];
   let conversations = 0;
@@ -119,6 +162,11 @@ async function harness(replies: readonly Reply[], options: { limitPUsd?: number 
     egress,
     onChat: (message, violation) =>
       relay.fromBrain(message, (reason) => {
+        violations.push(reason);
+        violation(reason);
+      }),
+    onTool: (call, reply, violation) =>
+      onTool(call, reply, (reason) => {
         violations.push(reason);
         violation(reason);
       }),
@@ -151,7 +199,7 @@ async function harness(replies: readonly Reply[], options: { limitPUsd?: number 
     return { id, events, finished, streamed, stop: () => relay.fromUi({ type: 'chat', id, op: 'stop' }, owner, () => undefined) };
   };
   const body = (call: number) => JSON.parse(calls[call]?.body.toString('utf8') ?? '{}') as Record<string, unknown>;
-  return { calls, audit, spend, egress, relay, supervisor, violations, contexts, ask, send, body };
+  return { calls, audit, spend, egress, relay, supervisor, violations, contexts, ask, send, body, toolCalls };
 }
 
 describe('conversa: um turno inteiro', () => {
