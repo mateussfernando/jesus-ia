@@ -51,3 +51,39 @@ export function messageEnd(stopReason = 'end_turn', outputTokens = 50): string[]
 export function answerEvents(pieces: readonly string[], options: { inputTokens?: number; outputTokens?: number } = {}): string[] {
   return [messageStart(options.inputTokens), ...thinkingBlock(0), ...textBlock(1, pieces), ...messageEnd('end_turn', options.outputTokens)];
 }
+
+/** Bloco de chamada de ferramenta, com a entrada em dois pedaços de JSON (como a API manda). */
+export function toolUseBlock(index: number, id: string, name: string, input: unknown): string[] {
+  const json = JSON.stringify(input);
+  const half = Math.ceil(json.length / 2);
+  return [
+    sse('content_block_start', { type: 'content_block_start', index, content_block: { type: 'tool_use', id, name, input: {} } }),
+    sse('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: json.slice(0, half) } }),
+    sse('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: json.slice(half) } }),
+    sse('content_block_stop', { type: 'content_block_stop', index }),
+  ];
+}
+
+export interface ToolCallScript {
+  readonly id: string;
+  readonly name: string;
+  readonly input: unknown;
+}
+
+/**
+ * Uma resposta que pede ferramentas (`stop_reason: tool_use`): raciocínio, um texto opcional antes e as chamadas, na
+ * ordem dada (o modelo pode pedir várias de uma vez).
+ */
+export function toolUseEvents(
+  calls: readonly ToolCallScript[],
+  options: { inputTokens?: number; outputTokens?: number; text?: string } = {},
+): string[] {
+  const first = options.text === undefined ? 1 : 2;
+  return [
+    messageStart(options.inputTokens),
+    ...thinkingBlock(0),
+    ...(options.text === undefined ? [] : textBlock(1, [options.text])),
+    ...calls.flatMap((call, index) => toolUseBlock(first + index, call.id, call.name, call.input)),
+    ...messageEnd('tool_use', options.outputTokens),
+  ];
+}

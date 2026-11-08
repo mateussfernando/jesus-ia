@@ -63,12 +63,14 @@ export const BrainChatGetSchema = z.strictObject({ type: z.literal('chat-get'), 
 export const BrainChatResetSchema = z.strictObject({ type: z.literal('chat-reset'), id: chatId });
 /** Pastas liberadas no momento do turno (para as instruções do Cérebro; quem confere cada leitura é o principal). */
 export const MAX_TURN_FOLDERS = 32;
+/** Maior caminho de pasta que vai com a pergunta (o mesmo da entrada das ferramentas). */
+export const MAX_FOLDER_CHARS = 4_096;
 export const BrainChatSendSchema = z.strictObject({
   type: z.literal('chat-send'),
   id: chatId,
   conversationId,
   text: question,
-  folders: z.array(z.string().min(1).max(4_096)).max(MAX_TURN_FOLDERS),
+  folders: z.array(z.string().min(1).max(MAX_FOLDER_CHARS)).max(MAX_TURN_FOLDERS),
 });
 /** Para o turno daquele `id` (se ainda estiver em andamento). */
 export const BrainChatStopSchema = z.strictObject({ type: z.literal('chat-stop'), id: chatId });

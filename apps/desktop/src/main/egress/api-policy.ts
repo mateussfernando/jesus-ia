@@ -1,3 +1,4 @@
+import { TOOL_NAMES } from '@jesus/executor/catalog';
 import { z } from 'zod';
 import { API_BASE_URL, BRAIN_KEY_PLACEHOLDER, BRAIN_MAX_OUTPUT_TOKENS, BRAIN_MODEL_ID, MAX_API_BODY_BYTES } from '../../bridge/brain-protocol';
 
@@ -31,8 +32,8 @@ export const MAX_OUTPUT_TOKENS = BRAIN_MAX_OUTPUT_TOKENS;
  */
 export const ALLOWED_BETAS: readonly string[] = ['mid-conversation-system-2026-04-07', 'structured-outputs-2025-11-13'];
 
-/** Ferramentas próprias que o modelo pode chamar, pelo nome da API. As primeiras entram na etapa 13. */
-export const PHASE1_TOOL_NAMES: readonly string[] = [];
+/** Ferramentas próprias que o modelo pode chamar, pelo nome da API: as três leituras de arquivo (decisão 0026). */
+export const PHASE1_TOOL_NAMES: readonly string[] = [...TOOL_NAMES];
 
 /** Cabeçalhos que o Cérebro pode mandar. O principal monta os de saída do zero; estes só são conferidos. */
 const REQUEST_HEADERS: ReadonlySet<string> = new Set(['content-type', 'anthropic-version', 'anthropic-beta', 'x-api-key', 'user-agent']);
