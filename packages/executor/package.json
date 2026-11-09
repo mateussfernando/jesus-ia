@@ -1,0 +1,24 @@
+{
+  "name": "@jesus/executor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Executor do Jesus (decisão 0026): as ferramentas de leitura de arquivos (file_read, file_list, file_search), com as duas conferências do Porteiro, links conferidos antes de seguidos, segredos mascarados e o conteúdo embrulhado como dado.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./catalog": "./src/catalog.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@jesus/gate": "*",
+    "@jesus/shared": "*",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "vitest": "^5.0.0"
+  }
+}

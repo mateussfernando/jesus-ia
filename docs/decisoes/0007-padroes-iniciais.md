@@ -1,6 +1,6 @@
 # 0007 — Padrões iniciais
 
-- Status: aceita
+- Status: aceita (a retenção das conversas foi substituída pela [0027](0027-conversas-guardadas-sem-prazo.md): sem prazo)
 - Data: 07/10/2026
 
 ## Contexto

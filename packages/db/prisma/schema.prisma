@@ -1,0 +1,26 @@
+// Esquema do banco do Jesus (decisão 0014). Nomes em inglês (decisão 0007), tabelas e colunas em snake_case.
+// O que o Prisma não modela (CHECK, papéis, GRANT, gatilhos, pgvector, tsvector) fica no SQL das migrações.
+// O esquema completo da seção 5.5 entra aos poucos, uma fase por vez.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Senha local do Jesus (decisão 0015): uma linha só, com hashes bcrypt e a contagem de erros seguidos.
+/// Lida e gravada só pelo processo principal (papel jesus_config); o Cérebro não tem acesso.
+model AppCredential {
+  id                Int       @id @default(1)
+  passwordHash      String    @map("password_hash")
+  recoveryHash      String    @map("recovery_hash")
+  failedAttempts    Int       @default(0) @map("failed_attempts")
+  lastFailedAt      DateTime? @map("last_failed_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  passwordChangedAt DateTime  @map("password_changed_at") @db.Timestamptz(3)
+
+  @@map("app_credentials")
+}

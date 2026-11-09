@@ -1,0 +1,22 @@
+{
+  "name": "@jesus/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Peças comuns de segurança do Jesus: JSON canônico, mascaramento de segredos, embrulho de dados externos, logger com redação e o registro de auditoria encadeado (decisão 0022).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./audit": "./src/audit/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "vitest": "^5.0.0"
+  },
+  "dependencies": {
+    "zod": "^4.1.0"
+  }
+}

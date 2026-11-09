@@ -1,0 +1,49 @@
+/* Paleta do holograma (docs/08-holograma.md, seção 8.4). O app é sempre escuro. */
+:root {
+  --core: #ffffff;
+  --silver: #d3dce6;
+  --silver-dark: #8693a2;
+  --bg: #04060a;
+  --panel: #080b11;
+  --line: rgba(211, 220, 230, 0.12);
+  --line-strong: rgba(211, 220, 230, 0.32);
+  --amber: #f0ad4a;
+  --red: #ff5b52;
+  --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+  --sans: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--silver);
+  font: 14px/1.45 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--silver);
+  outline-offset: 2px;
+}
+
+.lab-loading {
+  padding: 32px;
+  color: var(--silver-dark);
+}

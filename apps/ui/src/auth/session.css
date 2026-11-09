@@ -1,0 +1,18 @@
+.lock-button {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 10;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--silver-dark);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lock-button:hover {
+  color: var(--silver);
+  border-color: var(--silver-dark);
+}

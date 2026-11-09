@@ -42,7 +42,7 @@
 | App desktop `.exe` | Electron: maduro no Windows, com atualização | PyInstaller/Nuitka + pywebview; empacotar dependências de ML é trabalhoso |
 | Agente multi-modelo | Vercel AI SDK | Pydantic AI, LiteLLM (empate) |
 | MCP | SDK de referência | SDK oficial também (leve vantagem do TS) |
-| PostgreSQL | Drizzle/Kysely + `pg` | SQLAlchemy + psycopg (empate) |
+| PostgreSQL | Prisma (ou Drizzle/Kysely) + `pg` | SQLAlchemy + psycopg (empate) |
 | Google e GitHub | `googleapis`, Octokit (oficiais) | clientes oficiais também (empate) |
 | Voz local | sherpa-onnx (Node) cobre ativação, VAD, STT e TTS | melhor ecossistema (faster-whisper, openWakeWord) |
 | IA/ML pesado | fraco | forte |
@@ -63,7 +63,7 @@
 | Linguagem | TypeScript (modo `strict`) | uma linguagem para tudo | Python (seção 4.5) |
 | Runtime | Node.js LTS (24 hoje; o 26 vira LTS em 28/10/2026) | suporte longo | — |
 | App desktop | Electron (versão estável atual) + electron-builder (instalador NSIS `.exe`) | maduro no Windows; janelas transparentes; `utilityProcess`; `safeStorage` | Tauri 2 (mais leve, mas o núcleo é em Rust) |
-| Build e UI | Vite (`electron-vite`) + React | rápido; ecossistema grande | Svelte, Solid |
+| Build e UI | **Next.js 16 (App Router) + React**, com servidor: páginas, Server Actions e rotas como back-end da interface, dentro do Electron e sem porta aberta ([decisões 0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md) e [0016](decisoes/0016-nextjs-com-servidor-dentro-do-electron.md)) | pedido do dono: front e back-end num lugar só; CSP com nonce | exportação estática + IPC (0013); Vite + React (fase 0) |
 | Holograma | Three.js + React Three Fiber + pós-processamento (bloom) | padrão para WebGL | Babylon.js |
 | Estado da UI | Zustand | simples | Redux |
 | Núcleo do agente | Vercel AI SDK (`ai`): `ToolLoopAgent` + `toolApproval` | multi-provedor; aprovação de ferramentas nativa; aprovações assinadas | Mastra; loop próprio |
@@ -71,7 +71,7 @@
 | Validação | Zod | esquemas das ferramentas | Valibot |
 | MCP | `@modelcontextprotocol/sdk` (v1 estável; a v2 está em beta) | SDK oficial de referência | — |
 | Banco | PostgreSQL 18 + pgvector 0.8.x | ver [Parte 5](05-dados-postgresql.md) | PostgreSQL 19 quando sair a versão final |
-| Acesso ao banco | Drizzle ORM + driver `pg` + drizzle-kit (migrações) | tipado; suporta pgvector | Kysely; Prisma |
+| Acesso ao banco | **Prisma 7** (cliente sem motor nativo, adaptador `@prisma/adapter-pg` sobre o `pg`) + migrações em SQL aplicadas por um migrador próprio ([decisão 0014](decisoes/0014-prisma-como-orm.md)) | pedido do dono; tipado; pgvector e o resto em SQL cru nas migrações | Drizzle; Kysely |
 | Embeddings | locais via Ollama (`bge-m3` ou `qwen3-embedding`) | privacidade; multilíngue | API do provedor |
 | Voz local | `sherpa-onnx-node` (VAD Silero, STT Parakeet v3 ou Whisper, TTS Piper ou Kokoro) | tudo em Node, offline | Python: faster-whisper + openWakeWord |
 | Palavra de ativação | Picovoice Porcupine (`@picovoice/porcupine-node`, aceita português) | chave gratuita para uso pessoal | detecção via STT contínuo |
@@ -81,12 +81,13 @@
 | Microsoft | `@azure/msal-node` | oficial | — |
 | OAuth genérico | `openid-client` (PKCE, retorno local) | padrão | — |
 | Segredos | `safeStorage` do Electron (DPAPI) | nativo | Gerenciador de Credenciais via módulo nativo (o antigo `keytar` foi arquivado) |
+| Senha local e cifragem | **bcrypt** (`bcryptjs`, JavaScript puro, custo 12) para a senha do Jesus e o código de recuperação; **AES-256-GCM** (`node:crypto`) para dados que precisam ser lidos de volta ([decisão 0015](decisoes/0015-senha-local-com-bcrypt-e-dados-cifrados.md)) | o bcrypt é hash (sem volta): serve para conferir senha, nunca para cifrar dados | Argon2id (módulo nativo) |
 | Parser de comandos | `tree-sitter` + gramática bash; parser de AST do PowerShell | normalização do Porteiro | — |
 | Execução contida | processo do Windows com token restrito + Job Object (APIs nativas, via módulo nativo pequeno) | nada externo para instalar | upgrade: AppContainer; opcional: WSL2 |
 | Logs | pino (aplicação) + tabela de auditoria no PostgreSQL | rápido | — |
 | Testes | Vitest (unidade), Playwright (ponta a ponta no Electron), promptfoo (avaliações e red team de LLM) | — | — |
 | Qualidade | ESLint + typescript-eslint, Prettier (ou Biome) | — | — |
-| Monorepo | pnpm workspaces | pacotes separados por responsabilidade | npm workspaces |
+| Monorepo | npm workspaces (npm 11.16+) | pacotes separados por responsabilidade; vem com o Node, nada a mais para instalar ([decisão 0009](decisoes/0009-npm-em-vez-de-pnpm.md)) | pnpm workspaces (isola melhor as dependências) |
 | CI | GitHub Actions (testes em Linux; build do `.exe` em `windows-latest`) | gera o `.exe` sem depender do seu PC | — |
 
 ## 4.4 Detalhes por camada
@@ -100,8 +101,10 @@
 - **Atalhos globais** (`globalShortcut`): segurar-para-falar e emergência.
 - **Processos** (`utilityProcess`): cérebro, Porteiro/Executor e voz, conversando por `MessagePort`.
 - **PostgreSQL** como processo filho gerenciado pelo processo principal (sobe e desce junto com o app).
-- **Empacotamento:** electron-builder (NSIS). Binários (PostgreSQL, modelos de voz) ficam fora do `asar` (`extraResources`/`asarUnpack`).
+- **Empacotamento ([decisão 0018](decisoes/0018-empacotamento-com-electron-builder.md)):** electron-builder 26.17.0. Instalador NSIS por usuário, sem administrador. Fusíveis travados no build de produção. O bundle do processo principal e a interface montada vão dentro do `app.asar`, sem `node_modules` do projeto. Binários das fases seguintes (PostgreSQL, modelos de voz) ficam fora do `asar` (`extraResources`/`asarUnpack`).
 - **Atualização:** electron-updater (GitHub Releases privado ou pasta local). Assinatura de código é opcional para uso pessoal; sem ela, o SmartScreen mostra um aviso.
+- **Interface (decisões 0013 e 0016):** a janela carrega `https://jesus.invalid/`, um endereço que não existe na internet. O Electron intercepta esses pedidos só na sessão da janela do Jesus (`protocol.handle`), recusa qualquer outro endereço e entrega cada pedido ao servidor do Next carregado no próprio app (`next({ dir }).getRequestHandler()` com um adaptador em memória): nenhuma porta é aberta. Páginas, Server Actions e rotas do `apps/ui` são o back-end da interface; o Cérebro, o Porteiro + Executor e a voz continuam em `utilityProcess` próprios, falando com o Next por IPC. O servidor do Next roda num `utilityProcess` só dele (`jesus-next`, [decisão 0017](decisoes/0017-servidor-do-next-num-utilityprocess.md)): com ele no processo principal, a janela travava 92 ms a cada tecla durante a conferência da senha; separado, o atraso foi de 1 ms, ao custo de 40 a 60 MB.
+- **Senha local (decisões 0015 a 0017):** o servidor da interface (`jesus-next`) guarda o estado de bloqueio (`@jesus/auth`), confere a senha (hash bcrypt num arquivo da pasta de dados até o PostgreSQL embutido chegar; depois, na tabela `app_credentials`) e decide o que a janela mostra. O processo principal encaminha os pedidos da janela e, na etapa 7 da fase 1, avisa os eventos do Windows (bloqueio de tela, suspensão).
 
 ### Núcleo do agente (AI SDK) e o encaixe do Porteiro
 
@@ -182,17 +185,20 @@ jesus-ia/
 ├─ CLAUDE.md                 # contexto para o Claude Code
 ├─ docs/                     # documentação do projeto
 ├─ apps/
-│  └─ desktop/               # Electron: main, preload, janelas
-│     └─ renderer/           # React + holograma (Three.js / React Three Fiber)
+│  ├─ ui/                    # interface e back-end da interface em Next.js: Cenários, tela de entrada… (existe)
+│  └─ desktop/               # Electron: processo principal, janela sem porta (https://jesus.invalid), ponte com o servidor do Next (existe)
 ├─ packages/
+│  ├─ hologram/              # holograma: componente React Three Fiber + lógica visual pura (existe)
 │  ├─ core/                  # loop do agente, contexto, compactação, subagentes
 │  ├─ gate/                  # Porteiro: normalização, regras, classificador, políticas
 │  ├─ executor/              # execução de ferramentas, cofre, sandbox, checkpoints
 │  ├─ tools/                 # definições das ferramentas (arquivos, terminal, google, github…)
-│  ├─ db/                    # Drizzle: esquema, migrações, repositórios
+│  ├─ db/                    # Prisma: esquema, migrações SQL, migrador, repositórios (existe)
 │  ├─ memory/                # memória de longo prazo, busca híbrida
 │  ├─ voice/                 # ativação, VAD, STT, TTS
-│  ├─ models/                # registro de modelos e provedores, custos
+│  ├─ models/                # registro de modelos e provedores, custos (existe)
+│  ├─ crypto/                # bcrypt (senhas) e AES-256-GCM (dados) (existe)
+│  ├─ auth/                  # senha local do Jesus: regras, tentativas, bloqueio (existe)
 │  ├─ integrations/          # OAuth (Google, GitHub, Microsoft), MCP
 │  └─ shared/                # tipos, utilitários, mascaramento de segredos
 ├─ security/
@@ -218,6 +224,11 @@ Verificadas em 07/10/2026. Confira de novo na hora de instalar.
 | Item | Situação |
 |---|---|
 | Node.js | 24 LTS (fase ativa até 20/10/2026); o 26 vira LTS em 28/10/2026 |
+| npm | 12.2 é a `latest` (30/09/2026; exige Node ^22.22.2, ^24.15 ou 26+); a linha 11 está na 11.21. O projeto aceita 11.16+ ou 12: `min-release-age` existe desde a 11.10 e `strict-allow-scripts` desde a 11.16. O Node 24 traz o npm 11.16+ a partir do 24.18 (o 24.21 traz o 11.19); o Node 22 ainda traz o npm 10, que ignora essas opções sem aviso |
+| TypeScript | 6.0 no projeto. A 7.0 (compilador nativo) já saiu, mas o typescript-eslint ainda aceita só `< 6.1` ([decisão 0008](decisoes/0008-holograma-como-pacote-e-laboratorio.md)) |
+| Front-end | Next.js 16.4 (Turbopack), React 19.3, Three.js 0.186, React Three Fiber 9, `@react-three/postprocessing` 3, Zustand 5, Vitest 5. A fase 0 usou o Vite 8, trocado pelo Next.js na [decisão 0013](decisoes/0013-interface-em-nextjs-dentro-do-electron.md) |
+| Prisma | 7.10 (cliente, CLI e `@prisma/adapter-pg` fixados na mesma versão). A etiqueta `latest` do pacote `prisma` apontava, em 10/10/2026, para um candidato da versão 8: não usar |
+| bcrypt | `bcryptjs` 3.0.3 (JavaScript puro, sem script de instalação) |
 | Electron | linha 44.x estável (setembro de 2026) |
 | Vercel AI SDK | v7 (lançada em junho de 2026, segundo fontes de terceiros); a v6 (dezembro de 2025) introduziu a aprovação de ferramentas |
 | SDK TypeScript do MCP | v1 estável; v2 em beta (pacotes separados `@modelcontextprotocol/client` e `/server`) |

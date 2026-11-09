@@ -1,0 +1,34 @@
+/* Páginas de estado (404 e erro geral): só classes, sem estilo inline (a CSP bloqueia; seção 3.12). */
+
+.status-page {
+  min-height: 100%;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.status-page h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--core);
+}
+
+.status-page p {
+  margin: 0;
+  color: var(--silver-dark);
+}
+
+.status-page a,
+.status-page button {
+  padding: 8px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--silver);
+  text-decoration: none;
+  cursor: pointer;
+}

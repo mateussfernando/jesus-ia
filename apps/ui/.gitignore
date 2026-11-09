@@ -1,0 +1,6 @@
+# Gerados pelo Next.js
+.next/
+out/
+next-env.d.ts
+# Credencial local de desenvolvimento (hashes bcrypt; decisão 0016)
+.jesus-dev/

@@ -1,0 +1,23 @@
+{
+  "name": "@jesus/crypto",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Criptografia do Jesus: hash de senha com bcrypt e cifragem de campos com AES-256-GCM (decisão 0015).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./password": "./src/password.ts",
+    "./random": "./src/random.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "vitest": "^5.0.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3"
+  }
+}

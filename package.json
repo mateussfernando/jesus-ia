@@ -1,0 +1,48 @@
+{
+  "name": "jesus-ia",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": "^22.13.0 || >=24",
+    "npm": ">=11.16.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^22.13.0 || >=24",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": ">=11.16.0",
+      "onFail": "error"
+    }
+  },
+  "allowScripts": {
+    "fsevents": false,
+    "@prisma/engines": false,
+    "prisma": false,
+    "electron-winstaller": false
+  },
+  "scripts": {
+    "dev:ui": "npm run dev --workspace=@jesus/ui",
+    "dev:hologram": "npm run dev --workspace=@jesus/ui",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "attack-corpus": "npm run attack-corpus -w @jesus/gate"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.0"
+  }
+}

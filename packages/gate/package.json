@@ -1,0 +1,19 @@
+{
+  "name": "@jesus/gate",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Porteiro do Jesus (decisão 0021): regras determinísticas, fora da IA. Na fase 1, só a leitura de arquivos: caminhos do Windows conferidos pelo texto, pastas liberadas, leitura sensível e pastas do Jesus negadas.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "attack-corpus": "vitest run src/attack-corpus.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "vitest": "^5.0.0"
+  }
+}

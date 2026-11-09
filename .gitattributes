@@ -1,0 +1,2 @@
+# Migrações SQL sempre com LF (o migrador também normaliza antes da soma de verificação; decisão 0014).
+packages/db/prisma/migrations/**/*.sql text eol=lf
