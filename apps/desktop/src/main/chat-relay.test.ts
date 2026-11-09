@@ -82,6 +82,23 @@ describe('repassador da conversa no principal', () => {
     expect(relay.turnState(3)).toBe('ended');
   });
 
+  it('bloqueio do Windows: todo turno em andamento para no Cérebro; os outros pedidos, não', () => {
+    const { relay, toBrain, ui } = setup();
+    const a = ui();
+    const b = ui();
+    a.request(1, 'send', { conversationId: CONVERSATION, text: 'oi' });
+    b.request(1, 'send', { conversationId: CONVERSATION, text: 'olá' });
+    a.request(2, 'get');
+    relay.stopAll();
+    expect(toBrain.filter((message) => message.type === 'chat-stop')).toEqual([
+      { type: 'chat-stop', id: 1 },
+      { type: 'chat-stop', id: 2 },
+    ]);
+    // Cérebro fora do ar: parar não quebra o principal.
+    const down = setup({ brainUp: false });
+    down.relay.stopAll();
+  });
+
   it('parar vai só para o turno daquele servidor e daquele id', () => {
     const { toBrain, ui } = setup();
     const a = ui();

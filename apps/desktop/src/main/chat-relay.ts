@@ -41,6 +41,11 @@ export interface ChatRelay {
   /** Um servidor da interface saiu: os turnos que ele pediu param (ninguém mais vai ler). */
   uiGone(owner: object): void;
   /**
+   * O Jesus bloqueou (eventos do Windows): todo turno em andamento para no Cérebro, sem esperar a tela perceber. Num
+   * turno com ferramentas, isso impede um passo novo (e uma leitura nova) depois do bloqueio.
+   */
+  stopAll(): void;
+  /**
    * A situação do turno `id` (o do lado do Cérebro), para as chamadas de ferramenta, que só rodam dentro de um turno em
    * andamento: `running`; `ended` se o pedido já terminou ou não é uma pergunta (corrida com o Parar ou com a saída do
    * servidor da interface: a chamada é recusada, sem derrubar o Cérebro); `unknown` se o principal nunca mandou esse
@@ -174,6 +179,16 @@ export function createChatRelay(options: ChatRelayOptions): ChatRelay {
           options.postToBrain({ type: 'chat-stop', id });
         } catch {
           // O Cérebro também saiu.
+        }
+      }
+    },
+    stopAll() {
+      for (const [id, entry] of pending) {
+        if (entry.kind !== 'send') continue;
+        try {
+          options.postToBrain({ type: 'chat-stop', id });
+        } catch {
+          // O Cérebro saiu; o turno termina pela queda.
         }
       }
     },

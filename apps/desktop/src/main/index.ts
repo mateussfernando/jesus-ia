@@ -413,9 +413,11 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     log.info('bloqueio.do_sistema', { motivo: reason, origem: source });
     record({ type: 'app.locked', reason, source });
     cookies.clear();
-    // O que estava saindo para a API para aqui: o Cérebro recebe `locked`. As leituras em andamento também param.
+    // O que estava saindo para a API para aqui: o Cérebro recebe `locked`. As leituras em andamento também param, e os
+    // turnos em andamento param no Cérebro (num turno com ferramentas, nenhum passo novo sai depois do bloqueio).
     egress.cancelAll('locked');
     executor.cancelAll();
+    chatRelay.stopAll();
     signals.lock(reason);
     leaveForEntry(window, 'bloqueio do sistema');
   };
