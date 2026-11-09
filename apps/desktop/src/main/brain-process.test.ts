@@ -3,6 +3,7 @@ import { BRAIN_KEY_PLACEHOLDER, parseToBrain } from '../bridge/brain-protocol';
 import type { EgressFailure, ToBrainMessage } from '../bridge/brain-protocol';
 import { FakeUtilityChild } from '../bridge/fake-ipc';
 import type { ParentPortLike } from '../bridge/ports';
+import type { BrainToolCall } from '../bridge/tool-protocol';
 import { startBrainProcess } from './brain-process';
 import type { EgressSink } from './egress/egress';
 import type { ApiRequestInput } from './egress/api-policy';
@@ -301,6 +302,106 @@ describe('startBrainProcess', () => {
     await plain.whenReady();
     brains.at(-1)?.send({ type: 'chat-done', id: 1, done: { conversationId: '0b6e3c1e-5f1a-4f7e-9c7a-2d9b1f4e6a80', finish: 'stop', contextTokens: 1, limitTokens: 2 } });
     await until(() => events.some((event) => event.type === 'failed' && event.message === 'conversa sem quem atenda'));
+  });
+
+  it('chamadas de ferramenta: a resposta volta ao Cérebro uma vez só; o cancelamento e a queda chegam a quem atende', async () => {
+    const calls: BrainToolCall[] = [];
+    const replies = new Map<number, (result: { readonly ok: boolean; readonly text: string }) => void>();
+    const cancelled: number[] = [];
+    const brains: ReturnType<typeof fakeBrain>[] = [];
+    const children: FakeUtilityChild[] = [];
+    const supervisor = startBrainProcess({
+      fork: () => {
+        const brain = fakeBrain();
+        brains.push(brain);
+        const child = new FakeUtilityChild(brain.run);
+        children.push(child);
+        return child;
+      },
+      egress: { send: () => () => undefined, cancelAll: () => undefined },
+      onTool: (call, reply) => {
+        calls.push(call);
+        replies.set(call.id, reply);
+        return () => cancelled.push(call.id);
+      },
+      timing: FAST,
+    });
+    running.push(supervisor);
+    await supervisor.whenReady();
+    const brain = brains[0];
+    brain?.send({ type: 'tool-call', id: 1, turn: 3, name: 'file_read', input: { path: '/home/dono/a.txt' } });
+    brain?.send({ type: 'tool-call', id: 2, turn: 3, name: 'file_list', input: { path: '/home/dono' } });
+    await until(() => calls.length === 2);
+    expect(calls[0]).toEqual({ type: 'tool-call', id: 1, turn: 3, name: 'file_read', input: { path: '/home/dono/a.txt' } });
+    replies.get(1)?.({ ok: true, text: 'conteúdo' });
+    replies.get(1)?.({ ok: false, text: 'de novo' });
+    await until(() => brain?.received.some((message) => message.type === 'tool-result') === true);
+    // O Cérebro desiste de uma chamada: quem atende cancela.
+    brain?.send({ type: 'tool-cancel', id: 2 });
+    await until(() => cancelled.includes(2));
+    // Uma chamada aberta quando o Cérebro cai é cancelada.
+    brain?.send({ type: 'tool-call', id: 3, turn: 3, name: 'file_read', input: { path: '/home/dono/b.txt' } });
+    await until(() => calls.length === 3);
+    supervisor.restart();
+    await until(() => cancelled.includes(3) && children.length === 2);
+    expect(brain?.received.filter((message) => message.type === 'tool-result')).toEqual([{ type: 'tool-result', id: 1, ok: true, text: 'conteúdo' }]);
+    expect(cancelled).toEqual([2, 3]);
+  });
+
+  it('chamada de ferramenta sem quem atenda, com id repetido, fora do catálogo ou em excesso derruba o Cérebro', async () => {
+    let clock = 0;
+    const events: SupervisorEvent[] = [];
+    const brains: ReturnType<typeof fakeBrain>[] = [];
+    const children: FakeUtilityChild[] = [];
+    const make = (withTools: boolean) =>
+      startBrainProcess({
+        fork: () => {
+          const brain = fakeBrain();
+          brains.push(brain);
+          const child = new FakeUtilityChild(brain.run);
+          children.push(child);
+          return child;
+        },
+        egress: { send: () => () => undefined, cancelAll: () => undefined },
+        ...(withTools ? { onTool: () => () => undefined } : {}),
+        onEvent: (event) => events.push(event),
+        timing: FAST,
+        rate: { maxToolCalls: 3, windowMs: 1_000 },
+        now: () => clock,
+      });
+    const failures = () => events.flatMap((event) => (event.type === 'failed' ? [event.message] : []));
+    const ready = () => events.filter((event) => event.type === 'ready').length;
+    const call = (id: number, name = 'file_read') => ({ type: 'tool-call', id, turn: 1, name, input: { path: '/a' } });
+
+    const plain = make(false);
+    running.push(plain);
+    await plain.whenReady();
+    brains.at(-1)?.send(call(1));
+    await until(() => failures().includes('ferramenta sem quem atenda'));
+    plain.stop();
+
+    const supervisor = make(true);
+    running.push(supervisor);
+    await supervisor.whenReady();
+    let readyCount = ready();
+    brains.at(-1)?.send(call(1));
+    brains.at(-1)?.send(call(1));
+    await until(() => failures().includes('chamada de ferramenta com id repetido') && ready() > readyCount);
+    // Nome fora do catálogo: a mensagem nem passa no protocolo.
+    readyCount = ready();
+    brains.at(-1)?.send(call(1, 'file_write'));
+    await until(() => failures().includes('mensagem fora do protocolo') && ready() > readyCount);
+    // No ritmo, tudo bem; quatro de uma vez numa janela, o quarto derruba.
+    readyCount = ready();
+    for (let id = 1; id <= 3; id++) {
+      brains.at(-1)?.send(call(id));
+      clock += 500;
+    }
+    clock += 1_000;
+    for (let id = 4; id <= 7; id++) brains.at(-1)?.send(call(id));
+    await until(() => failures().includes('chamadas de ferramenta demais em pouco tempo'));
+    expect(failures().filter((message) => message === 'chamadas de ferramenta demais em pouco tempo')).toHaveLength(1);
+    expect(ready()).toBeGreaterThanOrEqual(readyCount);
   });
 
   it('Cérebro preso (sem pong) é derrubado e sobe de novo', async () => {

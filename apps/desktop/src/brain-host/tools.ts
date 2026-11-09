@@ -24,6 +24,18 @@ export interface ToolOutcome {
   readonly text: string;
 }
 
+/**
+ * Falha de uma ferramenta para o modelo. O AI SDK manda à API o `toString()` do erro, que por padrão começa com o nome
+ * ("Error: …"); este manda só o texto em pt-BR.
+ */
+export class ToolFailure extends Error {
+  override readonly name = 'ToolFailure';
+
+  override toString(): string {
+    return this.message;
+  }
+}
+
 export const BRIDGE_MAX_CALLS = 24;
 export const BRIDGE_WINDOW_MS = 5_000;
 /** Mais que os 30 s de uma leitura no Executor, com os 5 s para ele responder ao cancelamento. */
@@ -177,7 +189,7 @@ export function readTools(context: ReadToolsContext) {
     if (refusal !== null) {
       const text = BUDGET_REFUSALS[refusal];
       context.budget.addResult(context.estimate(text));
-      throw new Error(text);
+      throw new ToolFailure(text);
     }
     let outcome: ToolOutcome;
     try {
@@ -187,7 +199,7 @@ export function readTools(context: ReadToolsContext) {
       throw error;
     }
     context.budget.settle(context.estimate(outcome.text));
-    if (!outcome.ok) throw new Error(outcome.text);
+    if (!outcome.ok) throw new ToolFailure(outcome.text);
     return outcome.text;
   };
   return {
