@@ -377,7 +377,11 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     egress,
     onChat: (message, violation) => chatRelay.fromBrain(message, violation),
     // Chamada de ferramenta do Cérebro (decisão 0026): só dentro de um turno em andamento.
-    onTool: createBrainToolHandler({ relay: toolRelay, turnState: (turn) => chatRelay.turnState(turn) }),
+    onTool: createBrainToolHandler({
+      relay: toolRelay,
+      turnState: (turn) => chatRelay.turnState(turn),
+      onActivity: (turn, line) => chatRelay.toolActivity(turn, line),
+    }),
     onGone: () => chatRelay.brainGone(),
     onEvent: (event) => {
       if (TEST_BUILD) brainEvents.push(event);

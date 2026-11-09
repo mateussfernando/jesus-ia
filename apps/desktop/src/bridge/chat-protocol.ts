@@ -5,7 +5,8 @@ import { z } from 'zod';
  * Mensagens da conversa (fase 1, etapas 10 e 11; decisão 0024). A conversa mora no Cérebro (`jesus-brain`); a tela, no
  * servidor da interface (`jesus-next`). O processo principal fica no meio e só repassa, conferindo as duas pontes com
  * Zod estrito e trocando os `id` de um lado pelos do outro:
- * - interface → principal: `chat` (`get`, `send`, `stop`, `reset`); principal → interface: `chat-event`;
+ * - interface → principal: `chat` (`get`, `send`, `stop`, `reset`); principal → interface: `chat-event` (com a linha de
+ *   atividade de cada leitura, `tool`, que o próprio principal monta);
  * - principal → Cérebro: `chat-get`, `chat-send`, `chat-stop`, `chat-reset`; Cérebro → principal: `chat-state`,
  *   `chat-delta`, `chat-done`, `chat-error`.
  * Este arquivo não importa as outras pontes (elas é que importam daqui), para não haver ciclo. O vocabulário comum com
@@ -24,6 +25,9 @@ export const MAX_CHAT_TURNS = 200;
 export const MAX_TRANSCRIPT_CHARS = 2_000_000;
 /** Texto que o principal aceita do Cérebro num só turno; além disso, o Cérebro fugiu do protocolo. */
 export const MAX_TURN_STREAM_CHARS = 1_000_000;
+/** A linha de atividade de uma ferramenta na conversa (decisão 0026): o título e o detalhe do resumo feito por código. */
+export const MAX_TOOL_TITLE_CHARS = 64;
+export const MAX_TOOL_DETAIL_CHARS = 600;
 
 export const chatId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const conversationId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
@@ -110,6 +114,8 @@ export type UiChatRequest = z.infer<typeof UiChatRequestSchema>;
 export const ChatEventSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('state'), state: ChatStateSchema }),
   z.strictObject({ kind: z.literal('delta'), text: z.string().min(1).max(MAX_CHAT_DELTA_CHARS) }),
+  /** Uma leitura começou no turno: o resumo que o principal fez da chamada (nunca o texto do modelo). */
+  z.strictObject({ kind: z.literal('tool'), title: z.string().min(1).max(MAX_TOOL_TITLE_CHARS), detail: z.string().max(MAX_TOOL_DETAIL_CHARS) }),
   z.strictObject({ kind: z.literal('done'), done: ChatDoneSchema }),
   z.strictObject({ kind: z.literal('error'), reason: z.enum(CHAT_FAILURES) }),
 ]);

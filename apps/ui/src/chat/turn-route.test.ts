@@ -61,6 +61,16 @@ describe('rota de um turno da conversa', () => {
     expect(turns[0]?.stops).toBe(0);
   });
 
+  it('a linha de uma leitura de arquivo passa para a tela sem fechar o turno', async () => {
+    const { chat, turns } = fakeChat();
+    const response = await handleTurnRequest(post({ conversationId: CONVERSATION, text: 'Oi' }), { unlocked: () => true, chat });
+    const reading = events(response);
+    turns[0]?.emit({ kind: 'tool', title: 'Ler arquivo', detail: '/home/dono/notas.txt' });
+    turns[0]?.emit({ kind: 'delta', text: 'Li.' });
+    turns[0]?.emit(DONE);
+    expect(await reading).toEqual([{ kind: 'tool', title: 'Ler arquivo', detail: '/home/dono/notas.txt' }, { kind: 'delta', text: 'Li.' }, DONE]);
+  });
+
   it('erro do turno chega como evento e fecha', async () => {
     const { chat, turns } = fakeChat();
     const response = await handleTurnRequest(post({ conversationId: CONVERSATION, text: 'Oi' }), { unlocked: () => true, chat });

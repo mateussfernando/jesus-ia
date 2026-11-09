@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { parseToBrain } from '../bridge/brain-protocol';
-import { MAX_CHAT_DELTA_CHARS, MAX_FOLDER_CHARS, MAX_TURN_FOLDERS, MAX_TURN_STREAM_CHARS } from '../bridge/chat-protocol';
+import {
+  MAX_CHAT_DELTA_CHARS,
+  MAX_FOLDER_CHARS,
+  MAX_TOOL_DETAIL_CHARS,
+  MAX_TOOL_TITLE_CHARS,
+  MAX_TURN_FOLDERS,
+  MAX_TURN_STREAM_CHARS,
+} from '../bridge/chat-protocol';
 import type { ChatEvent, ToBrainChatMessage, UiChatRequest } from '../bridge/chat-protocol';
 import { createChatRelay } from './chat-relay';
 
@@ -80,6 +87,27 @@ describe('repassador da conversa no principal', () => {
     expect(relay.turnState(3)).toBe('running');
     relay.uiGone(a.owner);
     expect(relay.turnState(3)).toBe('ended');
+  });
+
+  it('a linha de uma leitura vai só para a tela que pediu o turno em andamento, dentro dos limites', () => {
+    const { relay, violation, ui } = setup();
+    const a = ui();
+    const b = ui();
+    a.request(5, 'send', { conversationId: CONVERSATION, text: 'oi' });
+    b.request(6, 'get');
+    relay.toolActivity(1, { title: 'Ler arquivo', detail: 'C:\\Users\\dono\\notas.txt' });
+    relay.toolActivity(2, { title: 'Ler arquivo', detail: 'não é pergunta' });
+    relay.toolActivity(99, { title: 'Ler arquivo', detail: 'nunca pedido' });
+    relay.toolActivity(1, { title: 'x'.repeat(MAX_TOOL_TITLE_CHARS + 10), detail: 'y'.repeat(MAX_TOOL_DETAIL_CHARS + 10) });
+    expect(a.events).toEqual([
+      [5, { kind: 'tool', title: 'Ler arquivo', detail: 'C:\\Users\\dono\\notas.txt' }],
+      [5, { kind: 'tool', title: 'x'.repeat(MAX_TOOL_TITLE_CHARS), detail: 'y'.repeat(MAX_TOOL_DETAIL_CHARS) }],
+    ]);
+    expect(b.events).toEqual([]);
+    // Turno que terminou: a linha atrasada não vai a lugar nenhum.
+    relay.fromBrain({ type: 'chat-error', id: 1, reason: 'cancelled' }, violation);
+    relay.toolActivity(1, { title: 'Ler arquivo', detail: 'atrasada' });
+    expect(a.events).toHaveLength(3);
   });
 
   it('bloqueio do Windows: todo turno em andamento para no Cérebro; os outros pedidos, não', () => {

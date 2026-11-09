@@ -235,6 +235,8 @@ describe('conversa na tela', () => {
     await ask('O que tem nas notas do projeto?');
     await expect.poll(() => lastAnswer().textContent(), { timeout: 20_000 }).toBe('O arquivo tem duas linhas.');
     expect(server.requests).toHaveLength(before + 2);
+    // A tela mostra a leitura, com o resumo feito pelo principal (não pelo modelo).
+    await expect.poll(() => page.locator('.chat-log .chat-tool').last().textContent()).toBe(`Ler arquivo ${file}`);
 
     // O primeiro passo leva as três ferramentas e a pasta liberada nas instruções.
     const first = JSON.parse(server.requests[before]?.body ?? '{}') as { system: { text: string }[]; tools: { name: string }[] };

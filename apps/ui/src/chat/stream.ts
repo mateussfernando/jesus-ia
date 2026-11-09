@@ -3,15 +3,20 @@ import { z } from 'zod';
 
 /**
  * O turno da conversa entre a rota e a tela (decisão 0025): uma linha JSON por evento (NDJSON), na ordem em que
- * chegam do Cérebro. Pedaços da resposta (`delta`) e, no fim, sempre um `done` ou um `error`. A tela confere cada
+ * chegam do Cérebro. Pedaços da resposta (`delta`), as leituras de arquivo que começaram (`tool`, com o resumo feito
+ * pelo principal; decisão 0026) e, no fim, sempre um `done` ou um `error`. A tela confere cada
  * linha com Zod estrito e para na primeira que não confere.
  */
 
 /** Maior linha aceita (caracteres). Um pedaço tem até 8.192 caracteres; o escape do JSON pode multiplicar por seis. */
 export const MAX_EVENT_LINE_CHARS = 64 * 1024;
+/** A linha de atividade de uma leitura (o mesmo limite do principal). */
+export const MAX_TOOL_TITLE_CHARS = 64;
+export const MAX_TOOL_DETAIL_CHARS = 600;
 
 const TurnEventSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('delta'), text: z.string().min(1).max(MAX_EVENT_LINE_CHARS) }),
+  z.strictObject({ kind: z.literal('tool'), title: z.string().min(1).max(MAX_TOOL_TITLE_CHARS), detail: z.string().max(MAX_TOOL_DETAIL_CHARS) }),
   z.strictObject({
     kind: z.literal('done'),
     done: z.strictObject({

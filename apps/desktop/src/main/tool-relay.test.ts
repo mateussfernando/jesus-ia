@@ -81,10 +81,11 @@ describe('chamadas de ferramenta no principal', () => {
 describe('chamadas de ferramenta do Cérebro (quem atende)', () => {
   const CALL: BrainToolCall = { type: 'tool-call', id: 4, turn: 2, name: 'file_read', input: { path: '/home/teste/projetos/a.txt' } };
 
-  function handlerSetup(turn: 'running' | 'ended' | 'unknown', relay?: ToolRelay) {
+  function handlerSetup(turn: 'running' | 'ended' | 'unknown', relay?: ToolRelay, call: BrainToolCall = CALL) {
     const runs: { name: string; input: unknown; signal: AbortSignal | undefined }[] = [];
     const replies: { ok: boolean; text: string }[] = [];
     const violations: string[] = [];
+    const lines: [number, { title: string; detail: string }][] = [];
     const handler = createBrainToolHandler({
       relay: relay ?? {
         call: (name, input, signal) => {
@@ -93,10 +94,22 @@ describe('chamadas de ferramenta do Cérebro (quem atende)', () => {
         },
       },
       turnState: () => turn,
+      onActivity: (id, line) => lines.push([id, line]),
     });
-    const cancel = handler(CALL, (result) => replies.push(result), (reason) => violations.push(reason));
-    return { runs, replies, violations, cancel };
+    const cancel = handler(call, (result) => replies.push(result), (reason) => violations.push(reason));
+    return { runs, replies, violations, cancel, lines };
   }
+
+  it('a linha de atividade sai com o resumo feito por código, só para a chamada de um turno em andamento', () => {
+    expect(handlerSetup('running').lines).toEqual([[2, { title: 'Ler arquivo', detail: '/home/teste/projetos/a.txt' }]]);
+    const search: BrainToolCall = { type: 'tool-call', id: 5, turn: 2, name: 'file_search', input: { path: '/home/teste', query: 'a\u202Eb' } };
+    expect(handlerSetup('running', undefined, search).lines).toEqual([[2, { title: 'Procurar texto', detail: '"ab" em /home/teste' }]]);
+    // Entrada que não confere com o esquema: sem linha (o repassador recusa a chamada).
+    const bad: BrainToolCall = { type: 'tool-call', id: 6, turn: 2, name: 'file_read', input: { path: '/a', extra: 1 } };
+    expect(handlerSetup('running', undefined, bad).lines).toEqual([]);
+    expect(handlerSetup('ended').lines).toEqual([]);
+    expect(handlerSetup('unknown').lines).toEqual([]);
+  });
 
   it('dentro de um turno em andamento: roda, e ao Cérebro volta só o texto (sem resumo nem tipos de segredo)', async () => {
     const { runs, replies, violations } = handlerSetup('running');

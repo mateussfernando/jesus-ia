@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { encodeTurnEvent, MAX_EVENT_LINE_CHARS, parseTurnEvent, readTurnEvents } from './stream';
+import { encodeTurnEvent, MAX_EVENT_LINE_CHARS, MAX_TOOL_DETAIL_CHARS, MAX_TOOL_TITLE_CHARS, parseTurnEvent, readTurnEvents } from './stream';
 import type { TurnEvent } from './stream';
 
 const CONVERSATION = '0b6e3c1e-5f1a-4f7e-9c7a-2d9b1f4e6a80';
@@ -38,7 +38,12 @@ async function collect(stream: ReadableStream<Uint8Array>): Promise<(TurnEvent |
 
 describe('turno em linhas JSON', () => {
   it('ida e volta: pedaços com acentos e emoji, cortados em qualquer byte', async () => {
-    const events: TurnEvent[] = [{ kind: 'delta', text: 'Olá, ' }, { kind: 'delta', text: 'ação 😀\n"aspas"' }, done];
+    const events: TurnEvent[] = [
+      { kind: 'delta', text: 'Olá, ' },
+      { kind: 'tool', title: 'Ler arquivo', detail: 'C:\\Users\\dono\\ação.txt (linhas 1 a 10)' },
+      { kind: 'delta', text: 'ação 😀\n"aspas"' },
+      done,
+    ];
     const text = events.map(encodeTurnEvent).join('');
     for (const size of [1, 2, 3, 7, 64, text.length]) {
       expect(await collect(body(split(text, size)).stream)).toEqual(events);
@@ -53,6 +58,11 @@ describe('turno em linhas JSON', () => {
       JSON.stringify({ kind: 'error', reason: 'qualquer' }),
       JSON.stringify({ kind: 'done', done: { ...done.done, finish: 'tool-calls' } }),
       JSON.stringify({ kind: 'state' }),
+      JSON.stringify({ kind: 'tool', title: '', detail: 'x' }),
+      JSON.stringify({ kind: 'tool', title: 'Ler arquivo' }),
+      JSON.stringify({ kind: 'tool', title: 'x'.repeat(MAX_TOOL_TITLE_CHARS + 1), detail: '' }),
+      JSON.stringify({ kind: 'tool', title: 'Ler arquivo', detail: 'x'.repeat(MAX_TOOL_DETAIL_CHARS + 1) }),
+      JSON.stringify({ kind: 'tool', title: 'Ler arquivo', detail: 'x', text: 'conteúdo' }),
     ]) {
       const text = `${encodeTurnEvent({ kind: 'delta', text: 'a' })}${bad}\n${encodeTurnEvent(done)}`;
       expect(await collect(body(split(text, 5)).stream), bad).toEqual([{ kind: 'delta', text: 'a' }, null]);

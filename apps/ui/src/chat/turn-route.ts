@@ -87,7 +87,7 @@ export async function handleTurnRequest(request: Request, deps: TurnRouteDeps): 
       stopTurn = chat.send(conversationId, text, (event) => {
         if (finished || lockedNow()) return;
         push(event);
-        if (event.kind !== 'delta') end();
+        if (event.kind !== 'delta' && event.kind !== 'tool') end();
       });
       if (!finished) timer = setInterval(lockedNow, deps.lockCheckMs ?? LOCK_CHECK_MS);
     },

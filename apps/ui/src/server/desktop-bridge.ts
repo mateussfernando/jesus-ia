@@ -68,9 +68,11 @@ export interface ChatDone {
 
 export type ChatResult = { readonly ok: true; readonly state: ChatState } | { readonly ok: false; readonly reason: ChatFailure };
 
-/** O que chega de um turno: pedaços da resposta e, no fim, sempre `done` ou `error`. */
+/** O que chega de um turno: pedaços da resposta, as leituras que começaram e, no fim, sempre `done` ou `error`. */
 export type ChatTurnEvent =
   | { readonly kind: 'delta'; readonly text: string }
+  /** Uma leitura de arquivo começou (decisão 0026): o resumo feito pelo principal, nunca o texto do modelo. */
+  | { readonly kind: 'tool'; readonly title: string; readonly detail: string }
   | { readonly kind: 'done'; readonly done: ChatDone }
   | { readonly kind: 'error'; readonly reason: ChatFailure };
 
