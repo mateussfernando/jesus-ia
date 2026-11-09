@@ -107,6 +107,26 @@
   font-style: italic;
 }
 
+/* As leituras de arquivo do turno (decisão 0026): o resumo feito pelo principal, em letra menor, antes da resposta. */
+.chat-tools {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+  color: var(--silver-dark);
+  font-size: 0.85em;
+}
+
+.chat-tool {
+  overflow-wrap: anywhere;
+}
+
+.chat-tool-title {
+  color: var(--silver);
+  font-weight: 600;
+}
+
 .chat-notice {
   margin: 0;
   color: var(--silver-dark);

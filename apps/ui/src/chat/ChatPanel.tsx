@@ -8,6 +8,7 @@ import type { ChatResult, ChatState } from '../server/desktop-bridge';
 import { contextUsage, CUT_SHORT, noticeFor, UNREACHABLE } from './messages';
 import type { ChatNotice } from './messages';
 import { runTurn } from './turn-client';
+import type { ToolLine } from './turn-client';
 import './chat.css';
 
 /**
@@ -20,7 +21,18 @@ import './chat.css';
 interface Streaming {
   readonly question: string;
   readonly answer: string;
+  /** As leituras de arquivo do turno, na ordem em que começaram (decisão 0026). */
+  readonly tools: readonly ToolLine[];
   readonly stopping: boolean;
+}
+
+/**
+ * As leituras de cada troca feita nesta tela, pela posição da troca na conversa. O Cérebro guarda só a pergunta e a
+ * resposta: recarregar a página (ou começar outra conversa) as perde.
+ */
+interface Activity {
+  readonly conversationId: string;
+  readonly byTurn: ReadonlyMap<number, readonly ToolLine[]>;
 }
 
 /** Enquanto o Cérebro termina um turno de antes (a página foi recarregada no meio), a tela confere o estado. */
@@ -32,7 +44,17 @@ function goToEntry() {
   window.location.replace('/entrar/');
 }
 
-function Exchange({ user, assistant, pending = false }: { user: string; assistant: string; pending?: boolean }) {
+function Exchange({
+  user,
+  assistant,
+  tools = [],
+  pending = false,
+}: {
+  user: string;
+  assistant: string;
+  tools?: readonly ToolLine[];
+  pending?: boolean;
+}) {
   return (
     <div className="chat-exchange">
       <div className="chat-message chat-user">
@@ -41,6 +63,15 @@ function Exchange({ user, assistant, pending = false }: { user: string; assistan
       </div>
       <div className="chat-message chat-assistant" aria-busy={pending}>
         <span className="chat-who">Jesus</span>
+        {tools.length > 0 ? (
+          <ul className="chat-tools" aria-label="Leituras de arquivo">
+            {tools.map((tool, index) => (
+              <li key={index} className="chat-tool">
+                <span className="chat-tool-title">{tool.title}</span> <span className="chat-tool-detail">{tool.detail}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {assistant === '' && pending ? <p className="chat-text chat-thinking">Pensando…</p> : <p className="chat-text">{assistant}</p>}
       </div>
     </div>
@@ -52,6 +83,7 @@ export function ChatPanel({ initial }: { initial: ChatResult }) {
   const [notice, setNotice] = useState<ChatNotice | null>(initial.ok ? null : noticeFor(initial.reason));
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState<Streaming | null>(null);
+  const [activity, setActivity] = useState<Activity | null>(null);
   const [working, setWorking] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -100,9 +132,12 @@ export function ChatPanel({ initial }: { initial: ChatResult }) {
     stick.current = true;
     setInput('');
     setNotice(null);
-    setStreaming({ question, answer: '', stopping: false });
-    const { outcome, answer } = await runTurn(conversation.conversationId, question, (text) =>
-      setStreaming((current) => (current === null ? null : { ...current, answer: text })),
+    setStreaming({ question, answer: '', tools: [], stopping: false });
+    // A troca entra na conversa nesta posição (só há um turno por vez).
+    const turnIndex = conversation.turns.length;
+    const { conversationId } = conversation;
+    const { outcome, answer, tools } = await runTurn(conversationId, question, (text, lines) =>
+      setStreaming((current) => (current === null ? null : { ...current, answer: text, tools: lines })),
     );
     if (outcome === 'unreachable') {
       setNotice(UNREACHABLE);
@@ -115,6 +150,13 @@ export function ChatPanel({ initial }: { initial: ChatResult }) {
           ? null
           : { ...current, turns: [...current.turns, { user: question, assistant: answer }], contextTokens: done.contextTokens, limitTokens: done.limitTokens },
       );
+      if (tools.length > 0) {
+        setActivity((current) => {
+          const byTurn = new Map(current?.conversationId === conversationId ? current.byTurn : []);
+          byTurn.set(turnIndex, tools);
+          return { conversationId, byTurn };
+        });
+      }
       if (done.finish === 'length') setNotice(CUT_SHORT);
       void chatState()
         .then((result) => {
@@ -166,6 +208,8 @@ export function ChatPanel({ initial }: { initial: ChatResult }) {
   };
 
   const turns = conversation?.turns ?? [];
+  const toolsOf = (index: number): readonly ToolLine[] =>
+    activity !== null && activity.conversationId === conversation?.conversationId ? (activity.byTurn.get(index) ?? []) : [];
   const canSend = conversation !== null && streaming === null && !busyElsewhere && input.trim() !== '';
   return (
     <section className="chat" aria-label="Conversa">
@@ -186,9 +230,9 @@ export function ChatPanel({ initial }: { initial: ChatResult }) {
           </p>
         ) : null}
         {turns.map((turn, index) => (
-          <Exchange key={index} user={turn.user} assistant={turn.assistant} />
+          <Exchange key={index} user={turn.user} assistant={turn.assistant} tools={toolsOf(index)} />
         ))}
-        {streaming !== null ? <Exchange user={streaming.question} assistant={streaming.answer} pending /> : null}
+        {streaming !== null ? <Exchange user={streaming.question} assistant={streaming.answer} tools={streaming.tools} pending /> : null}
         {busyElsewhere ? <p className="chat-empty">O Jesus ainda está respondendo a uma pergunta anterior.</p> : null}
       </div>
       {notice !== null ? (

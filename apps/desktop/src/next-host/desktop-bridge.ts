@@ -30,9 +30,10 @@ export interface DesktopSpend {
 /** A conversa (decisão 0024), que mora no Cérebro: o estado dela, ou o motivo de não ter vindo. */
 export type ChatResult = { readonly ok: true; readonly state: ChatState } | { readonly ok: false; readonly reason: ChatFailure };
 
-/** O que chega de um turno: pedaços da resposta e, no fim, sempre `done` ou `error`. */
+/** O que chega de um turno: pedaços da resposta, as leituras que começaram e, no fim, sempre `done` ou `error`. */
 export type ChatTurnEvent =
   | { readonly kind: 'delta'; readonly text: string }
+  | { readonly kind: 'tool'; readonly title: string; readonly detail: string }
   | { readonly kind: 'done'; readonly done: ChatDone }
   | { readonly kind: 'error'; readonly reason: ChatFailure };
 
@@ -256,7 +257,7 @@ export function createHostBridge(options: { vaultTimeoutMs?: number; chatIdleMs?
       return;
     }
     if (event.kind === 'state') return;
-    if (event.kind === 'delta') {
+    if (event.kind === 'delta' || event.kind === 'tool') {
       entry.touch();
       entry.listener(event);
       return;

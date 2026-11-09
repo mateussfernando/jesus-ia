@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { EGRESS_FAILURES, parseFromBrain, parseToBrain } from './brain-protocol';
-import { CHAT_FAILURES, MAX_CHAT_DELTA_CHARS, MAX_CHAT_TEXT_CHARS, MAX_FOLDER_CHARS, MAX_TRANSCRIPT_CHARS, MAX_TURN_FOLDERS } from './chat-protocol';
+import {
+  CHAT_FAILURES,
+  MAX_CHAT_DELTA_CHARS,
+  MAX_CHAT_TEXT_CHARS,
+  MAX_FOLDER_CHARS,
+  MAX_TOOL_DETAIL_CHARS,
+  MAX_TOOL_TITLE_CHARS,
+  MAX_TRANSCRIPT_CHARS,
+  MAX_TURN_FOLDERS,
+} from './chat-protocol';
 import { parseFromServer, parseToServer } from './protocol';
 
 const CONVERSATION = '0b6e3c1e-5f1a-4f7e-9c7a-2d9b1f4e6a80';
@@ -31,10 +40,12 @@ describe('mensagens da conversa', () => {
     }
   });
 
-  it('principal → interface: estado, pedaço, fim ou erro, nada mais', () => {
+  it('principal → interface: estado, pedaço, linha de leitura, fim ou erro, nada mais', () => {
     const events = [
       { kind: 'state', state },
       { kind: 'delta', text: 'Olá' },
+      { kind: 'tool', title: 'Ler arquivo', detail: 'C:\\Users\\dono\\notas.txt' },
+      { kind: 'tool', title: 'Listar pasta', detail: '' },
       { kind: 'done', done: { conversationId: CONVERSATION, finish: 'stop', contextTokens: 10, limitTokens: 20 } },
       { kind: 'error', reason: 'over_budget' },
     ];
@@ -46,6 +57,10 @@ describe('mensagens da conversa', () => {
       { kind: 'state', state: { ...state, extra: 1 } },
       { kind: 'state', state: { ...state, turns: [{ user: 'a'.repeat(MAX_CHAT_TEXT_CHARS + 1), assistant: '' }] } },
       { kind: 'done', done: { conversationId: CONVERSATION, finish: 'tool-calls', contextTokens: 1, limitTokens: 1 } },
+      { kind: 'tool', title: '', detail: 'x' },
+      { kind: 'tool', title: 'x'.repeat(MAX_TOOL_TITLE_CHARS + 1), detail: 'x' },
+      { kind: 'tool', title: 'Ler arquivo', detail: 'x'.repeat(MAX_TOOL_DETAIL_CHARS + 1) },
+      { kind: 'tool', title: 'Ler arquivo', detail: 'x', text: 'o conteúdo' },
     ]) {
       expect(parseToServer({ type: 'chat-event', id: 3, event }), JSON.stringify(event).slice(0, 80)).toBeNull();
     }

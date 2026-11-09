@@ -1,4 +1,4 @@
-import { MAX_FOLDER_CHARS, MAX_TURN_FOLDERS, MAX_TURN_STREAM_CHARS } from '../bridge/chat-protocol';
+import { MAX_FOLDER_CHARS, MAX_TOOL_DETAIL_CHARS, MAX_TOOL_TITLE_CHARS, MAX_TURN_FOLDERS, MAX_TURN_STREAM_CHARS } from '../bridge/chat-protocol';
 import type { ChatEvent, FromBrainChatMessage, ToBrainChatMessage, UiChatRequest } from '../bridge/chat-protocol';
 
 /**
@@ -40,6 +40,11 @@ export interface ChatRelay {
   brainGone(): void;
   /** Um servidor da interface saiu: os turnos que ele pediu param (ninguém mais vai ler). */
   uiGone(owner: object): void;
+  /**
+   * Uma leitura começou no turno `id` (o do lado do Cérebro): a tela que pediu o turno recebe a linha de atividade,
+   * feita pelo principal com o resumo do catálogo. Turno que não está em andamento: nada.
+   */
+  toolActivity(id: number, line: { readonly title: string; readonly detail: string }): void;
   /**
    * O Jesus bloqueou (eventos do Windows): todo turno em andamento para no Cérebro, sem esperar a tela perceber. Num
    * turno com ferramentas, isso impede um passo novo (e uma leitura nova) depois do bloqueio.
@@ -181,6 +186,13 @@ export function createChatRelay(options: ChatRelayOptions): ChatRelay {
           // O Cérebro também saiu.
         }
       }
+    },
+    toolActivity(id, line) {
+      const entry = pending.get(id);
+      if (entry?.kind !== 'send') return;
+      const title = line.title.slice(0, MAX_TOOL_TITLE_CHARS);
+      if (title === '') return;
+      entry.reply({ kind: 'tool', title, detail: line.detail.slice(0, MAX_TOOL_DETAIL_CHARS) });
     },
     stopAll() {
       for (const [id, entry] of pending) {

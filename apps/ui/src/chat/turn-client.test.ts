@@ -26,7 +26,7 @@ describe('turno visto pela tela', () => {
     const { fetcher, sent } = respond([{ kind: 'delta', text: 'Olá, ' }, { kind: 'delta', text: 'tudo bem?' }, DONE].map((event) => encodeTurnEvent(event as TurnEvent)).join(''));
     const seen: string[] = [];
     const result = await runTurn(CONVERSATION, 'Oi', (answer) => seen.push(answer), fetcher);
-    expect(result).toEqual({ outcome: DONE, answer: 'Olá, tudo bem?' });
+    expect(result).toEqual({ outcome: DONE, answer: 'Olá, tudo bem?', tools: [] });
     expect(seen).toEqual(['Olá, ', 'Olá, tudo bem?']);
     const { url, init } = sent();
     expect(url).toBe(TURN_URL);
@@ -48,7 +48,29 @@ describe('turno visto pela tela', () => {
 
   it('cortado no meio: interrupted, com o que chegou até ali', async () => {
     const result = await runTurn(CONVERSATION, 'Oi', () => undefined, respond(encodeTurnEvent({ kind: 'delta', text: 'Era uma' })).fetcher);
-    expect(result).toEqual({ outcome: { kind: 'error', reason: 'interrupted' }, answer: 'Era uma' });
+    expect(result).toEqual({ outcome: { kind: 'error', reason: 'interrupted' }, answer: 'Era uma', tools: [] });
+  });
+
+  it('as leituras de arquivo do turno chegam na ordem, junto com a resposta, e não terminam o turno', async () => {
+    const read: TurnEvent = { kind: 'tool', title: 'Ler arquivo', detail: 'C:\\Users\\dono\\notas.txt' };
+    const search: TurnEvent = { kind: 'tool', title: 'Procurar texto', detail: '"senha" em C:\\Users\\dono' };
+    const piece: TurnEvent = { kind: 'delta', text: 'Li o arquivo.' };
+    const { fetcher } = respond([read, piece, search, DONE].map((event) => encodeTurnEvent(event)).join(''));
+    const seen: [string, number][] = [];
+    const result = await runTurn(CONVERSATION, 'Oi', (answer, tools) => seen.push([answer, tools.length]), fetcher);
+    expect(result).toEqual({
+      outcome: DONE,
+      answer: 'Li o arquivo.',
+      tools: [
+        { title: 'Ler arquivo', detail: 'C:\\Users\\dono\\notas.txt' },
+        { title: 'Procurar texto', detail: '"senha" em C:\\Users\\dono' },
+      ],
+    });
+    expect(seen).toEqual([
+      ['', 1],
+      ['Li o arquivo.', 1],
+      ['Li o arquivo.', 2],
+    ]);
   });
 
   it('resposta que não é turno, linha que não confere ou falha de rede: unreachable', async () => {

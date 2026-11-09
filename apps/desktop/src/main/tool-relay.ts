@@ -1,6 +1,7 @@
 import { checkRequestedPath, createReadPolicy, describeDenial, hostPlatform } from '@jesus/gate';
 import type { PathPlatform } from '@jesus/gate';
-import { describeFailure, failureCode, isToolName, TOOL_INPUTS } from '@jesus/executor';
+import { describeFailure, failureCode, isToolName, summarizeTool, TOOL_INPUTS } from '@jesus/executor';
+import type { ToolName, ToolSummary } from '@jesus/executor';
 import type { AuditEvent } from '@jesus/shared/audit';
 import type { ToolPolicy } from '../bridge/executor-protocol';
 import type { ToolHandler } from './brain-process';
@@ -87,6 +88,26 @@ export interface BrainToolHandlerOptions {
   readonly relay: ToolRelay;
   /** A situação do turno da chamada no repassador da conversa (`ChatRelay.turnState`). */
   readonly turnState: (turn: number) => 'running' | 'ended' | 'unknown';
+  /** A linha de atividade de uma chamada que vai rodar, com o resumo feito por código (para a tela da conversa). */
+  readonly onActivity?: (turn: number, line: ToolSummary) => void;
+}
+
+/** O resumo de uma chamada com a entrada conferida pelo esquema do catálogo; `null` se a entrada não confere. */
+export function summarizeCall(name: ToolName, input: unknown): ToolSummary | null {
+  switch (name) {
+    case 'file_read': {
+      const parsed = TOOL_INPUTS.file_read.safeParse(input);
+      return parsed.success ? summarizeTool('file_read', parsed.data) : null;
+    }
+    case 'file_list': {
+      const parsed = TOOL_INPUTS.file_list.safeParse(input);
+      return parsed.success ? summarizeTool('file_list', parsed.data) : null;
+    }
+    case 'file_search': {
+      const parsed = TOOL_INPUTS.file_search.safeParse(input);
+      return parsed.success ? summarizeTool('file_search', parsed.data) : null;
+    }
+  }
 }
 
 /**
@@ -105,6 +126,10 @@ export function createBrainToolHandler(options: BrainToolHandlerOptions): ToolHa
       reply({ ok: TURN_ENDED.ok, text: TURN_ENDED.text });
       return () => undefined;
     }
+    // A linha de atividade sai antes da leitura, com a entrada já conferida; entrada que não confere nem aparece (o
+    // repassador a recusa).
+    const line = summarizeCall(call.name, call.input);
+    if (line !== null) options.onActivity?.(call.turn, line);
     const controller = new AbortController();
     // `call` nunca rejeita; o segundo caminho só guarda o Cérebro de ficar sem resposta.
     options.relay.call(call.name, call.input, controller.signal).then(

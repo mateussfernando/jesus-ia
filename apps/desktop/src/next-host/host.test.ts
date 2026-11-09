@@ -205,6 +205,8 @@ describe('servidor da interface: configuração e pedidos pelo parentPort', () =
       if (message.op === 'get') child.postMessage({ type: 'chat-event', id: message.id, event: { kind: 'state', state } });
       if (message.op === 'reset') child.postMessage({ type: 'chat-event', id: message.id, event: { kind: 'error', reason: 'brain' } });
       if (message.op === 'send') {
+        // A linha de uma leitura segue como um pedaço: não termina o turno.
+        child.postMessage({ type: 'chat-event', id: message.id, event: { kind: 'tool', title: 'Ler arquivo', detail: '/home/dono/a.txt' } });
         child.postMessage({ type: 'chat-event', id: message.id, event: { kind: 'delta', text: 'Olá' } });
         // Um estado no meio de um turno não é deste turno: ignorado.
         child.postMessage({ type: 'chat-event', id: message.id, event: { kind: 'state', state } });
@@ -216,8 +218,9 @@ describe('servidor da interface: configuração e pedidos pelo parentPort', () =
     expect(await host.bridge.chat.reset()).toEqual({ ok: false, reason: 'brain' });
     const events: unknown[] = [];
     const stop = host.bridge.chat.send(conversationId, 'Oi', (event) => events.push(event));
-    await until(() => events.length === 2);
+    await until(() => events.length === 3);
     expect(events).toEqual([
+      { kind: 'tool', title: 'Ler arquivo', detail: '/home/dono/a.txt' },
       { kind: 'delta', text: 'Olá' },
       { kind: 'done', done: { conversationId, finish: 'stop', contextTokens: 20, limitTokens: 88_500 } },
     ]);
