@@ -1,11 +1,11 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { answerEvents, messageStart, textBlock } from '../test-support/anthropic-sse';
+import { answerEvents, messageStart, textBlock, toolUseEvents } from '../test-support/anthropic-sse';
 import { createTestPki } from '../test-support/certs';
 import type { TestPki } from '../test-support/certs';
 import { startTlsServer } from '../test-support/tls-server';
@@ -18,6 +18,10 @@ import type { RunningApp } from './harness';
  * da interface → principal → Cérebro (AI SDK) → saída para a API no principal (conferência, chave, teto, registro) →
  * transporte HTTPS de verdade até um servidor local com respostas SSE roteirizadas, e a resposta volta em pedaços até a
  * tela. O destino local e a chave falsa só existem no build de teste (`__jesusTest.useTestApi`).
+ *
+ * Com a leitura de arquivos (etapa 13; decisão 0026): o modelo roteirizado pede uma leitura, o Cérebro a manda ao
+ * principal, que confere (turno, esquema, Porteiro, registro) e repassa ao `jesus-executor` de verdade, e o resultado
+ * (com o segredo mascarado) volta à API no passo seguinte. A pasta é liberada pelo gancho do build de teste.
  */
 
 const desktopDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -41,6 +45,8 @@ let pki: TestPki;
 let server: TestServer;
 const scripts: Script[] = [];
 let abandoned = 0;
+let work: string;
+let released: string;
 
 function hooks<T>(expression: string): Promise<T> {
   return app.mainEval<T>(`(() => { const h = globalThis.__jesusTest; return ${expression}; })()`);
@@ -87,6 +93,11 @@ beforeAll(async () => {
     next();
   });
   userData = await mkdtemp(join(tmpdir(), 'jesus-e2e-chat-'));
+  // Na pasta do usuário: no Windows, a pasta temporária fica dentro do AppData, que o Porteiro não deixa liberar.
+  work = await realpath(await mkdtemp(join(homedir(), 'jesus-e2e-chat-work-')));
+  released = join(work, 'projeto');
+  await mkdir(released, { recursive: true });
+  await writeFile(join(released, 'notas.txt'), 'primeira linha\na senha do banco é Abc123!xyz\n');
   app = await launchApp({ mainEntry, userData, executable });
   page = app.page;
   await page.waitForURL(`${APP}/entrar/`);
@@ -109,6 +120,7 @@ afterAll(async () => {
   await app?.close();
   await server?.close();
   await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  if (work !== undefined) await rm(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 });
 
 describe('conversa na tela', () => {
@@ -208,6 +220,43 @@ describe('conversa na tela', () => {
     await page.waitForURL(`${APP}/`);
     await input().waitFor();
     expect(await exchanges().count()).toBe(0);
+  });
+
+  it('lê um arquivo de uma pasta liberada: o pedido passa pelo principal e pelo Executor, e o segredo não sai', async () => {
+    for (let waited = 0; !(await hooks<boolean>("h.executorEvents.some((e) => e.type === 'ready')")); waited += 200) {
+      if (waited > 30_000) throw new Error('o Executor não ficou pronto');
+      await page.waitForTimeout(200);
+    }
+    expect(await hooks(`h.releaseFolder(${JSON.stringify(released)})`)).toMatchObject({ ok: true });
+    const file = join(released, 'notas.txt');
+    scripts.push({ chunks: toolUseEvents([{ id: 'toolu_e2e_1', name: 'file_read', input: { path: file } }]) });
+    scripts.push({ chunks: answerEvents(['O arquivo tem duas linhas.']) });
+    const before = server.requests.length;
+    await ask('O que tem nas notas do projeto?');
+    await expect.poll(() => lastAnswer().textContent(), { timeout: 20_000 }).toBe('O arquivo tem duas linhas.');
+    expect(server.requests).toHaveLength(before + 2);
+
+    // O primeiro passo leva as três ferramentas e a pasta liberada nas instruções.
+    const first = JSON.parse(server.requests[before]?.body ?? '{}') as { system: { text: string }[]; tools: { name: string }[] };
+    expect(first.tools.map((entry) => entry.name)).toEqual(['file_read', 'file_list', 'file_search']);
+    expect(first.system.map((block) => block.text).join('\n')).toContain(released);
+    // O segundo devolve o que o Executor leu, como dado e com o segredo mascarado.
+    const second = server.requests[before + 1]?.body ?? '';
+    const results = (JSON.parse(second) as { messages: { role: string; content: { type: string; content?: string }[] }[] }).messages
+      .flatMap((message) => message.content)
+      .filter((block) => block.type === 'tool_result');
+    expect(results).toHaveLength(1);
+    expect(results[0]?.content).toContain('1\tprimeira linha');
+    expect(results[0]?.content).toContain('[segredo removido: senha]');
+    expect(second).not.toContain('Abc123');
+    // Na tela e na conversa, só a pergunta e a resposta.
+    expect(await page.content()).not.toContain('Abc123');
+    const events = (await readFile(join(userData, 'data', 'audit.jsonl'), 'utf8'))
+      .trimEnd()
+      .split('\n')
+      .map((line) => (JSON.parse(line) as { event: { type: string; tool?: string } }).event);
+    expect(events.filter((event) => event.type === 'tool.call' && event.tool === 'file_read')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'tool.result' && event.tool === 'file_read')).toHaveLength(1);
   });
 
   it('a chave falsa não aparece na tela, na saída do app nem nos arquivos; o registro tem os pedidos', async () => {

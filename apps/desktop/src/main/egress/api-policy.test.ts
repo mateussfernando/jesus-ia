@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { BRAIN_KEY_PLACEHOLDER, MAX_API_BODY_BYTES } from '../../bridge/brain-protocol';
-import { API_URL, checkApiRequest, checkedArray, MAX_JSON_DEPTH, MAX_JSON_NODES, MAX_OUTPUT_TOKENS } from './api-policy';
+import { TOOL_NAMES } from '@jesus/executor/catalog';
+import { API_URL, checkApiRequest, checkedArray, MAX_JSON_DEPTH, MAX_JSON_NODES, MAX_OUTPUT_TOKENS, PHASE1_TOOL_NAMES } from './api-policy';
 import type { ApiRequestInput } from './api-policy';
 
 const TOOLS = { toolNames: ['file_read'] };
@@ -368,5 +369,23 @@ describe('checkApiRequest: corpo', () => {
 describe('checkApiRequest: lista de ferramentas', () => {
   it('sem ferramentas liberadas (a fase 1 até a etapa 13), nenhuma ferramenta passa', () => {
     expect(refusal(request(), { toolNames: [] })).toBe('body');
+  });
+});
+
+describe('ferramentas da fase 1 (decisão 0026)', () => {
+  it('são as três leituras do catálogo, e só elas', () => {
+    expect([...PHASE1_TOOL_NAMES]).toEqual([...TOOL_NAMES]);
+    expect([...PHASE1_TOOL_NAMES].sort()).toEqual(['file_list', 'file_read', 'file_search']);
+  });
+
+  it('com a lista de produção, o pedido com as leituras passa e uma ferramenta de fora é recusada', () => {
+    const body = (names: readonly string[]) =>
+      JSON.stringify({
+        ...aiSdkBody(),
+        tools: names.map((name) => ({ name, description: 'x', input_schema: { type: 'object' }, eager_input_streaming: true })),
+      });
+    const production = { toolNames: PHASE1_TOOL_NAMES };
+    expect(checkApiRequest(request({ body: body(['file_read', 'file_list', 'file_search']) }), production)).toMatchObject({ ok: true });
+    expect(checkApiRequest(request({ body: body(['file_read', 'file_write']) }), production)).toMatchObject({ ok: false, refusal: 'body' });
   });
 });

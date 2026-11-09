@@ -38,7 +38,7 @@ import { APP_DISABLED_FEATURES, HOST_RESOLVER_RULES, mergeFeatureList, unexpecte
 import { APP_ORIGIN } from './policy/url';
 import type { Supervisor, SupervisorEvent } from './supervisor';
 import { createTestApi } from './test-api';
-import { createToolRelay } from './tool-relay';
+import { createBrainToolHandler, createToolRelay } from './tool-relay';
 import { startUiServer, statusPage } from './ui-server';
 import type { UiServerEvent } from './ui-server';
 import { Vault } from './vault';
@@ -305,7 +305,11 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
   const vaultRequests = createVaultRequests({ vault, record });
   // A conversa (decisão 0024) mora no Cérebro; o principal só repassa entre ele e o servidor da interface.
   let brainSupervisor: Supervisor | null = null;
-  const chatRelay = createChatRelay({ postToBrain: (message) => brainSupervisor?.post(message) ?? false });
+  const chatRelay = createChatRelay({
+    postToBrain: (message) => brainSupervisor?.post(message) ?? false,
+    // As pastas liberadas vão com cada pergunta, para as instruções do Cérebro (decisão 0026).
+    folders: () => (folderStore.available ? folderStore.releasedPaths() : []),
+  });
 
   const cookies = new CookieJar();
   jar = cookies;
@@ -372,6 +376,8 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     },
     egress,
     onChat: (message, violation) => chatRelay.fromBrain(message, violation),
+    // Chamada de ferramenta do Cérebro (decisão 0026): só dentro de um turno em andamento.
+    onTool: createBrainToolHandler({ relay: toolRelay, turnState: (turn) => chatRelay.turnState(turn) }),
     onGone: () => chatRelay.brainGone(),
     onEvent: (event) => {
       if (TEST_BUILD) brainEvents.push(event);
@@ -407,9 +413,11 @@ async function main(paths: ReturnType<typeof appPaths>): Promise<void> {
     log.info('bloqueio.do_sistema', { motivo: reason, origem: source });
     record({ type: 'app.locked', reason, source });
     cookies.clear();
-    // O que estava saindo para a API para aqui: o Cérebro recebe `locked`. As leituras em andamento também param.
+    // O que estava saindo para a API para aqui: o Cérebro recebe `locked`. As leituras em andamento também param, e os
+    // turnos em andamento param no Cérebro (num turno com ferramentas, nenhum passo novo sai depois do bloqueio).
     egress.cancelAll('locked');
     executor.cancelAll();
+    chatRelay.stopAll();
     signals.lock(reason);
     leaveForEntry(window, 'bloqueio do sistema');
   };

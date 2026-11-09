@@ -45,7 +45,8 @@ function fitsInput(input: unknown): boolean {
   }
 }
 
-const toolInput = z.record(z.string().max(64), z.unknown()).refine(fitsInput, 'entrada grande demais');
+/** A entrada de uma chamada, como objeto JSON pequeno (o esquema da ferramenta confere o resto). */
+export const ToolInputSchema = z.record(z.string().max(64), z.unknown()).refine(fitsInput, 'entrada grande demais');
 
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 
@@ -70,7 +71,7 @@ export const ToolRunMessageSchema = z.strictObject({
   type: z.literal('tool-run'),
   id: pingSeq,
   name: z.enum(TOOL_NAMES),
-  input: toolInput,
+  input: ToolInputSchema,
   policy: ToolPolicySchema,
 });
 export type ToolRunMessage = z.infer<typeof ToolRunMessageSchema>;

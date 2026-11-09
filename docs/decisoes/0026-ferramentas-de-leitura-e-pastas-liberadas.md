@@ -70,6 +70,19 @@ O dono mandou seguir, e a recomendação foi adotada (ele pode mudar as duas res
   - **sem registro saudável, nenhuma pasta:** com o registro de auditoria posto de lado (adulterado, cortado, sem âncora) ou sem abrir, a lista é esvaziada e liberar fica desligado (falha fechada).
   - **as chamadas no principal:** o nome e a entrada passam pelo esquema estrito; o caminho pedido passa pelo Porteiro ali mesmo, só pelo texto (um caminho de rede, de fora ou sensível nem chega ao Executor); o registro grava a chamada antes de ela rodar (sem registro, não roda) e o resultado depois, sem conteúdo (o resumo e os tipos de segredo mascarados).
   - **o processo:** as leituras rodam no utilityProcess `jesus-executor`, com as travas de rede e de módulos do Cérebro e ambiente de lista. Cada chamada tem 30 s; depois do cancelamento, o processo tem 5 s para responder, senão está preso e sobe de novo. O bloqueio do app cancela as leituras em andamento.
+- **No Cérebro (etapa 13c, 08/11/2026):**
+  - **as chamadas:** as três ferramentas entram no `streamText` com a descrição e o esquema do catálogo. Cada chamada do modelo vira uma mensagem `tool-call` ao principal, com o `id` do turno. O principal só roda a chamada de um turno em andamento: a de um turno que já acabou (corrida com o Parar) recebe uma recusa em texto; a de um turno que o principal nunca pediu é fuga do protocolo e derruba o Cérebro.
+  - **a falha** volta em texto, como resultado com `is_error`, e o modelo segue o turno com ela.
+  - **os limites, fixos por turno nesta fase:**
+    - até 8 passos (chamadas ao modelo); o último vai sem ferramentas, e o modelo tem de responder em texto;
+    - até 24 chamadas;
+    - no ritmo, até 24 chamadas em 5 s (abaixo das 32 que fazem o principal derrubar o Cérebro);
+    - 60 s sem resposta cancelam a chamada.
+
+    Ao chegar num limite, o modelo recebe um texto e responde com o que já tem. Os limites por tarefa da [seção 2.3 da arquitetura](../02-arquitetura.md) (configuráveis, com "para e pergunta") ficam para o agente das fases seguintes.
+  - **o contexto:** antes de cada passo, a entrada é refeita pelo uso medido do passo anterior, mais as respostas das ferramentas. Cada chamada reserva 20 mil tokens (o pior caso de uma resposta). A chamada que não cabe no limite da conversa é recusada em texto, e o passo seguinte vai sem ferramentas. Uso que não veio conta como sem espaço (falha fechada).
+  - **as pastas liberadas** vão numa nota do sistema antes da pergunta, só quando a lista muda (a primeira pergunta de cada conversa sempre leva). Os caminhos passam por `displayText`, sem invisíveis nem quebras de linha. As instruções com a data continuam fixas por conversa (o prefixo em cache não muda).
+  - **o histórico** guarda a nota, a pergunta e o texto final de cada troca. As chamadas, os resultados e o raciocínio dos passos não voltam nos turnos seguintes: o que foi lido não fica ocupando a conversa, e para ver um arquivo de novo o modelo lê de novo.
 
 ## Consequências
 
@@ -90,4 +103,4 @@ O dono mandou seguir, e a recomendação foi adotada (ele pode mudar as duas res
 
 ## Detalhes
 
-`packages/executor/src/` · `packages/gate/src/read-gate.ts` (`checkLinkTarget`) e `release.ts` · `packages/shared/src/mask-secrets.ts` · `apps/desktop/src/executor-host/`, `src/bridge/executor-protocol.ts` e, em `src/main/`, `executor-process.ts`, `tool-relay.ts`, `folders.ts`, `release-folder.ts` e `places.ts` · `security/attack-corpus/` · seções [3.4.4](../03-seguranca.md), [3.5](../03-seguranca.md) e [3.17](../03-seguranca.md)
+`packages/executor/src/` · `packages/gate/src/read-gate.ts` (`checkLinkTarget`) e `release.ts` · `packages/shared/src/mask-secrets.ts` · `apps/desktop/src/executor-host/`, `src/bridge/executor-protocol.ts`, `src/bridge/tool-protocol.ts`, `src/brain-host/tools.ts` e `turn-budget.ts` e, em `src/main/`, `executor-process.ts`, `tool-relay.ts`, `folders.ts`, `release-folder.ts` e `places.ts` · `security/attack-corpus/` · seções [3.4.4](../03-seguranca.md), [3.5](../03-seguranca.md) e [3.17](../03-seguranca.md)

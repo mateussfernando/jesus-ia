@@ -6,11 +6,13 @@ import { ApiFetchBridge } from './api-fetch';
 import { ChatEngine } from './chat';
 import type { ChatEngineOptions } from './chat';
 import { createBrainModel } from './model';
+import { ToolBridge } from './tools';
 
 /**
  * Lado do Cérebro na ponte com o processo principal (roda no utilityProcess `jesus-brain`; decisões 0023 e 0024).
- * Monta o modelo com o `fetch` da ponte, responde ao sinal de vida, entrega as respostas da API ao pedido certo e
- * atende a conversa (`chat-*`), que mora aqui, na memória.
+ * Monta o modelo com o `fetch` da ponte, responde ao sinal de vida, entrega as respostas da API ao pedido certo,
+ * atende a conversa (`chat-*`), que mora aqui, na memória, e entrega as respostas das ferramentas (`tool-result`) à
+ * chamada certa (decisão 0026).
  */
 
 export type BrainLog = (message: string) => void;
@@ -19,6 +21,7 @@ export interface BrainContext {
   readonly model: ReturnType<typeof createBrainModel>;
   readonly api: ApiFetchBridge;
   readonly chat: ChatEngine;
+  readonly tools: ToolBridge;
 }
 
 function writeToStderr(message: string): void {
@@ -29,14 +32,15 @@ export function runBrainHost(
   parent: ParentPortLike,
   log: BrainLog = writeToStderr,
   now: () => number = () => performance.now(),
-  chatOptions: Partial<Omit<ChatEngineOptions, 'model' | 'card'>> = {},
+  chatOptions: Partial<Omit<ChatEngineOptions, 'model' | 'card' | 'tools'>> = {},
 ): BrainContext {
   const started = now();
   const api = new ApiFetchBridge({ post: (message) => parent.postMessage(message) });
   const model = createBrainModel(api.fetch);
   const card = getModelCard(`anthropic:${BRAIN_MODEL_ID}`);
   if (card === null) throw new Error('o modelo do Cérebro não está no catálogo');
-  const chat = new ChatEngine({ ...chatOptions, model, card });
+  const tools = new ToolBridge({ post: (message) => parent.postMessage(message) });
+  const chat = new ChatEngine({ ...chatOptions, model, card, tools });
   // Turnos em andamento (id do pedido do principal → parar).
   const turns = new Map<number, () => void>();
 
@@ -73,18 +77,27 @@ export function runBrainHost(
         turns.delete(id);
         parent.postMessage({ ...reply, id });
       };
-      const stop = chat.send(message.conversationId, message.text, {
-        delta: (text) => parent.postMessage({ type: 'chat-delta', id, text }),
-        done: (done) => finish({ type: 'chat-done', done }),
-        fail: (reason) => finish({ type: 'chat-error', reason }),
-      });
+      const stop = chat.send(
+        message.conversationId,
+        message.text,
+        {
+          delta: (text) => parent.postMessage({ type: 'chat-delta', id, text }),
+          done: (done) => finish({ type: 'chat-done', done }),
+          fail: (reason) => finish({ type: 'chat-error', reason }),
+        },
+        { turn: id, folders: message.folders },
+      );
       // Recusa na hora (conversa antiga, turno em andamento, pergunta vazia): já terminou.
       if (!finished) turns.set(id, stop);
+      return;
+    }
+    if (message.type === 'tool-result') {
+      tools.handle(message);
       return;
     }
     if (!api.handle(message)) log(`mensagem fora de ordem na resposta da API (pedido ${String(message.id)})`);
   });
 
   parent.postMessage({ type: 'ready', prepareMs: Math.round(now() - started) });
-  return { model, api, chat };
+  return { model, api, chat, tools };
 }
