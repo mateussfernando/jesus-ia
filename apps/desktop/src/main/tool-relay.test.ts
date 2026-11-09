@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AuditEvent } from '@jesus/shared/audit';
 import type { ToolPolicy } from '../bridge/executor-protocol';
+import type { BrainToolCall } from '../bridge/tool-protocol';
+import { UNAVAILABLE } from './executor-process';
 import type { ToolReply, ToolRequest } from './executor-process';
 import { buildPlaces, LINUX_SYSTEM_FOLDERS } from './places';
-import { createToolRelay } from './tool-relay';
+import { createBrainToolHandler, createToolRelay, TURN_ENDED } from './tool-relay';
+import type { ToolRelay } from './tool-relay';
 
 const policy: ToolPolicy = { released: ['/home/teste/projetos'], places: { home: '/home/teste', localAppData: '/home/teste/.config', roamingAppData: '/home/teste/.config' } };
 const OK: ToolReply = { ok: true, text: 'Linhas 1 a 1 de 1.', secrets: { password: 1 }, stats: { tool: 'file_read', firstLine: 1, lastLine: 1, totalLines: 1, partial: false } };
@@ -72,6 +75,62 @@ describe('chamadas de ferramenta no principal', () => {
     const { relay, events } = setup({ reply: { ok: false, code: 'not_found', text: 'Não achei esse caminho.' } });
     expect(await relay.call('file_read', { path: '/home/teste/projetos/b.txt' })).toMatchObject({ ok: false, code: 'not_found' });
     expect(events.at(-1)).toEqual({ type: 'tool.result', tool: 'file_read', ok: false, code: 'not_found' });
+  });
+});
+
+describe('chamadas de ferramenta do Cérebro (quem atende)', () => {
+  const CALL: BrainToolCall = { type: 'tool-call', id: 4, turn: 2, name: 'file_read', input: { path: '/home/teste/projetos/a.txt' } };
+
+  function handlerSetup(turn: 'running' | 'ended' | 'unknown', relay?: ToolRelay) {
+    const runs: { name: string; input: unknown; signal: AbortSignal | undefined }[] = [];
+    const replies: { ok: boolean; text: string }[] = [];
+    const violations: string[] = [];
+    const handler = createBrainToolHandler({
+      relay: relay ?? {
+        call: (name, input, signal) => {
+          runs.push({ name, input, signal });
+          return Promise.resolve(OK);
+        },
+      },
+      turnState: () => turn,
+    });
+    const cancel = handler(CALL, (result) => replies.push(result), (reason) => violations.push(reason));
+    return { runs, replies, violations, cancel };
+  }
+
+  it('dentro de um turno em andamento: roda, e ao Cérebro volta só o texto (sem resumo nem tipos de segredo)', async () => {
+    const { runs, replies, violations } = handlerSetup('running');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(runs.map((run) => [run.name, run.input])).toEqual([['file_read', { path: '/home/teste/projetos/a.txt' }]]);
+    expect(replies).toEqual([{ ok: true, text: OK.text }]);
+    expect(violations).toEqual([]);
+  });
+
+  it('cancelar aborta a chamada no repassador', () => {
+    const { runs, cancel } = handlerSetup('running');
+    expect(runs[0]?.signal?.aborted).toBe(false);
+    cancel();
+    expect(runs[0]?.signal?.aborted).toBe(true);
+  });
+
+  it('turno que já terminou (corrida com o Parar): recusa sem rodar e sem derrubar o Cérebro', () => {
+    const { runs, replies, violations } = handlerSetup('ended');
+    expect(runs).toEqual([]);
+    expect(replies).toEqual([{ ok: false, text: TURN_ENDED.text }]);
+    expect(violations).toEqual([]);
+  });
+
+  it('turno que o principal nunca pediu: fuga do protocolo, sem rodar', () => {
+    const { runs, replies, violations } = handlerSetup('unknown');
+    expect(runs).toEqual([]);
+    expect(replies).toEqual([]);
+    expect(violations).toEqual(['chamada de ferramenta num turno que o principal não pediu']);
+  });
+
+  it('repassador que falha por dentro: o Cérebro recebe uma resposta mesmo assim', async () => {
+    const { replies } = handlerSetup('running', { call: () => Promise.reject(new Error('quebrou')) });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(replies).toEqual([{ ok: false, text: UNAVAILABLE.text }]);
   });
 });
 
